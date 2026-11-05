@@ -42,7 +42,14 @@ export function availableCommands(chat: SlashCommand[], appWide: SlashCommand[])
   return [...APP_COMMANDS, ...claude.toSorted((a, b) => Number(b.builtin) - Number(a.builtin))]
 }
 
-/** Name or alias prefix first, then a match inside one, then in the description. */
+/** A query this short matches names only: in descriptions it would match almost anything. */
+const DESCRIPTION_QUERY = 3
+
+/**
+ * Name or alias prefix first, then a match inside one, then a word of the description (for
+ * three letters or more). Among prefix matches, the app's commands lead, then Claude's
+ * built-ins, then the rest; a name before an alias, then shorter names first.
+ */
 export function rankCommands(list: SlashCommand[], query: string): SlashCommand[] {
   const q = query.toLowerCase()
   if (q === '') return list
@@ -50,12 +57,30 @@ export function rankCommands(list: SlashCommand[], query: string): SlashCommand[
     const names = [c.name, ...c.aliases].map((n) => n.toLowerCase())
     if (names.some((n) => n.startsWith(q))) return 0
     if (names.some((n) => n.includes(q))) return 1
-    return c.description.toLowerCase().includes(q) ? 2 : 3
+    if (q.length < DESCRIPTION_QUERY) return 3
+    const words = c.description.toLowerCase().split(/[^a-z0-9]+/)
+    return words.some((w) => w.startsWith(q)) ? 2 : 3
+  }
+  // ponytail: Claude Code flags its bundled skills `builtin` too, so the name's length stands in
+  // for "a short built-in command" (`/config` before `/code-review`); a real flag would beat it.
+  // `/co` is `/config` before `/usage` (whose alias is `cost`).
+  const byAlias = (c: SlashCommand) => (c.name.toLowerCase().startsWith(q) ? 0 : 1)
+  const kind = (c: SlashCommand) => {
+    if (isAppCommand(c.name)) return 0
+    return c.builtin ? 1 : 2
   }
   return list
     .map((c) => ({ c, r: rank(c) }))
     .filter((x) => x.r < 3)
-    .toSorted((a, b) => a.r - b.r)
+    .toSorted(
+      (a, b) =>
+        a.r - b.r ||
+        (a.r === 0
+          ? kind(a.c) - kind(b.c) ||
+            byAlias(a.c) - byAlias(b.c) ||
+            a.c.name.length - b.c.name.length
+          : 0)
+    )
     .map((x) => x.c)
 }
 

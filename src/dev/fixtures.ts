@@ -1,6 +1,7 @@
 // What the browser preview shows: two projects, three workspaces, chats that draw every
 // block kind, a terminal, git changes with a PR, quotas. Dev only (see mock-ipc.ts).
 
+import type { FileChange } from '../app/use-git'
 import type { Catalog } from '../model/catalog'
 
 import { claudeSnapshot, type QuotaCache } from '../model/quota'
@@ -399,20 +400,117 @@ export const TRANSCRIPTS: Record<string, string[]> = {
   ],
 }
 
-/** What a fresh chat's Claude says when the window writes to it. */
-export const reply = (text: string) => [
-  assistant(`m-${crypto.randomUUID()}`, [
-    {
-      text: `(Preview) No Claude runs in the browser; this stands in for the answer to “${text}”.`,
-      type: 'text',
-    },
-  ]),
-  result(0.0012, 900),
+/** What a fresh chat's Claude says when the window writes to it: the answer, streamed. */
+export function streamedReply(id: string, text: string): string[] {
+  const event = (e: unknown) => line({ event: e, type: 'stream_event' })
+  // Words, a few at a time: about twenty deltas.
+  const words = text.split(/(?<= )/)
+  const step = Math.max(1, Math.ceil(words.length / 20))
+  const deltas: string[] = []
+  for (let i = 0; i < words.length; i += step) {
+    deltas.push(
+      event({
+        delta: { text: words.slice(i, i + step).join(''), type: 'text_delta' },
+        index: 0,
+        type: 'content_block_delta',
+      })
+    )
+  }
+  return [
+    event({ message: { id }, type: 'message_start' }),
+    event({ content_block: { text: '', type: 'text' }, index: 0, type: 'content_block_start' }),
+    ...deltas,
+    event({ index: 0, type: 'content_block_stop' }),
+    assistant(id, [{ text, type: 'text' }]),
+  ]
+}
+
+export const previewAnswer = (prompt: string) =>
+  `(Preview) No Claude runs in the browser; this stands in for the answer to “${prompt}”. ` +
+  'It streams in word by word, so the caret, the shimmer and Esc can be tried out.'
+
+/** A tool the preview's Claude asks to run, and the permission it waits for. */
+export function toolAsk(messageId: string, toolId: string, requestId: string, prompt: string) {
+  const input = { command: 'bun test src', description: 'Run the unit tests' }
+  const text = `Before I answer “${prompt}”, let me run the tests.`
+  return [
+    ...streamedReply(messageId, text).slice(0, -1),
+    line({
+      event: {
+        content_block: { id: toolId, input: {}, name: 'Bash', type: 'tool_use' },
+        index: 1,
+        type: 'content_block_start',
+      },
+      type: 'stream_event',
+    }),
+    assistant(messageId, [
+      { text, type: 'text' },
+      { id: toolId, input, name: 'Bash', type: 'tool_use' },
+    ]),
+    line({
+      request: {
+        description: input.description,
+        input,
+        permission_suggestions: [
+          {
+            behavior: 'allow',
+            destination: 'localSettings',
+            rules: [{ ruleContent: 'bun test:*', toolName: 'Bash' }],
+            type: 'addRules',
+          },
+        ],
+        subtype: 'can_use_tool',
+        tool_name: 'Bash',
+      },
+      request_id: requestId,
+      type: 'control_request',
+    }),
+  ]
+}
+
+export const toolDone = (toolId: string, allowed: boolean) =>
+  allowed
+    ? toolResult(toolId, ' 86 pass\n 0 fail\nRan 86 tests across 12 files. [212.00ms]')
+    : toolResult(toolId, 'The user declined this action.', true)
+
+export const turnEnd = (cost = 0.0012, ms = 2100) => result(cost, ms)
+
+/** What a local command (`/model sonnet`) prints instead of an answer. */
+export const localOutput = (text: string) => [
+  assistant(`m-${crypto.randomUUID()}`, [{ text, type: 'text' }], '<synthetic>'),
+  result(0, 40),
 ]
 
-export const freshChat = (chatId: string) => [
+/** Claude Code's answer to an interrupt: the request is acknowledged, the turn ends. */
+export const interrupted = (requestId: string) => [
+  line({
+    response: { request_id: requestId, response: {}, subtype: 'success' },
+    type: 'control_response',
+  }),
+  line({ is_error: false, subtype: 'error_during_execution', type: 'result' }),
+]
+
+/** The host's replay lines of a chat, as Claude Code's transcript keeps them. */
+export function asTranscript(lines: string[]): string[] {
+  return lines.flatMap((raw) => {
+    const m = JSON.parse(raw) as { type?: string; message?: Record<string, unknown> }
+    if (m.type === 'assistant' || m.type === 'user') return [raw]
+    if (m.type !== 'aimux_sent') return []
+    const sentLine = m.message as { uuid?: string; message?: { content?: { text?: string }[] } }
+    return [
+      line({
+        message: { content: sentLine.message?.content?.[0]?.text ?? '', role: 'user' },
+        type: 'user',
+        uuid: sentLine.uuid,
+      }),
+    ]
+  })
+}
+
+/** A Claude started for a chat: a new session, or the one it resumes. */
+export const freshChat = (chatId: string, resumed: string | null) => [
   initAnswer(chatId),
-  systemInit(`session-${chatId}`, 'claude-opus-5-5'),
+  systemInit(resumed ?? `session-${chatId}`, 'claude-opus-5-5'),
 ]
 
 // Git.
@@ -423,7 +521,7 @@ const change = (
   staged: boolean,
   add: number | null,
   del: number | null
-) => ({
+): FileChange => ({
   add,
   del,
   path,
@@ -433,7 +531,7 @@ const change = (
   untracked: false,
 })
 
-export const GIT_STATUS: Record<string, unknown[]> = {
+export const GIT_STATUS: Record<string, FileChange[]> = {
   [PATHS.amber]: [
     change('src/app/context-menu.tsx', 'M', true, 48, 91),
     change('src/app/picker.tsx', 'M', false, 22, 63),
@@ -453,14 +551,22 @@ export const GIT_STATUS: Record<string, unknown[]> = {
   [PATHS.violet]: [],
 }
 
-export const GIT_BRANCH: Record<string, unknown> = {
+export interface MockBranch {
+  ahead: number
+  behind: number
+  branch: string
+  remote: boolean
+  upstream: boolean
+}
+
+export const GIT_BRANCH: Record<string, MockBranch> = {
   [PATHS.amber]: { ahead: 2, behind: 0, branch: 'aimux/amber', remote: true, upstream: true },
   [PATHS.teal]: { ahead: 1, behind: 0, branch: 'aimux/teal', remote: true, upstream: false },
   [PATHS.violet]: { ahead: 0, behind: 0, branch: 'aimux/violet', remote: true, upstream: true },
 }
 
 /** `gh pr view --json …`, raw. */
-export const PRS: Record<string, unknown> = {
+export const PRS: Record<string, { state: string } & Record<string, unknown>> = {
   [PATHS.amber]: {
     additions: 412,
     baseRefName: 'main',
@@ -525,6 +631,144 @@ index 3b1c2d4..9f8e7a6 100644
    return (
      <div className="dialog menu" role="menu">
 `
+
+const CHANGELOG_DIFF = `diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1a2b3c4..5d6e7f8 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,6 +1,22 @@
+ # Changelog
+
+-## Unreleased
++## 0.2.0
++
++### New
++
++- Slash commands: a \`/\` menu in every chat, with the app's own commands first.
++- Command cards: what \`/context\` or \`/usage\` print shows as a card, not as Claude.
++- \`/resume\` across the whole project, this workspace's sessions first.
++- Self-updating releases: the update pill installs and restarts.
++
++### Fixed
++
++- The context menu keeps its hovered row under a still mouse.
++- Tabs reopen with their chats after a restart.
++
++## 0.1.0
++
++- First release.
+
+ ## 0.0.1
+-
+-- Prototype.
+`
+
+/** A plausible diff for a file the fixtures name by its counts alone. */
+function diffFor(file: FileChange): string {
+  const name = file.path.split('/').pop() ?? file.path
+  const added = Math.min(file.add ?? 0, 40)
+  const removed = Math.min(file.del ?? 0, 40)
+  const old = file.untracked || file.status === 'A' ? '/dev/null' : `a/${file.path}`
+  const fresh = file.status === 'D' ? '/dev/null' : `b/${file.path}`
+  const body = [
+    ...Array.from({ length: removed }, (_, i) => `-  // ${name}: old line ${i + 1}`),
+    ...Array.from({ length: added }, (_, i) => `+  // ${name}: new line ${i + 1}`),
+  ]
+  return [
+    `diff --git a/${file.path} b/${file.path}`,
+    `--- ${old}`,
+    `+++ ${fresh}`,
+    `@@ -${removed === 0 ? 0 : 1},${removed} +${added === 0 ? 0 : 1},${added} @@`,
+    ...body,
+    '',
+  ].join('\n')
+}
+
+/** `git_diff` of one file: a hand-written one when there is one, else made from its counts. */
+export function diffOf(path: string, file: string): string {
+  if (file === 'src/app/context-menu.tsx') return DIFF
+  if (file === 'CHANGELOG.md') return CHANGELOG_DIFF
+  const change = GIT_STATUS[path]?.find((f) => f.path === file)
+  return change ? diffFor(change) : ''
+}
+
+/** `?long`: what truncates first at 1000px. A project with a 30-character name, a workspace
+ * with eight long-titled tabs, a 60-character branch and forty deeply nested files. */
+export function longFixture() {
+  const path = `${HOME}/dev/customer-portal-infrastructure`
+  const ws = `${TREES}/customer-portal-infrastructure/indigo`
+  const titles = [
+    'Migrate the billing webhooks onto the new event bus',
+    'Why does the invoice PDF render twice on Safari?',
+    'Write integration tests for the refund flow',
+    'Rename the tenant settings page and its routes',
+    'Audit every feature flag still read at startup',
+    'Draft the incident report for Tuesday’s outage',
+  ]
+  const deep = [
+    'apps/web/src/features/billing/webhooks/handlers',
+    'apps/web/src/features/billing/invoices/components/pdf',
+    'packages/event-bus/src/adapters/postgres/listeners',
+    'services/payments/internal/providers/stripe/webhooks',
+  ]
+  const files = Array.from({ length: 40 }, (_, i) =>
+    change(
+      `${deep[i % deep.length]}/${['subscription', 'invoice', 'refund', 'customer', 'tenant'][i % 5]}-${['created', 'updated', 'deleted', 'renewed'][i % 4]}.handler.ts`,
+      ['M', 'M', 'A', 'D'][i % 4] ?? 'M',
+      i % 3 === 0,
+      i % 4 === 3 ? 0 : 3 + ((i * 7) % 60),
+      i % 4 === 2 ? 0 : (i * 5) % 40
+    )
+  )
+  return {
+    branch: {
+      ahead: 3,
+      behind: 0,
+      branch: 'aimux/indigo-migrate-billing-webhooks-onto-the-new-event-bus',
+      remote: true,
+      upstream: true,
+    },
+    chats: titles.map((title, i) => ({
+      createdAt: now - (60 - i) * MIN,
+      effort: '',
+      id: `chat-long-${i}`,
+      model: '',
+      sessionId: null,
+      title,
+      workspaceId: 'ws-indigo',
+    })),
+    files,
+    path: ws,
+    project: {
+      id: 'p-long',
+      lastOpenedAt: now + HOUR,
+      name: 'customer-portal-infrastructure',
+      path,
+    },
+    terms: ['bun run dev --filter @portal/web', 'docker compose logs -f payments'].map(
+      (title, i) => ({
+        code: null,
+        command: null,
+        cwd: ws,
+        ended: false,
+        id: `term-long-${i}`,
+        tag: null,
+        title,
+        workspaceId: 'ws-indigo',
+      })
+    ),
+    workspace: {
+      base: 'origin/main',
+      branch: 'aimux/indigo-migrate-billing-webhooks-onto-the-new-event-bus',
+      createdAt: now - 2 * HOUR,
+      id: 'ws-indigo',
+      name: 'indigo',
+      path: ws,
+      projectId: 'p-long',
+      setup: null,
+    },
+  }
+}
 
 export const BRANCHES = {
   branches: [

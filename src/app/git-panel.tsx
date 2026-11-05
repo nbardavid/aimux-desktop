@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ArrowUpIcon, ArrowUpRightIcon, GitBranchIcon, GitMergeIcon } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -53,6 +53,12 @@ function Head({
 }: Pick<Props, 'branch' | 'cleanup' | 'onChanged' | 'onError' | 'path' | 'pr'>) {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const yes = useRef<HTMLButtonElement>(null)
+  const actionButton = useRef<HTMLButtonElement>(null)
+  // The question takes the focus: Enter says Yes, Esc says No.
+  useEffect(() => {
+    if (asking) yes.current?.focus()
+  }, [asking])
   const headline = pr ? prHeadline(pr) : null
   const action =
     headline?.action === 'cleanup' && cleanup === null ? null : (headline?.action ?? null)
@@ -86,13 +92,21 @@ function Head({
     </Button>
   )
 
+  const cancel = () => {
+    setAsking(false)
+    // Back on the button that asked, not lost on the page.
+    requestAnimationFrame(() => actionButton.current?.focus())
+  }
+
+  // Row 1: the PR and what it says, never cut short. Row 2, when the panel is too narrow for
+  // one row: Push and Merge on the right, or the question that replaces them.
   return (
     <div
-      className="flex h-bar flex-none items-center gap-2 border-b pr-2 pl-3"
+      className="flex min-h-bar flex-none flex-wrap items-center gap-x-2 gap-y-1.5 border-b py-1.5 pr-2 pl-3"
       data-tauri-drag-region
     >
       {pr && headline ? (
-        <>
+        <span className="flex flex-none items-center gap-2" data-tauri-drag-region>
           <button
             type="button"
             className="inline-flex h-6 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--good)_12%,var(--background))] pr-[7px] pl-2 font-mono text-[12px] font-semibold text-[#2f6b3e] hover:bg-[color-mix(in_srgb,var(--good)_20%,var(--background))]"
@@ -101,44 +115,55 @@ function Head({
             #{pr.number}
             <ArrowUpRightIcon className={icon} />
           </button>
-          <span className={cn('truncate text-sm font-medium', TONE[headline.tone])}>
+          <span className={cn('text-sm font-medium whitespace-nowrap', TONE[headline.tone])}>
             {headline.label}
           </span>
-        </>
+        </span>
       ) : (
-        <span className="text-muted-foreground inline-flex min-w-0 items-center gap-1.5 font-mono text-[12px]">
+        <span className="text-muted-foreground inline-flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[12px]">
           <GitBranchIcon className={icon} />
           <span className="truncate">{branch?.branch ?? 'detached'}</span>
           {ahead > 0 && <span className="text-faint">↑{ahead}</span>}
           {(branch?.behind ?? 0) > 0 && <span className="text-faint">↓{branch?.behind}</span>}
         </span>
       )}
-      <span className="min-w-0 flex-1" data-tauri-drag-region />
-      {push}
-      {pr && action !== null && path !== undefined && !asking && (
-        <Button
-          type="button"
-          variant={action === 'merge' ? 'default' : 'secondary'}
-          className={cn(headBtn, action === 'merge' && merge)}
-          disabled={busy !== null}
-          onClick={() => setAsking(true)}
-        >
-          {action === 'merge' && <GitMergeIcon className={icon} />}
-          {action === 'merge' ? 'Merge' : (cleanup?.label ?? 'Clean up')}
-        </Button>
+      {!asking && (push !== false || (pr && action !== null && path !== undefined)) && (
+        <span className="ml-auto flex flex-none items-center gap-2">
+          {push}
+          {pr && action !== null && path !== undefined && (
+            <Button
+              ref={actionButton}
+              type="button"
+              variant={action === 'merge' ? 'default' : 'secondary'}
+              className={cn(headBtn, action === 'merge' && merge)}
+              disabled={busy !== null}
+              onClick={() => setAsking(true)}
+            >
+              {action === 'merge' && <GitMergeIcon className={icon} />}
+              {action === 'merge' ? 'Merge' : (cleanup?.label ?? 'Clean up')}
+            </Button>
+          )}
+        </span>
       )}
       {pr && asking && path !== undefined && (
-        <span className="animate-in fade-in slide-in-from-bottom-[6px] inline-flex flex-none items-center gap-1.5 text-[12.5px] font-medium duration-160 ease-[cubic-bezier(0.2,0,0,1)]">
-          {action === 'merge' ? `Merge #${pr.number}?` : `${cleanup?.label}?`}
-          <Button
-            type="button"
-            variant="secondary"
-            className={headBtn}
-            onClick={() => setAsking(false)}
-          >
+        <span
+          className="animate-in fade-in slide-in-from-bottom-[6px] ml-auto inline-flex flex-none items-center gap-1.5 text-[12.5px] font-medium duration-160 ease-[cubic-bezier(0.2,0,0,1)]"
+          role="group"
+          aria-label={action === 'merge' ? `Merge #${pr.number}?` : `${cleanup?.label}?`}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return
+            // Esc says No, and goes no further (it would stop a working chat).
+            e.preventDefault()
+            e.stopPropagation()
+            cancel()
+          }}
+        >
+          {action === 'merge' ? 'Merge?' : `${cleanup?.label}?`}
+          <Button type="button" variant="secondary" className={headBtn} onClick={cancel}>
             No
           </Button>
           <Button
+            ref={yes}
             type="button"
             className={cn(headBtn, action === 'merge' && merge)}
             disabled={busy !== null}
@@ -233,7 +258,7 @@ export function GitPanel(props: Props) {
           />
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-2 pt-0.5 pb-3">
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-0.5 pb-3">
         {shown === 'changes' &&
           (changes ? (
             <FileList changes={changes} onOpen={onOpenFile} actions={actions} />

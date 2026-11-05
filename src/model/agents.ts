@@ -7,6 +7,8 @@ export interface ModelInfo {
   name: string
   description: string
   efforts: string[]
+  /** The model an alias stands for today (`default` → `claude-opus-5-5`). */
+  resolved?: string
 }
 
 const ALL_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -31,6 +33,7 @@ export const FALLBACK_MODELS: ModelInfo[] = [
 
 interface RawModel {
   value?: unknown
+  resolvedModel?: unknown
   displayName?: unknown
   description?: unknown
   supportedEffortLevels?: unknown
@@ -51,6 +54,7 @@ export function parseModels(json: string): ModelInfo[] {
         description: typeof m.description === 'string' ? m.description : '',
         efforts,
         name: m.displayName.replace(/\s*\(recommended\)$/i, ''),
+        resolved: typeof m.resolvedModel === 'string' ? m.resolvedModel : m.value,
         value: m.value,
       },
     ]
@@ -97,3 +101,38 @@ export const chatFlags = (settings: ChatSettings) => ({
   effort: settings.effort,
   model: settings.model === 'default' ? '' : settings.model,
 })
+
+/** A chat's model as its footer says it: "Sonnet 5.5 · High", "Default (Opus 5.5) · Auto". */
+export function agentLabel(settings: ChatSettings, models: ModelInfo[]): string {
+  const model = models.find((m) => m.value === settings.model)
+  if (!model) return settings.model === 'default' ? 'Default' : settings.model || 'Claude'
+  const twin =
+    model.value === 'default'
+      ? models.find((m) => m !== model && m.resolved !== undefined && m.resolved === model.resolved)
+      : undefined
+  const name = twin ? `${model.name} (${twin.name})` : model.name
+  if (model.efforts.length === 0) return name
+  return `${name} · ${settings.effort === '' ? 'Auto' : effortLabel(settings.effort)}`
+}
+
+/**
+ * `/model sonnet` or `/effort high` typed in a chat: the settings it asks for, or null when
+ * it names nothing the model list offers (the picker then opens). `auto` is the default effort.
+ */
+export function agentCommand(
+  name: 'model' | 'effort',
+  args: string,
+  settings: ChatSettings,
+  models: ModelInfo[]
+): ChatSettings | null {
+  const said = args.trim().toLowerCase()
+  if (said === '') return null
+  if (name === 'model') {
+    const m = models.find((x) => x.value.toLowerCase() === said || x.name.toLowerCase() === said)
+    return m ? normalize({ ...settings, model: m.value }, models) : null
+  }
+  if (said === 'auto') return { ...settings, effort: '' }
+  const efforts = models.find((m) => m.value === settings.model)?.efforts ?? []
+  const level = efforts.find((e) => e === said || effortLabel(e).toLowerCase() === said)
+  return level === undefined ? null : { ...settings, effort: level }
+}

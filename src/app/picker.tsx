@@ -6,14 +6,21 @@ import { Kbd } from '@/components/ui/kbd'
 import { Popover, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
+import type { Signal } from '../model/catalog'
+
 import { pointerMoved } from './pointer'
+import { StatusDot } from './status-dot'
 
 export interface PickerItem {
   key: string
   label: string
   sub?: string
+  /** The sub line is a path: set in mono. */
+  mono?: boolean
   meta?: string
   glyph?: string
+  /** A status dot after the label, as the sidebar shows it. */
+  signal?: Signal | null
 }
 
 interface Props {
@@ -134,9 +141,23 @@ export function Picker({
               !menu && <span className="text-faint w-3.5 font-mono text-[11px]">{i + 1}</span>
             )}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="font-medium">{item.label}</span>
+              <span className="font-medium">
+                {item.label}
+                {item.signal && (
+                  <span className="ml-2 inline-flex align-middle">
+                    <StatusDot signal={item.signal} />
+                  </span>
+                )}
+              </span>
               {!menu && item.sub !== undefined && (
-                <span className="text-faint truncate font-mono text-[11px]">{item.sub}</span>
+                <span
+                  className={cn(
+                    'text-faint truncate',
+                    item.mono === true ? 'font-mono text-[11px]' : 'text-[12px]'
+                  )}
+                >
+                  {item.sub}
+                </span>
               )}
             </span>
             {item.meta !== undefined && (

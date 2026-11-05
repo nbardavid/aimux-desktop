@@ -5,6 +5,7 @@ import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
@@ -16,11 +17,26 @@ import {
   type SlashCommand,
   toolSummary,
 } from '../chat/model'
+import {
+  agentCommand,
+  agentLabel,
+  type ChatSettings,
+  cycleEffort,
+  type ModelInfo,
+} from '../model/agents'
+import { ModelSelect } from './agent-select'
 import { CommandHint, CommandMenu } from './command-menu'
 
 interface Props {
   cwd: string
   state: ChatState
+  /** This chat's model and effort, as its record keeps them. */
+  agent: ChatSettings
+  models: ModelInfo[]
+  /** A model or effort picked in the footer, by `/model`, `/effort` or ⇧⌘/. */
+  onAgent: (next: ChatSettings) => void
+  /** An old background host holds the chats: the transcript shows, nothing runs. */
+  blocked: boolean
   /** What the `/` menu offers: the app's commands and this chat's Claude's. */
   commands: SlashCommand[]
   onSend: (text: string) => void
@@ -183,6 +199,9 @@ function BlockView({ block, cwd, live }: { block: Block; cwd: string; live: bool
   )
 }
 
+/** A key cap on the ink button. */
+const KBD_INK = 'h-4 border-0 bg-white/16 px-1 text-inherit'
+
 function PermissionCard({
   cwd,
   onAnswer,
@@ -207,28 +226,38 @@ function PermissionCard({
       <code className="max-h-[120px] overflow-auto font-mono text-[12px] whitespace-pre-wrap wrap-anywhere text-muted-foreground">
         {toolSummary(permission.toolName, permission.input, cwd) || permission.description}
       </code>
+      {/* No button takes the focus: a key meant for the composer never answers. */}
       <div className="flex justify-end gap-1.5">
         <Button
           variant="secondary"
           size="sm"
-          className="px-3"
+          className="pr-1.5 pl-3"
+          aria-keyshortcuts="Meta+Backspace"
           onClick={() => onAnswer(permission, 'deny')}
         >
           Deny
+          <Kbd>⌘⌫</Kbd>
         </Button>
         {permission.suggestions.length > 0 && (
           <Button
             variant="secondary"
             size="sm"
-            className="px-3"
+            className="pr-1.5 pl-3"
+            aria-keyshortcuts="Shift+Meta+Enter"
             onClick={() => onAnswer(permission, 'always')}
           >
             Always allow
+            <Kbd>⇧⌘↩</Kbd>
           </Button>
         )}
-        {/* oxlint-disable-next-line jsx-a11y/no-autofocus -- the decision is the only thing to do */}
-        <Button size="sm" className="px-3" autoFocus onClick={() => onAnswer(permission, 'allow')}>
+        <Button
+          size="sm"
+          className="pr-1.5 pl-3"
+          aria-keyshortcuts="Meta+Enter"
+          onClick={() => onAnswer(permission, 'allow')}
+        >
           Allow
+          <Kbd className={KBD_INK}>⌘↩</Kbd>
         </Button>
       </div>
     </div>
@@ -253,6 +282,11 @@ function UserTurn({ blocks }: { blocks: Block[] }) {
 // The ink square that sends (or stops): no hover change, grey and opaque when disabled.
 const SEND = 'rounded-[8px] hover:bg-primary disabled:bg-line-strong disabled:opacity-100'
 
+function status(state: ChatState): string {
+  if (state.stopping) return 'Stopping…'
+  return state.status === 'starting' ? 'Starting Claude…' : 'Working…'
+}
+
 function stepOf(e: KeyboardEvent): number {
   if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) return 1
   if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) return -1
@@ -260,8 +294,12 @@ function stepOf(e: KeyboardEvent): number {
 }
 
 export function ChatView({
+  agent,
+  blocked,
   commands,
   cwd,
+  models,
+  onAgent,
   onAnswer,
   onCommand,
   onInterrupt,
@@ -274,6 +312,8 @@ export function ChatView({
   const [hot, setHot] = useState(0)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const menuId = useId()
+  const [agentOpen, setAgentOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   // Follow the conversation unless the user scrolled up to read.
@@ -289,6 +329,35 @@ export function ChatView({
   useEffect(() => {
     if (permission === undefined) field.current?.focus()
   }, [permission])
+
+  // Keys that work anywhere in the chat, not only in the composer: answering a permission
+  // (⌘↩ Allow, ⇧⌘↩ Always allow, ⌘⌫ Deny), ⇧⌘/ for the effort, and Esc to stop.
+  const keys = useRef({ agent, models, onAgent, onAnswer, onInterrupt, permission, working })
+  keys.current = { agent, models, onAgent, onAnswer, onInterrupt, permission, working }
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const k = keys.current
+      // Handled already (the `/` menu's Esc), or meant for a dialog or menu over the chat.
+      if (e.defaultPrevented || document.querySelector('[role=dialog], [role=menu]')) return
+      const p = k.permission
+      if (p && e.metaKey && e.key === 'Enter') {
+        if (!e.shiftKey) k.onAnswer(p, 'allow')
+        else if (p.suggestions.length > 0) k.onAnswer(p, 'always')
+      } else if (p && e.metaKey && e.key === 'Backspace') k.onAnswer(p, 'deny')
+      else if (e.metaKey && e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
+        k.onAgent(cycleEffort(k.agent, k.models))
+      } else if (
+        e.key === 'Escape' &&
+        k.working &&
+        (e.target === document.body || root.current?.contains(e.target as Node) === true)
+      ) {
+        k.onInterrupt()
+      } else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useLayoutEffect(() => {
     const el = field.current
@@ -320,7 +389,12 @@ export function ChatView({
     if (text === '' || state.status === 'exited') return
     pinned.current = true
     const command = parseCommand(text)
-    if (command && isAppCommand(command.name)) onCommand(command.name, command.args)
+    if (command?.name === 'model' || command?.name === 'effort') {
+      // A name it knows applies at once; anything else opens the picker.
+      const next = agentCommand(command.name, command.args, agent, models)
+      if (next) onAgent(next)
+      else setAgentOpen(true)
+    } else if (command && isAppCommand(command.name)) onCommand(command.name, command.args)
     else onSend(text)
     edit('')
   }
@@ -347,22 +421,26 @@ export function ChatView({
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // With a permission pending, ⌘↩ answers it (the window's listener), it never sends.
+    const answering = e.metaKey && permission !== undefined
+    if (answering) return
     if (menu.length > 0 && onMenuKey(e)) return
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
-    } else if (e.key === 'Escape' && working) {
-      e.preventDefault()
-      onInterrupt()
     }
   }
+
+  let placeholder = 'Ask Claude, or type / for a command'
+  if (blocked) placeholder = 'Read-only until the background process restarts'
+  else if (state.status === 'exited') placeholder = 'Claude has stopped'
 
   const last = state.turns.at(-1)
   const streamingText = last?.role === 'assistant' && last.blocks.at(-1)?.kind === 'text'
   const name = cwd.split('/').pop() ?? cwd
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" ref={root}>
       <div
         className="min-h-0 flex-1 overflow-auto"
         ref={scroller}
@@ -372,7 +450,7 @@ export function ChatView({
         }}
       >
         <div className="mx-auto flex max-w-[780px] flex-col gap-[18px] px-7 pt-7 pb-5 select-text">
-          {state.turns.length === 0 && (
+          {state.turns.length === 0 && !blocked && (
             <div className="flex flex-col items-center gap-1.5 pt-[120px] text-center text-sm text-faint">
               <MessageCircleIcon className="mb-1.5 size-[22px] p-0.5 text-label" />
               <span className="text-[16px] font-semibold text-balance text-foreground">
@@ -403,10 +481,10 @@ export function ChatView({
               </div>
             )
           )}
-          {working && !streamingText && permission === undefined && (
+          {((working && !streamingText && permission === undefined) || state.stopping) && (
             <div className="flex w-max animate-[shimmer_2.2s_linear_infinite] items-center gap-2 bg-[linear-gradient(90deg,var(--faint)_0%,var(--faint)_40%,var(--foreground)_50%,var(--faint)_60%,var(--faint)_100%)] bg-[length:300%_100%] bg-clip-text text-transparent">
               <span className={SPINNER} />
-              {state.status === 'starting' ? 'Starting Claude…' : 'Working…'}
+              {status(state)}
             </div>
           )}
           {state.lastTurn && !working && (
@@ -440,11 +518,7 @@ export function ChatView({
             className="min-h-12 rounded-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-[1.5] field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
             rows={1}
             value={draft}
-            placeholder={
-              state.status === 'exited'
-                ? 'Claude has stopped'
-                : 'Ask Claude, or type / for a command'
-            }
+            placeholder={placeholder}
             disabled={state.status === 'exited'}
             role="combobox"
             aria-expanded={menu.length > 0}
@@ -454,16 +528,30 @@ export function ChatView({
             onChange={(e) => edit(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          <div className="flex items-center gap-2 pt-1.5 pr-2 pb-2 pl-4 text-[12px]">
-            <span className="text-faint">{state.model ?? 'claude'}</span>
+          <div className="flex items-center gap-2 pt-1.5 pr-2 pb-2 pl-2 text-[12px]">
+            {state.status === 'exited' ? (
+              <span className="text-faint pl-2">{agentLabel(agent, models)}</span>
+            ) : (
+              <ModelSelect
+                value={agent}
+                models={models}
+                label={agentLabel(agent, models)}
+                className="text-muted-foreground h-7 gap-1 pr-1.5 pl-2 text-[12px]"
+                open={agentOpen}
+                onOpenChange={setAgentOpen}
+                finalFocus={field}
+                onChange={onAgent}
+              />
+            )}
             <span className="min-w-0 flex-1" />
             {working ? (
               <Button
                 size="icon"
                 className={SEND}
-                aria-label="Stop (Esc)"
-                data-tip="Stop · Esc"
+                aria-label={state.stopping ? 'Stopping' : 'Stop (Esc)'}
+                data-tip={state.stopping ? 'Stopping…' : 'Stop · Esc'}
                 data-tip-side="top"
+                disabled={state.stopping}
                 onClick={onInterrupt}
               >
                 <SquareIcon className="size-[10px] fill-current" />

@@ -67,3 +67,33 @@ test('only the app’s own names are app commands', () => {
   expect(isAppCommand('resume')).toBe(true)
   expect(isAppCommand('compact')).toBe(false)
 })
+
+test('short queries match names only; longer ones match description words at their start', () => {
+  const list = [c('dataviz', { description: 'Charts, a colour palette' }), c('compact')]
+  expect(rankCommands(list, 'co').map((x) => x.name)).toEqual(['compact'])
+  expect(rankCommands(list, 'col').map((x) => x.name)).toEqual(['dataviz'])
+  // Inside a word does not count.
+  expect(rankCommands([c('x', { description: 'recolour' })], 'col')).toEqual([])
+})
+
+test('among prefix matches: the app’s commands, then built-ins, then skills; short first', () => {
+  const list = [
+    c('code-review'),
+    c('commit-helper', { builtin: false }),
+    c('context'),
+    c('config'),
+    c('clear'),
+  ]
+  expect(rankCommands(list, 'c').map((x) => x.name)).toEqual([
+    'clear',
+    'config',
+    'context',
+    'code-review',
+    'commit-helper',
+  ])
+})
+
+test('a name match comes before an alias match', () => {
+  const list = [c('usage', { aliases: ['cost'] }), c('config')]
+  expect(rankCommands(list, 'co').map((x) => x.name)).toEqual(['config', 'usage'])
+})

@@ -52,7 +52,7 @@ export function originLabel(session: Session, workspaces: Place[], mainPath: str
   const w = workspaces.find((x) => within(session.cwd, x.path))
   if (w) return w.name
   if (within(session.cwd, mainPath)) return 'main'
-  return session.cwd.split('/').findLast(Boolean) ?? session.cwd
+  return `${session.cwd.split('/').findLast(Boolean) ?? session.cwd} (deleted)`
 }
 
 /** This workspace's sessions first, then the rest; each newest first. */

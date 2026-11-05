@@ -1,4 +1,4 @@
-import { type ReactNode, type RefObject, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from 'react'
 
 import {
   Combobox,
@@ -36,6 +36,9 @@ interface Props {
   popupClassName?: string
   /** Where focus goes once the list closes (the button by default). */
   finalFocus?: RefObject<HTMLElement | null>
+  /** Opened from elsewhere too (a typed `/model`): the open state, and its changes. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 const GAP = 6
@@ -49,13 +52,20 @@ export function Combo({
   className,
   finalFocus,
   footer,
+  onOpenChange: tellOpen,
   onPick,
+  open: openProp,
   options,
   placeholder,
   popupClassName,
   selected,
 }: Props) {
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const open = openProp ?? ownOpen
+  const setOpen = (next: boolean) => {
+    setOwnOpen(next)
+    tellOpen?.(next)
+  }
   const [query, setQuery] = useState('')
   const [room, setRoom] = useState({ height: 360, up: true })
   const trigger = useRef<HTMLButtonElement>(null)
@@ -68,20 +78,19 @@ export function Combo({
     return true
   })
 
-  const onOpenChange = (next: boolean) => {
+  // Measured as it opens, however it was opened: the list goes where the window has room.
+  useLayoutEffect(() => {
     const box = trigger.current?.getBoundingClientRect()
-    if (box && next) {
-      const above = box.top - GAP - MARGIN
-      const below = window.innerHeight - box.bottom - GAP - MARGIN
-      setRoom({ height: Math.min(420, Math.max(above, below)), up: above >= below })
-    }
-    setOpen(next)
-  }
+    if (!box || !open) return
+    const above = box.top - GAP - MARGIN
+    const below = window.innerHeight - box.bottom - GAP - MARGIN
+    setRoom({ height: Math.min(420, Math.max(above, below)), up: above >= below })
+  }, [open])
 
   return (
     <Combobox
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={setOpen}
       value={selected}
       onValueChange={(value) => {
         if (value === null) return

@@ -31,6 +31,7 @@ const LETTER: Record<string, string> = {
   D: 'text-critical',
   M: 'text-[#9a7614]',
   R: 'text-[#9a7614]',
+  U: 'text-good',
 }
 
 const act = 'grid size-[22px] place-items-center rounded-md hover:shadow-[0_0_0_1px_var(--border)]'
@@ -53,6 +54,8 @@ function Row({
   // Discarding asks twice, as the TUI does: the first click arms, the second throws away.
   const [armed, setArmed] = useState(false)
   const { dir, name } = split(file.path)
+  // Untracked is `U`, as git's short status and the editors say it, not `A`.
+  const letter = file.untracked ? 'U' : file.status
   return (
     <div
       className={cn(
@@ -64,21 +67,25 @@ function Row({
       <button
         type="button"
         className="flex h-full min-w-0 flex-1 items-center gap-2.5"
+        aria-current={selected || undefined}
         onClick={() => onOpen(file)}
       >
         <span
-          className={cn(
-            'w-2.5 flex-none font-mono text-[10.5px] font-semibold',
-            LETTER[file.status]
-          )}
+          className={cn('w-2.5 flex-none font-mono text-[10.5px] font-semibold', LETTER[letter])}
         >
-          {file.status}
+          {letter}
         </span>
         <span className="flex min-w-0 flex-1 items-baseline font-mono text-[12.5px]">
           {dir !== '' && <span className="text-faint min-w-0 truncate">{dir}/</span>}
           <span className="max-w-full flex-none truncate">{name}</span>
         </span>
-        <span className="flex gap-[5px] font-mono text-[10.5px] whitespace-nowrap">
+        {/* The row's actions take this slot on hover: the row never widens. */}
+        <span
+          className={cn(
+            'flex gap-[5px] font-mono text-[10.5px] whitespace-nowrap',
+            actions && 'group-focus-within/file:hidden group-hover/file:hidden'
+          )}
+        >
           {file.add === null ? (
             <span className="text-faint">binary</span>
           ) : (
@@ -176,26 +183,37 @@ function Section({
   )
 }
 
+/** The list's sections, in order: staged, then changes, then untracked. */
+function sections(changes: FileChange[]) {
+  return {
+    changes: changes.filter((f) => !f.untracked && f.unstaged),
+    staged: changes.filter((f) => f.staged),
+    untracked: changes.filter((f) => f.untracked),
+  }
+}
+
+/** Each file once, in the order the list shows them: what ↑ and ↓ walk through. */
+export function listOrder(changes: FileChange[]): FileChange[] {
+  const { changes: changed, staged, untracked } = sections(changes)
+  const seen = new Set<string>()
+  return [...staged, ...changed, ...untracked].filter((f) => {
+    if (seen.has(f.path)) return false
+    seen.add(f.path)
+    return true
+  })
+}
+
 /** Staged, then changes, then untracked files, as the TUI's git mode lists them. */
 export function FileList(props: Props) {
   if (props.changes.length === 0)
     return <div className="text-faint px-3 py-8 text-center">Working tree clean</div>
   const { changes, ...rest } = props
+  const listed = sections(changes)
   return (
     <>
-      <Section {...rest} side="staged" label="Staged" files={changes.filter((f) => f.staged)} />
-      <Section
-        {...rest}
-        side="changes"
-        label="Changes"
-        files={changes.filter((f) => !f.untracked && f.unstaged)}
-      />
-      <Section
-        {...rest}
-        side="untracked"
-        label="Untracked"
-        files={changes.filter((f) => f.untracked)}
-      />
+      <Section {...rest} side="staged" label="Staged" files={listed.staged} />
+      <Section {...rest} side="changes" label="Changes" files={listed.changes} />
+      <Section {...rest} side="untracked" label="Untracked" files={listed.untracked} />
     </>
   )
 }

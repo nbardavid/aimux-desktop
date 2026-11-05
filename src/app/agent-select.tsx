@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
@@ -82,17 +82,30 @@ function Intelligence({ models, onChange, value }: Props) {
   )
 }
 
+interface SelectProps extends Props {
+  /** The button's words, when not "Opus 5.5 · High". */
+  label?: string
+  className?: string
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  finalFocus?: RefObject<HTMLElement | null>
+}
+
 /** "Opus 5.5 · High ▾": Claude Code's models to search, the intelligence slider under them. */
-export function ModelSelect(props: Props) {
+export function ModelSelect(props: SelectProps) {
   const { models, onChange, value } = props
   return (
     <Combo
-      button={describe(value, models)}
+      button={props.label ?? describe(value, models)}
+      className={props.className}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      finalFocus={props.finalFocus}
       options={models.map((m) => ({ hint: m.description, label: m.name, value: m.value }))}
       selected={value.model}
       placeholder="Search models"
       onPick={(model) => onChange(normalize({ ...value, model }, models))}
-      footer={<Intelligence {...props} />}
+      footer={<Intelligence models={models} value={value} onChange={onChange} />}
     />
   )
 }

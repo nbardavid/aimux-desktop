@@ -18,17 +18,19 @@ export function HostBar({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const clauses = [
-    lose.chats > 0 && `${count(lose.chats, 'chat')} working`,
+    lose.chats > 0 && `${count(lose.chats, 'working chat')} will pause and resume`,
     lose.terms > 0 && `${count(lose.terms, 'terminal')} will close`,
   ].filter(Boolean)
+  const said =
+    clauses.length === 0
+      ? 'Restart the background process to keep working.'
+      : `Restart the background process to keep working. ${clauses.join('; ')}.`
   return (
     <div
       className="border-border flex flex-none items-center gap-3 border-b bg-[color-mix(in_srgb,var(--warn)_12%,var(--background))] py-1.5 pr-2 pl-4 text-[12.5px] text-[#7a5a08]"
       role="alert"
     >
-      <span className="min-w-0 flex-1">
-        {error ?? `The background process needs a restart: ${clauses.join(', ')}.`}
-      </span>
+      <span className="min-w-0 flex-1">{error ?? said}</span>
       <Button
         className="h-[26px] px-2.5 text-[12.5px]"
         disabled={busy}

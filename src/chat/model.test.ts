@@ -341,3 +341,13 @@ describe('commands', () => {
     ])
   })
 })
+
+test('a stop in progress ends with the turn’s result, or with the process', () => {
+  const stopping = { ...initialChat, status: 'working' as const, stopping: true }
+  expect(feed([{ subtype: 'error_during_execution', type: 'result' }], stopping).stopping).toBe(
+    false
+  )
+  expect(feed([{ type: 'aimux_exit' }], stopping).stopping).toBe(false)
+  expect(feed([{ subtype: 'error_during_execution', type: 'result' }], stopping).errors).toEqual([])
+  expect(feed([ev({ message: { id: 'm1' }, type: 'message_start' })], stopping).stopping).toBe(true)
+})

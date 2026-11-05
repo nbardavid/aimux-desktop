@@ -43,8 +43,10 @@ test('origin: workspace, main, or a deleted worktree’s folder', () => {
   const list = [amber, coral]
   expect(originLabel(session({ cwd: amber.path }), list, '/p/app')).toBe('amber')
   expect(originLabel(session({ cwd: '/p/app/src' }), list, '/p/app')).toBe('main')
-  expect(originLabel(session({ cwd: '/data/worktrees/p/teal' }), list, '/p/app')).toBe('teal')
-  expect(originLabel(session({ cwd: '/p/app-old' }), list, '/p/app')).toBe('app-old')
+  expect(originLabel(session({ cwd: '/data/worktrees/p/teal' }), list, '/p/app')).toBe(
+    'teal (deleted)'
+  )
+  expect(originLabel(session({ cwd: '/p/app-old' }), list, '/p/app')).toBe('app-old (deleted)')
 })
 
 test('the current workspace’s sessions come first, each group newest first', () => {

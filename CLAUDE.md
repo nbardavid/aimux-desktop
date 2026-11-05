@@ -24,7 +24,8 @@ branding.
   do keeps working. No Codex, no other assistants, no Claude Code TUI inside a terminal tab.
 - **Everything is a worktree.** The main checkout is the project, never a workspace. No "root".
 - **Workspace names are colours** from a fixed pool (`aimux/amber`), never derived from the
-  prompt. The composer does not show the branch name.
+  prompt. The user can rename a workspace in place (the name only; the branch stays). The
+  composer does not show the branch name.
 - **One composer for new work** (⌘N): project, prompt, base branch, model. The base branch
   is preselected (the repo's default), with recent picks and search. Enter creates.
 - **Models come from Claude Code itself** (its `initialize` answer), never a hardcoded list.
@@ -44,7 +45,8 @@ branding.
   bills.
 - **It feels native**:
   - keyboard first: ⌘N, ⌘T chat, ⇧⌘T terminal, ⌘W (twice if the agent is working), ⌘P,
-    ⌘1–9, ⌘B, ⌥⌘B, ⌘G;
+    ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
+    ⌘B, ⌥⌘B, ⌘G, ⌘, settings;
   - no browser context menu;
   - a macOS menu that leaves ⌘W to the app.
 - **Updates**: the installed app checks GitHub releases at launch and every six hours; a
@@ -57,6 +59,9 @@ branding.
   it started (its `desktop/` history is kept).
 - **The look**: light, flat, white surfaces, system font, warm neutrals. Never a hatched or
   decorative background. Dark mode is not done yet.
+- **Craft is the product.** Everything clean, square and aligned; every state change smooth,
+  with short transitions. `DESIGN.md` holds the bar, the motion table and the states every
+  surface needs; read it before any UI work and follow it.
 
 ## Hard rules
 

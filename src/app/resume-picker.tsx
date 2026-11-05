@@ -12,6 +12,10 @@ interface Props {
   workspaces: { id: string; name: string; path: string }[]
   /** The workspace on screen: its sessions come first. */
   currentPath: string
+  /** The session of the chat `/resume` was typed in. */
+  currentSession: string | null
+  /** Sessions open in a tab: picking one goes to it. */
+  openSessions: string[]
   initialQuery: string
   onPick: (session: Session) => void
   onClose: () => void
@@ -25,11 +29,6 @@ function age(ms: number): string {
   return `${Math.round(m / (60 * 24))}d ago`
 }
 
-const size = (bytes: number) =>
-  bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-
 /** `/resume`: the project's earlier Claude sessions, wherever in it they ran. */
 export function ResumePicker(props: Props) {
   const { currentPath, mainPath, projectId, workspaces } = props
@@ -42,10 +41,15 @@ export function ResumePicker(props: Props) {
       .catch((error_: unknown) => setError(String(error_)))
   }, [currentPath, projectId])
 
+  // An open session says so in place of its age: it is live, and picking it goes to its tab.
+  const when = (s: Session) => {
+    if (s.id === props.currentSession) return 'this chat'
+    return props.openSessions.includes(s.id) ? 'open in tab' : age(s.updatedAt)
+  }
   const items: PickerItem[] = (sessions ?? []).map((s) => ({
     key: s.id,
     label: s.title || s.firstPrompt,
-    meta: `${originLabel(s, workspaces, mainPath)} · ${age(s.updatedAt)} · ${size(s.sizeBytes)}`,
+    meta: `${originLabel(s, workspaces, mainPath)} · ${when(s)}`,
     sub: s.title === '' ? undefined : s.firstPrompt,
   }))
   let empty = 'No earlier sessions in this project.'

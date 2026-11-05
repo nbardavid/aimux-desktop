@@ -38,7 +38,16 @@ interface Hooks {
 
 const TITLE_LENGTH = 40
 
-const titleOf = (text: string) => text.replaceAll(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH)
+const oneLine = (text: string) => text.replaceAll(/\s+/g, ' ').trim()
+
+/** A first prompt as a tab title: cut at a word before 40 characters, with an ellipsis. */
+export function titleOf(text: string): string {
+  const flat = oneLine(text)
+  if (flat.length <= TITLE_LENGTH) return flat
+  const cut = flat.slice(0, TITLE_LENGTH - 1)
+  const word = cut.lastIndexOf(' ')
+  return `${(word > TITLE_LENGTH / 2 ? cut.slice(0, word) : cut).replace(/[\s,.;:–—-]+$/, '')}…`
+}
 
 /** The host's mark between a chat's replay and what happens from now on. */
 function isLive(line: string): boolean {
@@ -147,14 +156,10 @@ export function useChats(hooks: Hooks) {
       procs.current.set(id, proc)
       proc.catch((error: unknown) => {
         if (procs.current.get(id) !== proc) return
-        edit(id, (c) => ({
-          ...c,
-          state: {
-            ...c.state,
-            errors: [error instanceof Error ? error.message : String(error)],
-            status: 'exited',
-          },
-        }))
+        const message = error instanceof Error ? error.message : String(error)
+        // Held by an old host: the transcript stays, read-only; the bar above says why.
+        const errors = message === HOST_BLOCKED ? [] : [message]
+        edit(id, (c) => ({ ...c, state: { ...c.state, errors, status: 'exited' } }))
       })
       return proc
     },
@@ -229,7 +234,8 @@ export function useChats(hooks: Hooks) {
           id: crypto.randomUUID(),
           model: '',
           sessionId,
-          title: titleOf(title) || 'New chat',
+          // Whole: the tab truncates it, and shows it in full on hover.
+          title: oneLine(title) || 'New chat',
           workspaceId,
         },
         cwd
@@ -259,9 +265,15 @@ export function useChats(hooks: Hooks) {
     [edit, write]
   )
 
+  /** Esc: says "Stopping…" at once; the turn's result ends it. */
   const interrupt = useCallback(
-    (id: string) => void write(id, interruptLine(`stop-${crypto.randomUUID()}`)),
-    [write]
+    (id: string) => {
+      edit(id, (c) =>
+        c.state.status === 'working' ? { ...c, state: { ...c.state, stopping: true } } : c
+      )
+      void write(id, interruptLine(`stop-${crypto.randomUUID()}`))
+    },
+    [edit, write]
   )
 
   const rename = useCallback(
@@ -281,7 +293,8 @@ export function useChats(hooks: Hooks) {
   const setEffort = useCallback(
     (id: string, effort: string) => {
       edit(id, (c) => ({ ...c, record: { ...c.record, effort } }))
-      send(id, `/effort ${effort}`)
+      // An empty effort is Claude Code's own choice: `auto`.
+      send(id, `/effort ${effort || 'auto'}`)
     },
     [edit, send]
   )

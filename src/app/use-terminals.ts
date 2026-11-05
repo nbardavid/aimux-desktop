@@ -15,6 +15,8 @@ export interface TerminalTab {
   createdAt: number
   /** Set once the shell or the command ended: its exit code, null when it was killed. */
   exited?: number | null
+  /** `setup` for a setup script's run. */
+  tag?: string
 }
 
 /** What lives outside React: the emulator, its element, and the shell behind it. */
@@ -70,6 +72,9 @@ interface Opening {
   command: string | undefined
   start: { cwd: string; tag: string | undefined } | null
   onExit: ((code: number | null) => void) | undefined
+  tag: string | undefined
+  /** A reattached command that had already ended. */
+  exited?: number | null
 }
 
 /**
@@ -94,7 +99,7 @@ export function useTerminals() {
   }, [])
 
   const open = useCallback(
-    ({ command, id, onExit, start, title, workspaceId }: Opening) => {
+    ({ command, exited, id, onExit, start, tag, title, workspaceId }: Opening) => {
       const term = new Terminal({
         allowProposedApi: true,
         cursorBlink: true,
@@ -145,7 +150,9 @@ export function useTerminals() {
       term.onTitleChange((next) => next.trim() !== '' && edit(id, { title: next.trim() }))
 
       live.current.set(id, { fit, host, opened: false, ready, term })
-      setTabs((list) => [...list, { createdAt: Date.now(), id, title, workspaceId }])
+      const tab: TerminalTab = { createdAt: Date.now(), id, tag, title, workspaceId }
+      if (exited !== undefined) tab.exited = exited
+      setTabs((list) => [...list, tab])
       return id
     },
     [close, edit]
@@ -158,6 +165,7 @@ export function useTerminals() {
         id: crypto.randomUUID(),
         onExit,
         start: { cwd, tag },
+        tag,
         title: title ?? 'Terminal',
         workspaceId,
       }),
@@ -169,9 +177,11 @@ export function useTerminals() {
     (t: HostTerm, onExit?: (code: number | null) => void) =>
       open({
         command: t.command ?? undefined,
+        exited: t.ended ? t.code : undefined,
         id: t.id,
         onExit,
         start: null,
+        tag: t.tag ?? undefined,
         title: t.title,
         workspaceId: t.workspaceId,
       }),

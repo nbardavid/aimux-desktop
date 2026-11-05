@@ -46,6 +46,8 @@ export interface ChatState {
   sessionId: string | null
   model: string | null
   status: 'starting' | 'idle' | 'working' | 'exited'
+  /** Esc was pressed: the turn is being stopped, until its result arrives. */
+  stopping: boolean
   turns: Turn[]
   pending: Permission[]
   lastTurn: { costUsd: number; durationMs: number } | null
@@ -62,6 +64,7 @@ export const initialChat: ChatState = {
   pending: [],
   sessionId: null,
   status: 'starting',
+  stopping: false,
   turns: [],
 }
 
@@ -284,15 +287,16 @@ export function reduceLine(state: ChatState, line: string): ChatState {
         costUsd: typeof m.total_cost_usd === 'number' ? m.total_cost_usd : 0,
         durationMs: typeof m.duration_ms === 'number' ? m.duration_ms : 0,
       }
-      const failed = m.subtype !== 'success' || m.is_error === true
+      // A turn the user stopped ends as `error_during_execution`: asked for, not a failure.
+      const failed = !state.stopping && (m.subtype !== 'success' || m.is_error === true)
       const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : state.errors
-      return { ...state, errors, lastTurn, pending: [], status: 'idle' }
+      return { ...state, errors, lastTurn, pending: [], status: 'idle', stopping: false }
     }
     case 'aimux_stderr': {
       return { ...state, errors: [...state.errors, str(m.text)].slice(-20) }
     }
     case 'aimux_exit': {
-      return { ...state, pending: [], status: 'exited' }
+      return { ...state, pending: [], status: 'exited', stopping: false }
     }
     case 'aimux_sent': {
       // What a window wrote to Claude, replayed to the next window: its prompts and answers.

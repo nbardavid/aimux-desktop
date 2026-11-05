@@ -19,6 +19,7 @@ import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
 import { HostBar } from './app/host-bar'
 import { Inbox } from './app/inbox'
+import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
 import { NewWorkspace } from './app/new-workspace'
 import { Picker, type PickerItem } from './app/picker'
 import { Quotas } from './app/quotas'
@@ -43,7 +44,7 @@ import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
 import { useTerminals } from './app/use-terminals'
 import { availableCommands } from './chat/commands'
-import { chatFlags, type ChatSettings, DEFAULT_CHAT, effortLabel, normalize } from './model/agents'
+import { chatFlags, type ChatSettings, DEFAULT_CHAT, normalize } from './model/agents'
 import { byProject, strongest, type Workspace } from './model/catalog'
 import { inboxOf } from './model/inbox'
 import { nameCandidates } from './model/names'
@@ -85,8 +86,6 @@ function readChatSettings(): ChatSettings {
 
 const copy = (text: string) => void navigator.clipboard.writeText(text)
 
-const plural = (n: number) => `${n} ${n === 1 ? 'workspace' : 'workspaces'}`
-
 const SETUP_PROMPT = (script: string) =>
   `Write the setup script at ${script}. It runs in every new git worktree of this project, ` +
   'from the worktree root, to install what a fresh checkout lacks: dependencies, .env files ' +
@@ -94,18 +93,16 @@ const SETUP_PROMPT = (script: string) =>
   '`set -euo pipefail`. Make it idempotent and non-interactive, use no secrets, exit ' +
   'non-zero on failure. Do not run it.'
 
-/** An app command's picker: `/resume` as a palette, `/model` and `/effort` over the composer. */
+/** `/resume`'s palette, for the chat it was typed in. (`/model` and `/effort` open the
+ * chat's own model picker.) */
 interface CommandPick {
-  name: 'resume' | 'model' | 'effort'
+  name: 'resume'
   chatId: string
   args: string
 }
 
-/** Just above the chat's composer, for the pickers its commands open. */
-function overComposer() {
-  const box = document.querySelector('[data-composer]')?.getBoundingClientRect()
-  return box ? { bottom: window.innerHeight - box.top + 6, left: box.left } : undefined
-}
+/** Something sits over the page (a palette, a menu, a popover): Esc is its. */
+const overlayShown = () => document.querySelector('[role=dialog], [role=menu]') !== null
 
 /** A chat asking for you while you look elsewhere. */
 interface Attention {
@@ -158,6 +155,8 @@ export function App() {
     close: () => {},
     compose: () => {},
     newTab: (_kind: 'chat' | 'terminal') => {},
+    stepTab: (_step: 1 | -1) => {},
+    stepWorkspace: (_step: 1 | -1) => {},
   })
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
@@ -248,6 +247,8 @@ export function App() {
     })),
   ].toSorted((a, b) => a.at - b.at)
   const active = tabItems.find((t) => t.id === activeByWs[ws?.id ?? '']) ?? tabItems[0]
+  /** The workspace's last setup run still in a tab. */
+  const setupTab = wsTerms.findLast((t) => t.tag === 'setup')
   const chat = active?.chat === true ? wsChats.find((c) => c.record.id === active.id) : undefined
   const term = active?.chat === false ? wsTerms.find((t) => t.id === active.id) : undefined
 
@@ -285,16 +286,26 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey) return
       const index = Number(e.key)
+      if (e.key === 'Escape') {
+        // Settings and the diff are pages: Esc leaves them, unless something sits over them.
+        const over = overlay !== null || composeIn !== null || ctxMenu !== null || inboxAt !== null
+        if (mode === 'normal' || e.defaultPrevented || over || overlayShown()) return
+        setMode('normal')
+      } else if (e.ctrlKey && e.key === 'Tab') keys.current.stepTab(e.shiftKey ? -1 : 1)
+      else if (!e.metaKey) return
+      else if (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        keys.current.stepWorkspace(e.key === 'ArrowDown' ? 1 : -1)
+      }
       // e.code: with Option held, e.key is the composed character.
-      if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
+      else if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
       else if (e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
       else if (e.key === 'p') setOverlay('projects')
       else if (e.key.toLowerCase() === 't') keys.current.newTab(e.shiftKey ? 'terminal' : 'chat')
       else if (e.key === 'w') keys.current.close()
       else if (e.key === 'n') keys.current.compose()
       else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
+      else if (e.key === ',') setMode((m) => (m === 'settings' ? 'normal' : 'settings'))
       else if (index >= 1 && tabItems[index - 1] !== undefined && ws !== undefined) {
         selectTab(ws.id, tabItems[index - 1]?.id ?? '')
       } else return
@@ -469,6 +480,13 @@ export function App() {
       return
     }
     setArmed(null)
+    // The neighbour takes over, as in a browser: the tab to the right, else to the left.
+    const next = afterClose(
+      tabItems.map((t) => t.id),
+      id,
+      active?.id
+    )
+    if (ws !== undefined && next !== undefined && next !== active?.id) selectTab(ws.id, next)
     if (chatTab) {
       chats.close(id)
       store.forgetChat(id)
@@ -481,6 +499,27 @@ export function App() {
     },
     compose: () => projectId !== null && setComposeIn(projectId),
     newTab: (kind: 'chat' | 'terminal') => createTab(kind),
+    stepTab: (step) => {
+      const next = stepThrough(
+        tabItems.map((t) => t.id),
+        active?.id,
+        step
+      )
+      if (ws !== undefined && next !== undefined && mode === 'normal') selectTab(ws.id, next)
+    },
+    stepWorkspace: (step) => {
+      const order = projects.flatMap((p) => workspaces[p.id] ?? [])
+      const next = stepThrough(
+        order.map((w) => w.id),
+        ws?.id,
+        step
+      )
+      const target = order.find((w) => w.id === next)
+      if (target) {
+        setMode('normal')
+        store.select(target.projectId, target.id)
+      }
+    },
   }
 
   // After a merge, the worktree that carried the branch is dead weight.
@@ -507,12 +546,20 @@ export function App() {
     )
   }
 
-  const modelOf = (c: ChatTab) => models.find((m) => m.value === (c.record.model || 'default'))
+  /** A chat's model and effort, as its record keeps them ('' is Claude Code's default). */
+  const agentOf = (c: ChatTab) =>
+    normalize({ effort: c.record.effort, model: c.record.model || 'default' }, models)
+
+  /** Picked in the chat's footer, by `/model`, `/effort` or ⇧⌘/: told to Claude at once. */
+  const setAgent = (c: ChatTab, next: ChatSettings) => {
+    const now = agentOf(c)
+    if (next.model !== now.model) chats.setModel(c.record.id, next.model)
+    if (next.effort !== now.effort) chats.setEffort(c.record.id, next.effort)
+  }
 
   /** The app's own `/` commands; Claude's others are sent as typed. */
   const runCommand = (c: ChatTab, name: string, args: string) => {
     const id = c.record.id
-    const said = args.toLowerCase()
     if (name === 'clear') chats.clear(id)
     else if (name === 'rename' && args !== '') {
       chats.rename(id, args)
@@ -520,15 +567,6 @@ export function App() {
     } else if (name === 'rename') {
       renameTells.current = id
       setRenaming(id)
-    } else if (name === 'model') {
-      const m = models.find((x) => x.value.toLowerCase() === said || x.name.toLowerCase() === said)
-      if (m) chats.setModel(id, m.value)
-      else setCommandPick({ args, chatId: id, name })
-    } else if (name === 'effort') {
-      const efforts = modelOf(c)?.efforts ?? []
-      const level = efforts.find((e) => e === said || effortLabel(e).toLowerCase() === said)
-      if (level !== undefined) chats.setEffort(id, level)
-      else setCommandPick({ args, chatId: id, name })
     } else if (name === 'resume') setCommandPick({ args, chatId: id, name })
   }
 
@@ -555,19 +593,6 @@ export function App() {
   }
 
   const pickFor = commandPick && chats.chats.find((c) => c.record.id === commandPick.chatId)
-  const commandItems = (): PickerItem[] => {
-    if (!pickFor) return []
-    const current = (on: boolean) => (on ? 'current' : undefined)
-    if (commandPick?.name === 'model') {
-      const model = modelOf(pickFor)?.value
-      return models.map((m) => ({ key: m.value, label: m.name, meta: current(m.value === model) }))
-    }
-    return (modelOf(pickFor)?.efforts ?? []).map((e) => ({
-      key: e,
-      label: effortLabel(e),
-      meta: current(e === pickFor.record.effort),
-    }))
-  }
 
   const tabMenu = (item: TabItem, x: number, y: number) =>
     setCtxMenu({
@@ -586,12 +611,36 @@ export function App() {
     selectTab(wid, tabId)
   }
 
-  const projectItems: PickerItem[] = projects.map((p) => ({
-    key: p.id,
-    label: p.name,
-    meta: plural(workspaces[p.id]?.length ?? 0),
-    sub: p.path,
-  }))
+  const searchItems = () =>
+    paletteItems(
+      projects,
+      workspaces,
+      chats.chats.map((c) => ({
+        id: c.record.id,
+        title: c.record.title,
+        workspaceId: c.record.workspaceId,
+      })),
+      signals,
+      ws?.id ?? null
+    )
+
+  /** ⌘P's pick: a workspace, a chat in its tab, or a project. */
+  const goToItem = (key: string) => {
+    setOverlay(null)
+    const { id, kind } = paletteTarget(key)
+    if (kind === 'chat') {
+      const c = chats.chats.find((x) => x.record.id === id)
+      const pid = c && placeOf(c.record.workspaceId).project?.id
+      if (c && pid !== undefined) goTo(pid, c.record.workspaceId, id)
+      return
+    }
+    setMode('normal')
+    if (kind === 'project') store.select(id, null)
+    else {
+      const w = catalog.workspaces.find((x) => x.id === id)
+      if (w) store.select(w.projectId, w.id)
+    }
+  }
 
   const setupAction = async (what: 'edit' | 'run' | 'chat') => {
     if (ws === undefined) return
@@ -721,6 +770,10 @@ export function App() {
                     <ChatView
                       cwd={chat.cwd}
                       state={chat.state}
+                      agent={agentOf(chat)}
+                      models={models}
+                      onAgent={(next) => setAgent(chat, next)}
+                      blocked={host.state.kind === 'blocked'}
                       commands={availableCommands(chat.state.commands, appWideCommands)}
                       onSend={(text) => chats.send(chat.record.id, text)}
                       onCommand={(name, args) => runCommand(chat, name, args)}
@@ -783,6 +836,8 @@ export function App() {
                         <SetupSection
                           status={setup.status}
                           workspace={ws}
+                          run={setupTab ? { running: setupTab.exited === undefined } : null}
+                          onShowRun={() => setupTab && selectTab(ws.id, setupTab.id)}
                           onEdit={() => void setupAction('edit')}
                           onRun={() => void setupAction('run')}
                           onAgent={() => void setupAction('chat')}
@@ -799,7 +854,6 @@ export function App() {
                 changes={changes ?? []}
                 file={changes?.find((f) => f.path === gitFile?.path)}
                 onSelect={setGitFile}
-                onExit={() => setMode('normal')}
               />
             )}
             {mode === 'git' && ws === undefined && (
@@ -871,15 +925,11 @@ export function App() {
       {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
       {overlay === 'projects' && (
         <Picker
-          title="Projects"
-          items={projectItems}
+          title="Go to a workspace, chat or project"
+          items={searchItems()}
           filterable
           onClose={() => setOverlay(null)}
-          onPick={(pid) => {
-            setOverlay(null)
-            setMode('normal')
-            store.select(pid, null)
-          }}
+          onPick={goToItem}
         />
       )}
       {commandPick?.name === 'resume' && project && ws && (
@@ -888,24 +938,11 @@ export function App() {
           mainPath={project.path}
           workspaces={workspaces[project.id] ?? []}
           currentPath={ws.path}
+          currentSession={pickFor?.record.sessionId ?? null}
+          openSessions={chats.chats.flatMap((c) => c.record.sessionId ?? [])}
           initialQuery={commandPick.args}
           onPick={resume}
           onClose={() => setCommandPick(null)}
-        />
-      )}
-      {commandPick !== null && commandPick.name !== 'resume' && pickFor && (
-        <Picker
-          title={commandPick.name === 'model' ? 'Model' : 'Intelligence'}
-          items={commandItems()}
-          filterable={false}
-          anchor={overComposer()}
-          empty="This model has no effort levels."
-          onClose={() => setCommandPick(null)}
-          onPick={(key) => {
-            setCommandPick(null)
-            if (commandPick.name === 'model') chats.setModel(pickFor.record.id, key)
-            else chats.setEffort(pickFor.record.id, key)
-          }}
         />
       )}
       {overlay === 'new-tab' && (
