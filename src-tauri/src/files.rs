@@ -278,14 +278,23 @@ mod tests {
         let home = std::env::temp_dir().join(format!("aimux-files-{}", std::process::id()));
         let dir = home.join(".config/aimux/files-test");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("aimux.json"), r#"{"themeId":"x","settings":{"a":1,"b":true}}"#).unwrap();
+        std::fs::write(
+            dir.join("aimux.json"),
+            r#"{"themeId":"x","settings":{"a":1,"b":true}}"#,
+        )
+        .unwrap();
         // ponytail: env vars are process-wide; this is the only test that sets them.
         std::env::set_var("HOME", &home);
         std::env::set_var("AIMUX_PROFILE", "files-test");
         write_setting("b".into(), Value::Bool(false)).unwrap();
         write_setting("a".into(), Value::Null).unwrap();
-        let written: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("aimux.json")).unwrap()).unwrap();
-        assert_eq!(written, serde_json::json!({ "themeId": "x", "settings": { "b": false } }));
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("aimux.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            written,
+            serde_json::json!({ "themeId": "x", "settings": { "b": false } })
+        );
         assert!(write_setting("c".into(), serde_json::json!([1])).is_err());
         std::fs::remove_dir_all(&home).unwrap();
     }

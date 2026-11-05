@@ -20,6 +20,27 @@ const PATHS = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  inbox: (
+    <>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </>
+  ),
+  merge: (
+    <>
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M6 21V9a9 9 0 0 0 9 9" />
+    </>
+  ),
+  minus: <path d="M5 12h14" />,
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1.2" />
+      <circle cx="12" cy="12" r="1.2" />
+      <circle cx="19" cy="12" r="1.2" />
+    </>
+  ),
   panelLeft: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
@@ -39,7 +60,14 @@ const PATHS = {
       <path d="m20 20-3.5-3.5" />
     </>
   ),
+  sparkle: <path d="M12 3l1.9 5.8L20 10.7l-6.1 1.9L12 18.5l-1.9-5.9L4 10.7l6.1-1.9z" />,
   stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
+  undo: (
+    <>
+      <path d="M3 7v6h6" />
+      <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+    </>
+  ),
 }
 
 export function Icon({ name, small = false }: { name: keyof typeof PATHS; small?: boolean }) {

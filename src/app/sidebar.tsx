@@ -1,6 +1,6 @@
 import type { TabSessionSummary } from '@aimux/ipc'
 
-import { type ReactNode, useState } from 'react'
+import { type MouseEvent, type ReactNode, useState } from 'react'
 
 import { type ProjectEntry, signalOf, tabsOf, type WorkspaceEntry } from '../model/catalog'
 import { Icon } from './icons'
@@ -10,6 +10,11 @@ export interface DiffStat {
   add: number
   del: number
 }
+
+/** What a right-click (or a row's ··· button) asks a menu for. */
+export type RowMenu =
+  | { kind: 'project'; project: ProjectEntry; x: number; y: number }
+  | { kind: 'workspace'; project: ProjectEntry; workspace: WorkspaceEntry; x: number; y: number }
 
 interface Props {
   projects: ProjectEntry[]
@@ -24,6 +29,10 @@ interface Props {
   onProjects: () => void
   onNewProject: () => void
   onNewWorkspace: (projectId: string) => void
+  onMenu: (menu: RowMenu) => void
+  /** How many agents wait for an answer, and how many finished, in every project. */
+  inbox: { waiting: number; done: number }
+  onInbox: (at: { x: number; y: number }) => void
   onStats: () => void
   onSettings: () => void
   onHide: () => void
@@ -50,8 +59,15 @@ export function ProjectAvatar({ name }: { name: string }) {
   )
 }
 
+/** Where a menu opens: at the pointer for a right-click, under the button for a click. */
+function at(e: MouseEvent) {
+  if (e.type === 'contextmenu') return { x: e.clientX, y: e.clientY }
+  const box = e.currentTarget.getBoundingClientRect()
+  return { x: box.left, y: box.bottom + 4 }
+}
+
 export function Sidebar(props: Props) {
-  const { diffs, done, onSelect, projectId, projects, tabsByProject, workspaceId } = props
+  const { diffs, done, onMenu, onSelect, projectId, projects, tabsByProject, workspaceId } = props
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const toggle = (id: string) =>
     setCollapsed((state) => {
@@ -77,6 +93,35 @@ export function Sidebar(props: Props) {
       <div className="side-nav">
         <button
           type="button"
+          className="nav"
+          onClick={() => projectId !== null && props.onNewWorkspace(projectId)}
+        >
+          <Icon name="plus" />
+          <span className="grow">New workspace</span>
+          <span className="kbd">⌘N</span>
+        </button>
+        <button
+          type="button"
+          className="nav"
+          onClick={(e) => {
+            const box = e.currentTarget.getBoundingClientRect()
+            props.onInbox({ x: box.right + 8, y: box.top })
+          }}
+        >
+          <Icon name="inbox" />
+          <span className="grow">Inbox</span>
+          {props.inbox.waiting > 0 && (
+            <span className="badge is-waiting">{props.inbox.waiting}</span>
+          )}
+          {props.inbox.done > 0 && <span className="badge">{props.inbox.done}</span>}
+        </button>
+        <button type="button" className="nav" onClick={props.onProjects}>
+          <Icon name="search" />
+          <span className="grow">Search</span>
+          <span className="kbd">⌘P</span>
+        </button>
+        <button
+          type="button"
           className={props.page === 'stats' ? 'nav is-on' : 'nav'}
           aria-pressed={props.page === 'stats'}
           onClick={props.onStats}
@@ -84,17 +129,19 @@ export function Sidebar(props: Props) {
           <Icon name="chart" />
           Stats
         </button>
-        <button type="button" className="nav" onClick={props.onNewProject}>
-          <Icon name="plus" />
-          New project
-        </button>
-        <button type="button" className="nav" onClick={props.onProjects}>
-          <Icon name="search" />
-          <span className="grow">Search</span>
-          <span className="kbd">⌘P</span>
+      </div>
+      <div className="side-label">
+        <span className="grow">Projects</span>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Open a folder as a project"
+          data-tip="Open a folder"
+          onClick={props.onNewProject}
+        >
+          <Icon name="plus" small />
         </button>
       </div>
-      <div className="side-label">Projects</div>
       <div className="tree">
         {projects.map((project) => {
           const open = !collapsed.has(project.id)
@@ -102,7 +149,13 @@ export function Sidebar(props: Props) {
           const tabs = tabsByProject[project.id] ?? []
           return (
             <div className="project" key={project.id}>
-              <div className="project-row">
+              <div
+                className="project-row"
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  onMenu({ kind: 'project', project, ...at(e) })
+                }}
+              >
                 <button
                   type="button"
                   className="project-name"
@@ -114,6 +167,14 @@ export function Sidebar(props: Props) {
                   <span className={open ? 'chev is-open' : 'chev'}>
                     <Icon name="chevron" small />
                   </span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn row-more"
+                  aria-label={`More for ${project.name}`}
+                  onClick={(e) => onMenu({ kind: 'project', project, ...at(e) })}
+                >
+                  <Icon name="more" />
                 </button>
                 <button
                   type="button"
@@ -129,24 +190,41 @@ export function Sidebar(props: Props) {
                   const active = project.id === projectId && ws.id === workspaceId
                   const signal = active ? null : signalOf(tabsOf(tabs, ws, list), done)
                   const diff = ws.path === undefined ? undefined : diffs[ws.path]
+                  const menu = (e: MouseEvent) => {
+                    e.preventDefault()
+                    onMenu({ kind: 'workspace', project, workspace: ws, ...at(e) })
+                  }
                   return (
-                    <button
-                      type="button"
+                    <div
                       key={ws.id ?? 'root'}
                       className={active ? 'ws is-active' : 'ws'}
-                      aria-current={active}
-                      onClick={() => onSelect(project.id, ws.id)}
+                      onContextMenu={menu}
                     >
-                      <Icon name="branch" small />
-                      <span className="ws-name">{ws.name}</span>
-                      {signal && <StatusDot signal={signal} />}
-                      {diff && diff.add + diff.del > 0 && (
-                        <span className="ws-diff">
-                          {diff.add > 0 && <span className="add">+{diff.add}</span>}
-                          {diff.del > 0 && <span className="del">−{diff.del}</span>}
-                        </span>
-                      )}
-                    </button>
+                      <button
+                        type="button"
+                        className="ws-main"
+                        aria-current={active}
+                        onClick={() => onSelect(project.id, ws.id)}
+                      >
+                        <Icon name="branch" small />
+                        <span className="ws-name">{ws.name}</span>
+                        {signal && <StatusDot signal={signal} />}
+                        {diff && diff.add + diff.del > 0 && (
+                          <span className="ws-diff">
+                            {diff.add > 0 && <span className="add">+{diff.add}</span>}
+                            {diff.del > 0 && <span className="del">−{diff.del}</span>}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn row-more"
+                        aria-label={`More for ${ws.name}`}
+                        onClick={menu}
+                      >
+                        <Icon name="more" />
+                      </button>
+                    </div>
                   )
                 })}
             </div>

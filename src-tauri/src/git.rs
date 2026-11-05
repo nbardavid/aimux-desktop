@@ -1,5 +1,5 @@
-//! Read-only git and gh calls for the git panel. Fixed argument lists: the webview names a
-//! workspace path and a file, never a git subcommand.
+//! Git and gh reads for the git panel (writes live in `git_write`). Fixed argument lists: the
+//! webview names a workspace path and a file, never a git subcommand.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -12,12 +12,25 @@ pub struct FileChange {
     pub path: String,
     pub status: char,
     pub untracked: bool,
+    /// Something of it sits in the index (`git commit` would take it).
+    pub staged: bool,
+    /// Something of it differs from the index in the working tree.
+    pub unstaged: bool,
     pub add: Option<u32>,
     pub del: Option<u32>,
 }
 
+pub struct Entry {
+    pub status: char,
+    pub untracked: bool,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub path: String,
+}
+
 /// `git status --porcelain=v1 -z`: `XY path\0`, plus `orig\0` after a rename or copy.
-pub fn parse_porcelain(raw: &str) -> Vec<(char, bool, String)> {
+/// X is the index side, Y the working tree side.
+pub fn parse_porcelain(raw: &str) -> Vec<Entry> {
     let mut out = Vec::new();
     let mut fields = raw.split('\0').filter(|f| !f.is_empty());
     while let Some(entry) = fields.next() {
@@ -30,11 +43,20 @@ pub fn parse_porcelain(raw: &str) -> Vec<(char, bool, String)> {
         if matches!(x, 'R' | 'C') {
             fields.next();
         }
-        if x == '?' {
-            out.push(('A', true, path));
-        } else {
-            out.push((if x != ' ' { x } else { y }, false, path));
-        }
+        let untracked = x == '?';
+        out.push(Entry {
+            path,
+            staged: !untracked && x != ' ',
+            status: if untracked {
+                'A'
+            } else if x != ' ' {
+                x
+            } else {
+                y
+            },
+            unstaged: !untracked && y != ' ',
+            untracked,
+        });
     }
     out
 }
@@ -109,18 +131,20 @@ pub fn git_status(path: String) -> Result<Vec<FileChange>, String> {
         .map(|(_, out)| parse_numstat(&out))?;
     Ok(parse_porcelain(&status)
         .into_iter()
-        .map(|(status, untracked, file)| {
-            let (add, del) = if untracked {
-                (count_lines(&Path::new(&path).join(&file)), Some(0))
+        .map(|e| {
+            let (add, del) = if e.untracked {
+                (count_lines(&Path::new(&path).join(&e.path)), Some(0))
             } else {
-                numstat.get(&file).copied().unwrap_or((None, None))
+                numstat.get(&e.path).copied().unwrap_or((None, None))
             };
             FileChange {
                 add,
                 del,
-                path: file,
-                status,
-                untracked,
+                path: e.path,
+                staged: e.staged,
+                status: e.status,
+                unstaged: e.unstaged,
+                untracked: e.untracked,
             }
         })
         .collect())
@@ -140,12 +164,63 @@ pub fn git_diff(path: String, file: String, untracked: bool) -> Result<String, S
 /// The branch's pull request as `gh` reports it, or `None` without gh or without a PR.
 #[tauri::command(async)]
 pub fn pr_view(path: String) -> Option<String> {
-    let fields =
-        "number,title,state,isDraft,url,additions,deletions,changedFiles,body,statusCheckRollup";
+    let fields = "number,title,state,isDraft,url,additions,deletions,changedFiles,body,\
+                  statusCheckRollup,mergeable,mergeStateStatus,baseRefName,headRefName";
     match run("gh", &path, &["pr", "view", "--json", fields]) {
         Ok((true, out)) => Some(out),
         _ => None,
     }
+}
+
+#[derive(Serialize)]
+pub struct Branches {
+    /// Local branches, most recently committed first, as the TUI lists them.
+    branches: Vec<String>,
+    /// What a new workspace forks from unless you pick another: the TUI's `getDefaultBranch`.
+    default: Option<String>,
+}
+
+#[tauri::command(async)]
+pub fn git_branches(path: String) -> Result<Branches, String> {
+    let (ok, out) = run(
+        "git",
+        &path,
+        &[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "refs/heads",
+            "--format=%(refname:short)",
+        ],
+    )?;
+    if !ok {
+        return Err(format!("{path} is not a git repository"));
+    }
+    let branches: Vec<String> = out
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+    let origin = match run(
+        "git",
+        &path,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    ) {
+        Ok((true, head)) => {
+            let head = head.trim();
+            Some(head.strip_prefix("origin/").unwrap_or(head).to_string())
+        }
+        _ => None,
+    };
+    let default = origin
+        .filter(|b| branches.contains(b))
+        .or_else(|| {
+            ["main", "master"]
+                .iter()
+                .map(|b| b.to_string())
+                .find(|b| branches.contains(b))
+        })
+        .or_else(|| branches.first().cloned());
+    Ok(Branches { branches, default })
 }
 
 #[cfg(test)]
@@ -154,14 +229,18 @@ mod tests {
 
     #[test]
     fn porcelain_maps_modified_untracked_and_renamed() {
-        let raw = " M src/a.ts\0?? new.sh\0R  b.ts\0old-b.ts\0D  gone.ts\0";
+        let raw = " M src/a.ts\0?? new.sh\0R  b.ts\0old-b.ts\0MM both.ts\0";
+        let got: Vec<_> = parse_porcelain(raw)
+            .into_iter()
+            .map(|e| (e.status, e.untracked, e.staged, e.unstaged, e.path))
+            .collect();
         assert_eq!(
-            parse_porcelain(raw),
+            got,
             vec![
-                ('M', false, "src/a.ts".to_string()),
-                ('A', true, "new.sh".to_string()),
-                ('R', false, "b.ts".to_string()),
-                ('D', false, "gone.ts".to_string()),
+                ('M', false, false, true, "src/a.ts".to_string()),
+                ('A', true, false, false, "new.sh".to_string()),
+                ('R', false, true, false, "b.ts".to_string()),
+                ('M', false, true, true, "both.ts".to_string()),
             ]
         );
     }

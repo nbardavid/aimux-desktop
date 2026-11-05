@@ -18,6 +18,18 @@ export interface WorkspaceEntry {
 
 export type Signal = 'waiting' | 'working' | 'done'
 
+/** The GUI shows worktrees only: the main checkout is the project, never a workspace of it. */
+export const isWorktree = (ws: WorkspaceEntry) => ws.id !== null && ws.source !== 'primary'
+
+/** Every project's worktrees, for the sidebar and the pickers. */
+export function worktreesOf(
+  all: Record<string, WorkspaceEntry[]>
+): Record<string, WorkspaceEntry[]> {
+  return Object.fromEntries(
+    Object.entries(all).map(([pid, list]) => [pid, list.filter(isWorktree)])
+  )
+}
+
 /** The primary checkout first, as the TUI lists them; a bare project gets one `root`. */
 export function workspacesFor(project: ProjectEntry, listed: WorkspaceEntry[]): WorkspaceEntry[] {
   if (listed.length === 0) return [{ id: null, name: 'root', path: project.projectPath }]

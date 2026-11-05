@@ -1,19 +1,22 @@
+import type { ReactNode } from 'react'
+
 import { Icon } from './icons'
-import { ProjectAvatar } from './sidebar'
 
 interface Props {
-  /** The project, then where in it: the workspace's branch, or a page's name. */
-  project: string | undefined
-  place: string | undefined
+  /** The workspace (or the page) on screen, set in bold before its tabs. */
+  title: string | undefined
+  /** The tabs, between the title and the switches. */
+  children?: ReactNode
   sideOpen: boolean
-  gitOpen: boolean
+  /** Shown only beside the terminal, where the git panel can sit. */
+  gitOpen: boolean | null
   gitMode: boolean
   onShowSide: () => void
   onToggleGit: () => void
   onGitMode: () => void
 }
 
-/** The path to what is on screen, and the switches for what sits around it. */
+/** The window's top row: where you are, its tabs, and the switches for what sits around them. */
 export function TopBar(props: Props) {
   return (
     <header className={props.sideOpen ? 'topbar' : 'topbar no-side'} data-tauri-drag-region>
@@ -28,41 +31,37 @@ export function TopBar(props: Props) {
           <Icon name="panelLeft" />
         </button>
       )}
-      <span className="crumbs" data-tauri-drag-region>
-        {props.project !== undefined && (
-          <>
-            <ProjectAvatar name={props.project} />
-            <span className="crumb">{props.project}</span>
-          </>
-        )}
-        {props.place !== undefined && (
-          <>
-            {props.project !== undefined && <Icon name="chevron" small />}
-            <span className="crumb">{props.place}</span>
-          </>
+      {props.title !== undefined && (
+        <span className="bar-title" data-tauri-drag-region>
+          {props.title}
+        </span>
+      )}
+      <div className="bar-tabs">{props.children}</div>
+      <span className="bar-tools">
+        <button
+          type="button"
+          className={props.gitMode ? 'bar-btn is-on' : 'bar-btn'}
+          aria-pressed={props.gitMode}
+          data-tip="Review the diff · ⌘G"
+          onClick={props.onGitMode}
+        >
+          <Icon name="branch" small />
+          Diff
+        </button>
+        {props.gitOpen !== null && (
+          <button
+            type="button"
+            className={props.gitOpen ? 'icon-btn is-on' : 'icon-btn'}
+            aria-label="Git panel (⌥⌘B)"
+            aria-pressed={props.gitOpen}
+            data-tip="Git panel · ⌥⌘B"
+            data-tip-align="end"
+            onClick={props.onToggleGit}
+          >
+            <Icon name="panelRight" />
+          </button>
         )}
       </span>
-      <button
-        type="button"
-        className={props.gitMode ? 'bar-btn is-on' : 'bar-btn'}
-        aria-pressed={props.gitMode}
-        data-tip="Review the diff · ⌘G"
-        onClick={props.onGitMode}
-      >
-        <Icon name="branch" small />
-        Diff
-      </button>
-      <button
-        type="button"
-        className={props.gitOpen ? 'icon-btn is-on' : 'icon-btn'}
-        aria-label="Git panel (⌥⌘B)"
-        aria-pressed={props.gitOpen}
-        data-tip="Git panel · ⌥⌘B"
-        data-tip-align="end"
-        onClick={props.onToggleGit}
-      >
-        <Icon name="panelRight" />
-      </button>
     </header>
   )
 }

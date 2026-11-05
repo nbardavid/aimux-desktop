@@ -97,6 +97,8 @@ pub fn create_tab(
     project_id: String,
     assistant: String,
     workspace_id: Option<String>,
+    model: Option<String>,
+    effort: Option<String>,
 ) -> Result<String, String> {
     let mut args = vec![
         "tab",
@@ -109,7 +111,52 @@ pub fn create_tab(
     if let Some(id) = workspace_id.as_deref() {
         args.extend(["--workspace", id]);
     }
+    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
+        args.extend(["--model", model]);
+    }
+    if let Some(effort) = effort.as_deref().filter(|e| !e.is_empty()) {
+        args.extend(["--effort", effort]);
+    }
     run_aimux(&args)
+}
+
+/// Closes the workspace's tabs (the CLI refuses while any lives), then removes the worktree.
+/// `force` discards uncommitted changes; the branch is kept either way.
+#[tauri::command(async)]
+pub fn remove_workspace(
+    project_id: String,
+    workspace_id: String,
+    force: bool,
+) -> Result<(), String> {
+    let listed = run_aimux(&["tab", "list", "--project", &project_id])?;
+    let parsed: serde_json::Value = serde_json::from_str(&listed).map_err(|e| e.to_string())?;
+    for tab in parsed["tabs"].as_array().into_iter().flatten() {
+        if tab["workspaceId"].as_str() == Some(workspace_id.as_str()) {
+            if let Some(id) = tab["id"].as_str() {
+                run_aimux(&["tab", "close", "--project", &project_id, id])?;
+            }
+        }
+    }
+    let mut args = vec![
+        "workspace",
+        "remove",
+        "--project",
+        &project_id,
+        &workspace_id,
+    ];
+    if force {
+        args.push("--force");
+    }
+    match run_aimux(&args) {
+        // Closing the last tab can drop the record first: the worktree is gone all the same.
+        Err(e) if e.contains("catalog reconciliation failed") && e.contains("not found") => Ok(()),
+        other => other.map(|_| ()),
+    }
+}
+
+#[tauri::command(async)]
+pub fn close_project(project_id: String) -> Result<(), String> {
+    run_aimux(&["project", "close", &project_id]).map(|_| ())
 }
 
 #[tauri::command(async)]
@@ -195,15 +242,19 @@ pub fn setup_agent(
          `set -euo pipefail`. Make it idempotent and non-interactive, use no secrets, exit \
          non-zero on failure. Do not run it."
     );
-    let home = home();
-    let bin = aimux_bin(env("AIMUX_BIN").as_deref(), &home);
-    // `tab run` waits for the assistant to be ready, then for its turn: leave it running.
+    run_detached(&project_id, &tab, &prompt)?;
+    Ok(tab)
+}
+
+/// `tab run` waits for the assistant to be ready, then for its turn: leave it running.
+fn run_detached(project_id: &str, tab: &str, prompt: &str) -> Result<(), String> {
+    let bin = aimux_bin(env("AIMUX_BIN").as_deref(), &home());
     Command::new(bin)
-        .args(["tab", "run", "--project", &project_id, &tab, &prompt])
+        .args(["tab", "run", "--project", project_id, tab, prompt])
         .env("PATH", tool_path())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(tab)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }

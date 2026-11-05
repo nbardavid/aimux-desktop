@@ -40,12 +40,12 @@ export function useChats() {
   }, [])
 
   const create = useCallback(
-    (cwd: string) => {
+    (cwd: string, agent: { model: string; effort: string } = { effort: '', model: '' }) => {
       const id = crypto.randomUUID()
       setChats((list) => [...list, { cwd, id, state: initialChat, title: 'New chat' }])
       const onLine = new Channel<string>()
       onLine.onmessage = (line) => edit(id, (c) => ({ ...c, state: reduceLine(c.state, line) }))
-      const proc = invoke<number>('chat_start', { cwd, onLine, resume: null })
+      const proc = invoke<number>('chat_start', { cwd, onLine, resume: null, ...agent })
       procs.current.set(id, proc)
       proc
         .then(async (procId) =>
@@ -88,6 +88,11 @@ export function useChats() {
     [write]
   )
 
+  const rename = useCallback(
+    (id: string, title: string) => edit(id, (c) => ({ ...c, title })),
+    [edit]
+  )
+
   const close = useCallback((id: string) => {
     const proc = procs.current.get(id)
     procs.current.delete(id)
@@ -96,7 +101,7 @@ export function useChats() {
   }, [])
 
   return useMemo(
-    () => ({ answer, chats, close, create, interrupt, send }),
-    [answer, chats, close, create, interrupt, send]
+    () => ({ answer, chats, close, create, interrupt, rename, send }),
+    [answer, chats, close, create, interrupt, rename, send]
   )
 }

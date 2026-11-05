@@ -16,6 +16,8 @@ interface Props {
   filterable: boolean
   onPick: (key: string) => void
   onClose: () => void
+  /** Drops down from this point (a button's corner) instead of opening as a palette. */
+  anchor?: { left: number; top: number }
 }
 
 function stepOf(e: KeyboardEvent): number {
@@ -25,7 +27,7 @@ function stepOf(e: KeyboardEvent): number {
 }
 
 /** The TUI's picker modal: filter, arrows, Enter, Esc. */
-export function Picker({ filterable, items, onClose, onPick, title }: Props) {
+export function Picker({ anchor, filterable, items, onClose, onPick, title }: Props) {
   const [query, setQuery] = useState('')
   const [hot, setHot] = useState(0)
   const root = useRef<HTMLDivElement>(null)
@@ -51,22 +53,23 @@ export function Picker({ filterable, items, onClose, onPick, title }: Props) {
   }
 
   return (
-    <div className="scrim" onMouseDown={onClose}>
+    <div className={anchor ? 'scrim is-clear' : 'scrim'} onMouseDown={onClose}>
       <div
         ref={root}
-        className="dialog"
+        className={anchor ? 'dialog menu' : 'dialog palette'}
+        style={anchor}
         role="dialog"
         aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        <div className="dialog-head">{title}</div>
+        {!anchor && !filterable && <div className="dialog-head">{title}</div>}
         {filterable && (
           <label className="picker-input">
-            <Icon name="search" small />
+            <Icon name="search" />
             <input
-              aria-label={`Filter ${title.toLowerCase()}`}
-              placeholder="Filter"
+              aria-label={title}
+              placeholder={title}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -97,17 +100,19 @@ export function Picker({ filterable, items, onClose, onPick, title }: Props) {
           ))}
           {shown.length === 0 && <div className="quiet">Nothing matches “{query}”</div>}
         </div>
-        <div className="dialog-foot">
-          <span>
-            <span className="kbd">↵</span>open
-          </span>
-          <span>
-            <span className="kbd">↑↓</span>move
-          </span>
-          <span>
-            <span className="kbd">esc</span>cancel
-          </span>
-        </div>
+        {!anchor && (
+          <div className="dialog-foot">
+            <span>
+              <span className="kbd">↵</span>open
+            </span>
+            <span>
+              <span className="kbd">↑↓</span>move
+            </span>
+            <span>
+              <span className="kbd">esc</span>cancel
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

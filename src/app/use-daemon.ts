@@ -80,8 +80,8 @@ export function useDaemon() {
   const [attention, setAttention] = useState<Attention | null>(null)
   const client = useRef<DaemonClient | null>(null)
   const project = useRef<string | null>(null)
-  const latest = useRef({ activeTabId, otherTabs, projects, session })
-  latest.current = { activeTabId, otherTabs, projects, session }
+  const latest = useRef({ activeTabId, otherTabs, projects, session, workspaceId })
+  latest.current = { activeTabId, otherTabs, projects, session, workspaceId }
 
   const onEvent = useCallback((event: ServerEvent) => {
     setSession((state) => reduceEvent(state, event))
@@ -259,6 +259,8 @@ export function useDaemon() {
     }
     return {
       closeTab: (tabId: string) => fire(async (c) => c.request('closeTab', { tabId })),
+      renameTab: (tabId: string, title: string) =>
+        fire(async (c) => c.request('renameTab', { tabId, title })),
       resize: (tabId: string, cols: number, rows: number) =>
         fire(async (c) => c.request('resizeTab', { cols, rows, tabId })),
       scroll: (tabId: string, deltaLines: number) =>
@@ -270,11 +272,11 @@ export function useDaemon() {
   }, [])
 
   const createTab = useCallback(
-    async (assistant: string, wid: string | null) => {
+    async (agent: { assistant: string; model: string; effort: string }, wid: string | null) => {
       const pid = project.current
       if (pid === null) return
       const raw = await invoke<string>('create_tab', {
-        assistant,
+        ...agent,
         projectId: pid,
         workspaceId: wid,
       })
@@ -310,12 +312,37 @@ export function useDaemon() {
     [reloadCatalog, selectWorkspace]
   )
 
+  /** A bare worktree (for a native chat to open in): its id and folder. */
   const createWorkspace = useCallback(
     async (pid: string, name: string, base: string | null) => {
       const raw = await invoke<string>('create_workspace', { base, name, projectId: pid })
-      const created = JSON.parse(raw) as { id?: string }
+      const created = JSON.parse(raw) as { id?: string; path?: string }
       await reloadCatalog()
       if (created.id !== undefined) selectWorkspace(pid, created.id)
+      return created
+    },
+    [reloadCatalog, selectWorkspace]
+  )
+
+  const removeWorkspace = useCallback(
+    async (pid: string, wid: string, force: boolean) => {
+      await invoke('remove_workspace', { force, projectId: pid, workspaceId: wid })
+      const catalog = await reloadCatalog()
+      if (pid === project.current && latest.current.workspaceId === wid) {
+        selectWorkspace(pid, catalog.workspaces[pid]?.[0]?.id ?? null)
+      }
+    },
+    [reloadCatalog, selectWorkspace]
+  )
+
+  const closeProject = useCallback(
+    async (pid: string) => {
+      await invoke('close_project', { projectId: pid })
+      const catalog = await reloadCatalog()
+      const next = catalog.projects.find((p) => p.id !== pid)
+      if (pid === project.current && next) {
+        selectWorkspace(next.id, catalog.workspaces[next.id]?.[0]?.id ?? null)
+      }
     },
     [reloadCatalog, selectWorkspace]
   )
@@ -328,6 +355,7 @@ export function useDaemon() {
   return {
     activeTabId,
     attention,
+    closeProject,
     createProject,
     createTab,
     createWorkspace,
@@ -335,6 +363,7 @@ export function useDaemon() {
     done,
     projectId,
     projects,
+    removeWorkspace,
     selectTab,
     selectWorkspace,
     session,

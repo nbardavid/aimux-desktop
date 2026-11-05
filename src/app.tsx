@@ -1,37 +1,57 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import { useEffect, useMemo, useState } from 'react'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ChatView } from './app/chat-view'
+import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
 import { Icon } from './app/icons'
+import { Inbox } from './app/inbox'
+import { NewWorkspace } from './app/new-workspace'
 import { Picker, type PickerItem } from './app/picker'
 import { Quotas } from './app/quotas'
 import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
-import { type DiffStat, Sidebar } from './app/sidebar'
+import { type DiffStat, type RowMenu, Sidebar } from './app/sidebar'
 import { Splitter } from './app/splitter'
 import { StatsView } from './app/stats-view'
-import { TabBar } from './app/tab-bar'
+import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { TopBar } from './app/top-bar'
 import { useChats } from './app/use-chats'
 import { useDaemon } from './app/use-daemon'
 import { type FileChange, useGit } from './app/use-git'
 import { LIMITS, useLayout } from './app/use-layout'
+import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
-import { WorkspaceDialog } from './app/workspace-dialog'
-import { tabsOf } from './model/catalog'
+import { chatFlags, type ChatSettings, DEFAULT_CHAT, normalize } from './model/agents'
+import { isWorktree, signalOf, tabsOf, worktreesOf } from './model/catalog'
+import { inboxOf } from './model/inbox'
 
-const ASSISTANTS: PickerItem[] = [
-  { glyph: 'Ch', key: 'chat', label: 'Claude chat', sub: 'native view · preview' },
-  { glyph: 'Cl', key: 'claude', label: 'Claude Code', sub: 'claude' },
-  { glyph: 'Cx', key: 'codex', label: 'Codex', sub: 'codex' },
-  { glyph: 'Oc', key: 'opencode', label: 'OpenCode', sub: 'opencode' },
-  { glyph: '>_', key: 'terminal', label: 'Terminal', sub: 'your shell' },
+// What a new tab can be, as in Conductor: a native Claude chat, or a shell.
+const NEW_TAB: PickerItem[] = [
+  { key: 'chat', label: 'Chat', meta: '⌘T' },
+  { key: 'terminal', label: 'Terminal', meta: '⇧⌘T' },
 ]
+
+const CHAT_SETTINGS = 'aimux.chat'
+
+function readChatSettings(): ChatSettings {
+  // A per-window convenience: storage may be empty or refused, the defaults then hold.
+  try {
+    const raw = localStorage.getItem(CHAT_SETTINGS)
+    return raw === null
+      ? DEFAULT_CHAT
+      : { ...DEFAULT_CHAT, ...(JSON.parse(raw) as Partial<ChatSettings>) }
+  } catch {
+    return DEFAULT_CHAT
+  }
+}
+
+const copy = (text: string) => void navigator.clipboard.writeText(text)
 
 const plural = (n: number) => `${n} ${n === 1 ? 'tab' : 'tabs'}`
 
@@ -50,22 +70,44 @@ export function App() {
   const { projectId, projects, session, status, tabsByProject, workspaces } = daemon
   const [mode, setMode] = useState<'normal' | 'git' | 'stats' | 'settings'>('normal')
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
-  const [newWorkspaceIn, setNewWorkspaceIn] = useState<string | null>(null)
+  // Where the assistant menu drops from; null opens it as a palette (⇧⌘T).
+  const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null)
+  const models = useModels()
+  const [stored, setSelectionState] = useState(readChatSettings)
+  // What was picked under an older model list falls back to what this one offers.
+  const selection = normalize(stored, models)
+  const [composeIn, setComposeIn] = useState<string | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<MenuState | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [inboxAt, setInboxAt] = useState<{ x: number; y: number } | null>(null)
+  // A tab whose agent is working closes on the second ask: ⌘W twice, or × twice.
+  const [armed, setArmed] = useState<string | null>(null)
+  const keys = useRef({
+    close: () => {},
+    compose: () => {},
+    newTab: (_kind: 'chat' | 'terminal') => {},
+  })
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
   const chats = useChats()
   const [chatId, setChatId] = useState<string | null>(null)
 
-  const list = (projectId === null ? undefined : workspaces[projectId]) ?? []
+  const all = useMemo(
+    () => (projectId === null ? undefined : workspaces[projectId]) ?? [],
+    [projectId, workspaces]
+  )
+  const worktrees = useMemo(() => worktreesOf(workspaces), [workspaces])
+  const list = all.filter(isWorktree)
   const ws = list.find((w) => w.id === daemon.workspaceId) ?? list[0]
-  const tabs = ws ? tabsOf(session.tabs, ws, list) : session.tabs
+  // Matched against every workspace, so the main checkout's tabs never leak into a worktree.
+  const tabs = useMemo(() => (ws ? tabsOf(session.tabs, ws, all) : []), [all, session.tabs, ws])
   const tab = tabs.find((t) => t.id === daemon.activeTabId) ?? tabs[0]
   const wsChats = chats.chats.filter((c) => c.cwd === ws?.path)
   const chat = wsChats.find((c) => c.id === chatId)
 
   const paths = useMemo(
-    () => [...new Set(Object.values(workspaces).flatMap((l) => l.flatMap((w) => w.path ?? [])))],
-    [workspaces]
+    () => [...new Set(Object.values(worktrees).flatMap((l) => l.flatMap((w) => w.path ?? [])))],
+    [worktrees]
   )
   const git = useGit(ws?.path, paths)
   const quotas = useQuotas()
@@ -85,7 +127,9 @@ export function App() {
       if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
       else if (e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
       else if (e.key === 'p') setOverlay('projects')
-      else if (e.key === 't') setOverlay('new-tab')
+      else if (e.key.toLowerCase() === 't') keys.current.newTab(e.shiftKey ? 'terminal' : 'chat')
+      else if (e.key === 'w') keys.current.close()
+      else if (e.key === 'n') keys.current.compose()
       else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
       else if (tabs[index - 1] !== undefined && index >= 1) {
         setChatId(null)
@@ -96,6 +140,23 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [daemon, layout.gitOpen, layout.sideOpen, tabs, update])
+
+  // No browser menu (Reload, Inspect…): rows bring their own; text fields keep Copy and Paste.
+  useEffect(() => {
+    const onMenu = (e: MouseEvent) => {
+      const editable =
+        e.target instanceof HTMLElement && e.target.closest('input, textarea') !== null
+      if (!editable && (window.getSelection()?.toString() ?? '') === '') e.preventDefault()
+    }
+    window.addEventListener('contextmenu', onMenu)
+    return () => window.removeEventListener('contextmenu', onMenu)
+  }, [])
+
+  useEffect(() => {
+    if (armed === null) return
+    const timer = setTimeout(() => setArmed(null), 2500)
+    return () => clearTimeout(timer)
+  }, [armed])
 
   useEffect(() => {
     if (notice === null) return
@@ -136,20 +197,154 @@ export function App() {
     return <main className="splash">{message}</main>
   }
 
-  const createTab = (assistant: string) => {
+  const setSelection = (next: ChatSettings) => {
+    setSelectionState(next)
+    try {
+      localStorage.setItem(CHAT_SETTINGS, JSON.stringify(next))
+    } catch {
+      // Remembering the choice is a convenience; chats then open on the defaults.
+    }
+  }
+
+  /** A chat (with the last model and effort picked) or a shell, in this workspace. */
+  const createTab = (kind: string) => {
     setOverlay(null)
-    if (assistant === 'chat') {
+    if (kind === 'chat') {
       if (ws?.path === undefined) setNotice('A chat needs a workspace folder.')
-      else setChatId(chats.create(ws.path))
+      else setChatId(chats.create(ws.path, chatFlags(selection)))
       return
     }
-    daemon.createTab(assistant, ws?.id ?? null).catch((error: unknown) => setNotice(String(error)))
+    setChatId(null)
+    daemon
+      .createTab({ assistant: 'terminal', effort: '', model: '' }, ws?.id ?? null)
+      .catch((error: unknown) => setNotice(String(error)))
   }
+
+  /** The composer's Create: a worktree, a chat in it, and the prompt as its first message. */
+  const startWork = async (pid: string, name: string, base: string | null, prompt: string) => {
+    setMode('normal')
+    const created = await daemon.createWorkspace(pid, name, base)
+    if (created.path === undefined) throw new Error('The workspace has no folder to chat in.')
+    const id = chats.create(created.path, chatFlags(selection))
+    setChatId(id)
+    if (prompt !== '') chats.send(id, prompt)
+  }
+
+  const rowMenu = (row: RowMenu) => {
+    const path = row.kind === 'project' ? row.project.projectPath : row.workspace.path
+    const items: MenuItem[] = []
+    if (row.kind === 'project')
+      items.push({ label: 'New workspace…', run: () => setComposeIn(row.project.id) })
+    if (path !== undefined) {
+      items.push({ label: 'Show in Finder', run: async () => revealItemInDir(path) })
+      items.push({ label: 'Copy path', run: () => copy(path) })
+    }
+    if (row.kind === 'workspace' && row.workspace.branch !== undefined) {
+      const branch = row.workspace.branch
+      items.push({ label: 'Copy branch name', run: () => copy(branch) })
+    }
+    if (row.kind === 'project') {
+      items.push('separator', {
+        confirm: {
+          button: 'Close project',
+          text: `Close ${row.project.name}? It leaves aimux; its folder and worktrees stay on disk.`,
+        },
+        danger: true,
+        label: 'Close project…',
+        run: async () => daemon.closeProject(row.project.id),
+      })
+    }
+    const { project: owner, workspace } =
+      row.kind === 'workspace' ? row : { project: row.project, workspace: null }
+    // The primary checkout is the project itself: it has no worktree to delete.
+    if (workspace !== null && workspace.id !== null && workspace.source !== 'primary') {
+      const wid = workspace.id
+      const branch = workspace.branch === undefined ? '' : ` The branch ${workspace.branch} stays.`
+      items.push('separator', {
+        confirm: {
+          button: 'Delete',
+          text: `Delete ${workspace.name}? Its tabs close and its worktree folder is removed.${branch}`,
+        },
+        danger: true,
+        label: 'Delete workspace…',
+        retry: {
+          button: 'Delete anyway',
+          run: async () => daemon.removeWorkspace(owner.id, wid, true),
+          text: `${workspace.name} has uncommitted changes. Deleting it anyway discards them.`,
+          when: (error) => /modified|untracked|--force/.test(error),
+        },
+        run: async () => daemon.removeWorkspace(owner.id, wid, false),
+      })
+    }
+    setCtxMenu({ items, x: row.x, y: row.y })
+  }
+
+  const requestClose = (id: string) => {
+    const chatTab = wsChats.find((c) => c.id === id)
+    const busy = chatTab
+      ? chatTab.state.status === 'working'
+      : signalOf(
+          tabs.filter((t) => t.id === id),
+          daemon.done
+        ) === 'working'
+    if (busy && armed !== id) {
+      setArmed(id)
+      return
+    }
+    setArmed(null)
+    if (chatTab) {
+      chats.close(id)
+      if (id === chatId) setChatId(null)
+    } else daemon.closeTab(id)
+  }
+
+  keys.current = {
+    close: () => {
+      const id = chat?.id ?? tab?.id
+      if (id !== undefined && mode === 'normal') requestClose(id)
+    },
+    compose: () => projectId !== null && setComposeIn(projectId),
+    newTab: (kind: 'chat' | 'terminal') => createTab(kind),
+  }
+
+  // After a merge, the worktree that carried the branch is dead weight.
+  let cleanup: { label: string; run: () => Promise<void> } | null = null
+  if (ws !== undefined && ws.id !== null && projectId !== null) {
+    const [pid, wid] = [projectId, ws.id]
+    cleanup = { label: 'Delete workspace', run: async () => daemon.removeWorkspace(pid, wid, true) }
+  }
+
+  const inbox = inboxOf(projects, workspaces, tabsByProject, daemon.done)
+
+  const tabItems: TabItem[] = [
+    ...tabs.map((t) => ({
+      chat: false,
+      id: t.id,
+      signal: signalOf([t], daemon.done),
+      title: t.title,
+    })),
+    ...wsChats.map((c) => ({
+      chat: true,
+      id: c.id,
+      signal: c.state.status === 'working' ? ('working' as const) : null,
+      title: c.title,
+    })),
+  ]
+
+  const tabMenu = (item: TabItem, x: number, y: number) =>
+    setCtxMenu({
+      items: [
+        { label: 'Rename', run: () => setRenaming(item.id) },
+        { label: 'Close', run: () => requestClose(item.id) },
+      ],
+      x,
+      y,
+    })
 
   const openAttention = () => {
     const hit = daemon.attention
     if (!hit) return
-    const hitList = workspaces[hit.projectId] ?? []
+    const hitList = worktrees[hit.projectId] ?? []
     const hitTab = tabsByProject[hit.projectId]?.find((t) => t.id === hit.tabId)
     const wid = hitList.find((w) => w.id === hitTab?.workspaceId)?.id ?? hitList[0]?.id ?? null
     daemon.selectWorkspace(hit.projectId, wid, hit.tabId)
@@ -183,10 +378,22 @@ export function App() {
     setMode('git')
   }
 
-  const project = projects.find((p) => p.id === projectId)
-  const place = {
-    git: ws?.branch ?? ws?.name,
-    normal: ws?.branch ?? ws?.name,
+  const topBar = (title: string | undefined, gitOpen: boolean | null, tabsRow?: ReactNode) => (
+    <TopBar
+      title={title}
+      sideOpen={layout.sideOpen}
+      gitOpen={gitOpen}
+      gitMode={mode === 'git'}
+      onShowSide={() => update({ sideOpen: true })}
+      onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
+      onGitMode={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
+    >
+      {tabsRow}
+    </TopBar>
+  )
+  const pageTitle = {
+    git: `${ws?.name ?? ''} · Diff`,
+    normal: undefined,
     settings: 'Settings',
     stats: 'Stats',
   }[mode]
@@ -202,7 +409,7 @@ export function App() {
               connected={status.kind === 'ready'}
               foot={<Quotas cache={quotas.cache} error={quotas.error} />}
               projects={projects}
-              workspaces={workspaces}
+              workspaces={worktrees}
               tabsByProject={tabsByProject}
               done={daemon.done}
               diffs={diffs}
@@ -214,7 +421,13 @@ export function App() {
               }}
               onProjects={() => setOverlay('projects')}
               onNewProject={() => void newProject()}
-              onNewWorkspace={setNewWorkspaceIn}
+              onNewWorkspace={setComposeIn}
+              onMenu={rowMenu}
+              inbox={{
+                done: inbox.filter((e) => e.kind === 'done').length,
+                waiting: inbox.filter((e) => e.kind === 'waiting').length,
+              }}
+              onInbox={setInboxAt}
               onStats={() => setMode((m) => (m === 'stats' ? 'normal' : 'stats'))}
               onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
               onHide={() => update({ sideOpen: false })}
@@ -230,41 +443,41 @@ export function App() {
           </>
         )}
         <div className="main">
-          <TopBar
-            project={mode === 'stats' || mode === 'settings' ? undefined : project?.name}
-            place={place}
-            sideOpen={layout.sideOpen}
-            gitOpen={layout.gitOpen}
-            gitMode={mode === 'git'}
-            onShowSide={() => update({ sideOpen: true })}
-            onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
-            onGitMode={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
-          />
+          {mode !== 'normal' && topBar(pageTitle, null)}
           <div className="work">
             {mode === 'normal' && (
               <>
                 <main className="center">
-                  <TabBar
-                    tabs={tabs}
-                    chats={wsChats.map((c) => ({
-                      id: c.id,
-                      title: c.title,
-                      working: c.state.status === 'working',
-                    }))}
-                    activeId={chat?.id ?? tab?.id}
-                    done={daemon.done}
-                    onSelect={(id) => {
-                      setChatId(null)
-                      daemon.selectTab(id)
-                    }}
-                    onClose={daemon.closeTab}
-                    onNew={() => setOverlay('new-tab')}
-                    onSelectChat={setChatId}
-                    onCloseChat={(id) => {
-                      chats.close(id)
-                      if (id === chatId) setChatId(null)
-                    }}
-                  />
+                  {topBar(
+                    ws?.name,
+                    layout.gitOpen,
+                    <TabBar
+                      items={tabItems}
+                      activeId={chat?.id ?? tab?.id}
+                      armedId={armed}
+                      renamingId={renaming}
+                      onSelect={(item) => {
+                        if (item.chat) setChatId(item.id)
+                        else {
+                          setChatId(null)
+                          daemon.selectTab(item.id)
+                        }
+                      }}
+                      onClose={(item) => requestClose(item.id)}
+                      onMenu={tabMenu}
+                      onRename={(item) => setRenaming(item.id)}
+                      onRenamed={(item, title) => {
+                        setRenaming(null)
+                        if (title === null || title === item.title) return
+                        if (item.chat) chats.rename(item.id, title)
+                        else daemon.renameTab(item.id, title)
+                      }}
+                      onNew={(at) => {
+                        setMenuAt(at)
+                        setOverlay('new-tab')
+                      }}
+                    />
+                  )}
                   {chat && (
                     <ChatView
                       cwd={chat.cwd}
@@ -284,21 +497,50 @@ export function App() {
                       resize={daemon.resize}
                     />
                   )}
-                  {!chat && !tab && (
+                  {ws === undefined && (
                     <div className="quiet fill">
-                      <span>No tabs in {ws?.name ?? 'this workspace'}</span>
+                      <span className="empty-title">
+                        No workspace in{' '}
+                        {projects.find((p) => p.id === projectId)?.name ?? 'this project'} yet
+                      </span>
+                      <span>
+                        Each workspace is a worktree on its own branch, with its chats and
+                        terminals.
+                      </span>
                       <button
                         type="button"
-                        className="btn btn-soft"
-                        onClick={() => setOverlay('new-tab')}
+                        className="btn btn-ink"
+                        onClick={() => projectId !== null && setComposeIn(projectId)}
                       >
-                        <Icon name="plus" small />
-                        New tab
+                        New workspace
+                        <span className="kbd-ink">⌘N</span>
                       </button>
                     </div>
                   )}
+                  {ws !== undefined && !chat && !tab && (
+                    <div className="quiet fill">
+                      <span>No tabs in {ws?.name ?? 'this workspace'}</span>
+                      <span className="empty-actions">
+                        <button
+                          type="button"
+                          className="btn btn-soft"
+                          onClick={() => createTab('chat')}
+                        >
+                          <Icon name="chat" small />
+                          New chat
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-soft"
+                          onClick={() => createTab('terminal')}
+                        >
+                          Terminal
+                        </button>
+                      </span>
+                    </div>
+                  )}
                 </main>
-                {layout.gitOpen && (
+                {layout.gitOpen && ws !== undefined && (
                   <>
                     <Splitter
                       label="Resize the git panel"
@@ -310,9 +552,14 @@ export function App() {
                     />
                     <GitPanel
                       width={layout.gitWidth}
+                      path={ws?.path}
                       changes={changes}
                       pr={git.pr}
+                      branch={git.branch}
+                      cleanup={cleanup}
                       onOpenFile={openFile}
+                      onChanged={git.refresh}
+                      onError={setNotice}
                       setup={
                         <SetupSection
                           status={setup.status}
@@ -374,6 +621,31 @@ export function App() {
         </div>
       )}
 
+      {composeIn !== null && (
+        <NewWorkspace
+          projects={projects}
+          projectId={composeIn}
+          takenNames={(pid) => (workspaces[pid] ?? []).map((w) => w.name)}
+          selection={selection}
+          models={models}
+          onSelection={setSelection}
+          onCreate={startWork}
+          onClose={() => setComposeIn(null)}
+        />
+      )}
+      {inboxAt && (
+        <Inbox
+          entries={inbox}
+          at={inboxAt}
+          onClose={() => setInboxAt(null)}
+          onOpen={(entry) => {
+            setMode('normal')
+            setChatId(null)
+            daemon.selectWorkspace(entry.projectId, entry.workspaceId, entry.tabId)
+          }}
+        />
+      )}
+      {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
       {overlay === 'projects' && (
         <Picker
           title="Projects"
@@ -383,22 +655,16 @@ export function App() {
           onPick={(pid) => {
             setOverlay(null)
             setMode('normal')
-            daemon.selectWorkspace(pid, workspaces[pid]?.[0]?.id ?? null)
+            daemon.selectWorkspace(pid, worktrees[pid]?.[0]?.id ?? null)
           }}
-        />
-      )}
-      {newWorkspaceIn !== null && (
-        <WorkspaceDialog
-          projectName={projects.find((p) => p.id === newWorkspaceIn)?.name ?? ''}
-          onClose={() => setNewWorkspaceIn(null)}
-          onCreate={async (name, base) => daemon.createWorkspace(newWorkspaceIn, name, base)}
         />
       )}
       {overlay === 'new-tab' && (
         <Picker
           title={`New tab in ${ws?.name ?? 'this workspace'}`}
-          items={ASSISTANTS}
+          items={NEW_TAB}
           filterable={false}
+          anchor={menuAt ?? undefined}
           onClose={() => setOverlay(null)}
           onPick={createTab}
         />

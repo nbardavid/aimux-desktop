@@ -1,12 +1,23 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { type PullRequest, toPullRequest } from '../git/pr'
+
+export interface BranchState {
+  branch: string | null
+  upstream: boolean
+  remote: boolean
+  ahead: number
+  behind: number
+}
 
 export interface FileChange {
   path: string
   status: string
   untracked: boolean
+  /** Some of it is in the index; some of it is only in the working tree. Both can hold. */
+  staged: boolean
+  unstaged: boolean
   add: number | null
   del: number | null
 }
@@ -24,6 +35,10 @@ async function status(path: string): Promise<FileChange[] | null> {
 export function useGit(activePath: string | undefined, paths: string[]) {
   const [changes, setChanges] = useState<Record<string, FileChange[] | null>>({})
   const [pr, setPr] = useState<PullRequest | null>(null)
+  const [branch, setBranch] = useState<BranchState | null>(null)
+  // Bumped after a write (commit, push, merge…) to read everything again at once.
+  const [tick, setTick] = useState(0)
+  const refresh = useCallback(() => setTick((t) => t + 1), [])
   const key = paths.join('\n')
 
   useEffect(() => {
@@ -32,6 +47,9 @@ export function useGit(activePath: string | undefined, paths: string[]) {
       if (!document.hasFocus() && targets.length === 1) return
       const results = await Promise.all(targets.map(async (p) => [p, await status(p)] as const))
       setChanges((state) => ({ ...state, ...Object.fromEntries(results) }))
+      if (activePath !== undefined && targets.includes(activePath)) {
+        setBranch(await invoke<BranchState>('git_branch', { path: activePath }).catch(() => null))
+      }
     }
     void read(all)
     const active =
@@ -41,10 +59,11 @@ export function useGit(activePath: string | undefined, paths: string[]) {
       clearInterval(active)
       clearInterval(others)
     }
-  }, [activePath, key])
+  }, [activePath, key, tick])
+
+  useEffect(() => setPr(null), [activePath])
 
   useEffect(() => {
-    setPr(null)
     if (activePath === undefined) return
     let live = true
     const read = async () => {
@@ -57,7 +76,7 @@ export function useGit(activePath: string | undefined, paths: string[]) {
       live = false
       clearInterval(timer)
     }
-  }, [activePath])
+  }, [activePath, tick])
 
-  return { changes, pr }
+  return { branch, changes, pr, refresh }
 }

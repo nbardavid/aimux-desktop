@@ -9,13 +9,22 @@ export interface Layout {
 
 const KEY = 'aimux.layout'
 const DEFAULTS: Layout = { gitOpen: true, gitWidth: 280, sideOpen: true, sideWidth: 232 }
-export const LIMITS = { git: [220, 520], side: [180, 420] } as const
+export const LIMITS = { git: [220, 520], side: [220, 420] } as const
 
 function load(): Layout {
   // A per-window convenience: storage may be empty or refused, the defaults then hold.
   try {
     const raw = localStorage.getItem(KEY)
-    return raw === null ? DEFAULTS : { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Layout>) }
+    const stored =
+      raw === null ? DEFAULTS : { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Layout>) }
+    // Limits move between versions: a width saved under older ones is brought back inside.
+    const clamp = (v: number, [min, max]: readonly [number, number]) =>
+      Math.min(max, Math.max(min, v))
+    return {
+      ...stored,
+      gitWidth: clamp(stored.gitWidth, LIMITS.git),
+      sideWidth: clamp(stored.sideWidth, LIMITS.side),
+    }
   } catch {
     return DEFAULTS
   }
