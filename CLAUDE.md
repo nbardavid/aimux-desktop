@@ -80,7 +80,8 @@ branding.
 - Build (signs the update archive): `TAURI_SIGNING_PRIVATE_KEY=~/.tauri/aimux-desktop.key bun run build`.
   Launch for a trial:
   `open --env AIMUX_PROFILE=gui-dev src-tauri/target/release/bundle/macos/aimux.app`.
-- Release: `bun run release <x.y.z>` (commits, tags, pushes; Actions builds and publishes).
+- Release: `bun bump patch|minor|major` (semver; commits, tags, pushes; Actions builds and
+  publishes).
   Needs the owner's go-ahead like any push.
 - The owner runs dev servers (`bun run dev`) themselves. Hand them the command; don't leave
   long-running processes in the background.

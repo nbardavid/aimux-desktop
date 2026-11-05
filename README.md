@@ -30,11 +30,11 @@ it sits beside the installed aimux without touching it. Checks:
 ## Release
 
 ```sh
-bun run release 0.2.0
+bun bump patch   # or minor, major, or an exact 0.3.0
 ```
 
-It sets the version, commits, tags and pushes; GitHub Actions builds, signs and publishes the
-release. Updates are signed with a key kept outside the repo (`~/.tauri/aimux-desktop.key`,
+It computes the next version (semver), commits, tags and pushes; GitHub Actions builds, signs
+and publishes the release. Updates are signed with a key kept outside the repo (`~/.tauri/aimux-desktop.key`,
 and the `TAURI_SIGNING_PRIVATE_KEY` secret); installed apps refuse anything else.
 
 ## Origin
