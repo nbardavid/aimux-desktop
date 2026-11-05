@@ -73,3 +73,31 @@ export function wheelLines(deltaY: number, deltaMode: number, cellHeight: number
   const lines = deltaMode === DOM_DELTA_LINE ? deltaY : deltaY / cellHeight
   return Math.trunc(lines)
 }
+
+export interface WheelModes {
+  mouseTrackingMode: 'none' | 'x10' | 'vt200' | 'drag' | 'any'
+  isAlternateBuffer: boolean
+}
+
+/** As the TUI: an app that tracks the mouse gets the wheel; a full-screen app that does not
+ * gets nothing; otherwise the wheel scrolls the history. */
+export function wheelMode(modes: WheelModes | undefined): 'forward' | 'scroll' | 'none' {
+  if (!modes) return 'scroll'
+  if (modes.mouseTrackingMode !== 'none') return 'forward'
+  return modes.isAlternateBuffer ? 'none' : 'scroll'
+}
+
+/** SGR 1006 wheel events, one per step; `col` and `row` are 1-based cells. */
+export function encodeWheel(
+  steps: number,
+  col: number,
+  row: number,
+  mods: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean }
+): string {
+  const button =
+    (steps < 0 ? 64 : 65) +
+    (mods.shiftKey ? 4 : 0) +
+    (mods.altKey ? 8 : 0) +
+    (mods.ctrlKey ? 16 : 0)
+  return `\x1b[<${button};${col};${row}M`.repeat(Math.abs(steps))
+}

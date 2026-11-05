@@ -3,8 +3,9 @@ import { type CompositionEvent, useCallback, useEffect, useRef, type WheelEvent 
 import type { Viewport } from '../model/session'
 
 import { xterm256Palette } from '../terminal/colors'
-import { encodeKey, encodePaste, wheelLines } from '../terminal/input'
-import { CELL_HEIGHT, TerminalPane } from '../terminal/terminal-pane'
+import { measureCell } from '../terminal/grid'
+import { encodeKey, encodePaste, encodeWheel, wheelLines, wheelMode } from '../terminal/input'
+import { CELL_HEIGHT, TERMINAL_FONT, TerminalPane } from '../terminal/terminal-pane'
 
 // ponytail: one light palette; read the user's theme once the GUI has settings.
 const PALETTE = xterm256Palette([
@@ -114,12 +115,25 @@ export function TerminalView({ resize, scroll, scrollToBottom, tabId, viewport, 
   }
 
   const onWheel = (e: WheelEvent) => {
-    // Trackpads send a few pixels per event: carry the remainder until it makes a line.
+    const mode = wheelMode(viewport?.modes)
+    if (mode === 'none') return
+    // A wheel notch is 3 lines for an app, 1 for the history: trackpads send a few pixels per
+    // event, so carry the remainder until it makes a step.
+    const step = mode === 'forward' ? 3 * CELL_HEIGHT : CELL_HEIGHT
     wheelCarry.current += e.deltaMode === 1 ? e.deltaY * CELL_HEIGHT : e.deltaY
-    const lines = wheelLines(wheelCarry.current, 0, CELL_HEIGHT)
-    if (lines === 0) return
-    wheelCarry.current -= lines * CELL_HEIGHT
-    scroll(tabId, lines)
+    const steps = wheelLines(wheelCarry.current, 0, step)
+    if (steps === 0) return
+    wheelCarry.current -= steps * step
+    if (mode === 'scroll') {
+      scroll(tabId, steps)
+      return
+    }
+    const grid = e.currentTarget.querySelector('.terminal')?.getBoundingClientRect()
+    if (!grid) return
+    const cellWidth = measureCell(TERMINAL_FONT).width
+    const col = Math.max(1, Math.floor((e.clientX - grid.left) / cellWidth) + 1)
+    const row = Math.max(1, Math.floor((e.clientY - grid.top) / CELL_HEIGHT) + 1)
+    write(tabId, encodeWheel(steps, col, row, e))
   }
 
   return (

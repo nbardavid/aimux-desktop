@@ -1,15 +1,23 @@
+import { invoke } from '@tauri-apps/api/core'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { useEffect, useMemo, useState } from 'react'
 
 import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
 import { Icon } from './app/icons'
 import { Picker, type PickerItem } from './app/picker'
+import { SettingsView } from './app/settings-view'
+import { SetupSection } from './app/setup-section'
 import { type DiffStat, Sidebar } from './app/sidebar'
+import { StatsView } from './app/stats-view'
 import { StatusBar } from './app/status-bar'
 import { TabBar } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { useDaemon } from './app/use-daemon'
 import { type FileChange, useGit } from './app/use-git'
+import { useQuotas } from './app/use-quotas'
+import { useSetup } from './app/use-setup'
+import { WorkspaceDialog } from './app/workspace-dialog'
 import { tabsOf } from './model/catalog'
 
 const ASSISTANTS: PickerItem[] = [
@@ -34,8 +42,9 @@ function sum(changes: FileChange[] | null | undefined): DiffStat {
 export function App() {
   const daemon = useDaemon()
   const { projectId, projects, session, status, tabsByProject, workspaces } = daemon
-  const [mode, setMode] = useState<'normal' | 'git'>('normal')
+  const [mode, setMode] = useState<'normal' | 'git' | 'stats' | 'settings'>('normal')
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
+  const [newWorkspaceIn, setNewWorkspaceIn] = useState<string | null>(null)
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -50,6 +59,8 @@ export function App() {
     [workspaces]
   )
   const git = useGit(ws?.path, paths)
+  const quotas = useQuotas()
+  const setup = useSetup(projectId)
   const changes = ws?.path === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
     () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, sum(c)])),
@@ -78,11 +89,35 @@ export function App() {
     return () => clearTimeout(timer)
   }, [notice])
 
-  if (status.kind === 'loading' || status.kind === 'no-projects' || status.kind === 'error') {
+  const newProject = async () => {
+    const path = await openDialog({ directory: true, title: 'Open a folder as a project' })
+    if (typeof path !== 'string') return
+    try {
+      await daemon.createProject(path)
+      // The first project boots the app: start over on it.
+      if (status.kind === 'no-projects') window.location.reload()
+    } catch (error) {
+      setNotice(String(error))
+    }
+  }
+
+  if (status.kind === 'no-projects') {
+    return (
+      <main className="splash">
+        <div className="quiet fill">
+          <span>No projects yet</span>
+          <button type="button" className="btn btn-primary" onClick={() => void newProject()}>
+            Open a folder
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  if (status.kind === 'loading' || status.kind === 'error') {
     const message = {
-      'error': status.kind === 'error' ? status.message : '',
-      'loading': 'Connecting to aimux…',
-      'no-projects': 'No projects yet. Run aimux inside a repo.',
+      error: status.kind === 'error' ? status.message : '',
+      loading: 'Connecting to aimux…',
     }[status.kind]
     return <main className="splash">{message}</main>
   }
@@ -108,6 +143,22 @@ export function App() {
     sub: p.projectPath,
   }))
 
+  /** Edit opens the script; Run and Agent open a tab in this workspace and focus it. */
+  const runSetup = async (command: 'edit_setup_script' | 'run_setup' | 'setup_agent') => {
+    if (projectId === null) return
+    try {
+      const tabId = await invoke<string | null>(command, {
+        assistant: 'claude',
+        projectId,
+        workspaceId: ws?.id ?? null,
+      })
+      void setup.refresh()
+      if (typeof tabId === 'string') daemon.selectTab(tabId)
+    } catch (error) {
+      setNotice(String(error))
+    }
+  }
+
   const openFile = (file: FileChange) => {
     setGitFile(file)
     setMode('git')
@@ -129,6 +180,10 @@ export function App() {
             daemon.selectWorkspace(pid, wid)
           }}
           onProjects={() => setOverlay('projects')}
+          onNewProject={() => void newProject()}
+          onNewWorkspace={setNewWorkspaceIn}
+          onStats={() => setMode((m) => (m === 'stats' ? 'normal' : 'stats'))}
+          onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
         />
         {mode === 'normal' && (
           <>
@@ -164,7 +219,21 @@ export function App() {
                 </div>
               )}
             </main>
-            <GitPanel changes={changes} pr={git.pr} onOpenFile={openFile} />
+            <GitPanel
+              changes={changes}
+              pr={git.pr}
+              onOpenFile={openFile}
+              setup={
+                <SetupSection
+                  status={setup.status}
+                  workspaceId={ws?.id ?? null}
+                  workspaceName={ws?.name ?? ''}
+                  onEdit={() => void runSetup('edit_setup_script')}
+                  onRun={() => void runSetup('run_setup')}
+                  onAgent={() => void runSetup('setup_agent')}
+                />
+              }
+            />
           </>
         )}
         {mode === 'git' && ws?.path !== undefined && (
@@ -180,6 +249,8 @@ export function App() {
         {mode === 'git' && ws?.path === undefined && (
           <div className="quiet fill">Not a git repository</div>
         )}
+        {mode === 'stats' && <StatsView quotas={quotas.cache} />}
+        {mode === 'settings' && <SettingsView />}
       </div>
 
       <StatusBar
@@ -190,6 +261,8 @@ export function App() {
         path={ws?.path}
         onProjects={() => setOverlay('projects')}
         onToggleGit={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
+        quotas={quotas.cache}
+        quotaError={quotas.error}
       />
 
       {daemon.attention && (
@@ -214,7 +287,7 @@ export function App() {
       {notice !== null && (
         <div className="toast" role="alert">
           <div className="toast-body">
-            <span className="toast-title">Could not create the tab</span>
+            <span className="toast-title">That did not work</span>
             <span className="toast-text">{notice}</span>
           </div>
         </div>
@@ -231,6 +304,13 @@ export function App() {
             setMode('normal')
             daemon.selectWorkspace(pid, workspaces[pid]?.[0]?.id ?? null)
           }}
+        />
+      )}
+      {newWorkspaceIn !== null && (
+        <WorkspaceDialog
+          projectName={projects.find((p) => p.id === newWorkspaceIn)?.name ?? ''}
+          onClose={() => setNewWorkspaceIn(null)}
+          onCreate={async (name, base) => daemon.createWorkspace(newWorkspaceIn, name, base)}
         />
       )}
       {overlay === 'new-tab' && (

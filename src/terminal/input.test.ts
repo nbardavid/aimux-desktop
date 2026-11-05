@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { encodeKey, encodePaste, type KeyLike, wheelLines } from './input'
+import { encodeKey, encodePaste, encodeWheel, type KeyLike, wheelLines, wheelMode } from './input'
 
 const key = (k: string, mods: Partial<KeyLike> = {}): KeyLike => ({
   altKey: false,
@@ -65,3 +65,17 @@ test('wheel pixels to lines', () => {
 })
 
 test('wheel lines mode', () => expect(wheelLines(2, 1, 20)).toBe(2))
+
+const none = { altKey: false, ctrlKey: false, shiftKey: false }
+
+test('wheel goes where the app wants it', () => {
+  expect(wheelMode({ isAlternateBuffer: false, mouseTrackingMode: 'none' })).toBe('scroll')
+  expect(wheelMode({ isAlternateBuffer: true, mouseTrackingMode: 'none' })).toBe('none')
+  expect(wheelMode({ isAlternateBuffer: true, mouseTrackingMode: 'vt200' })).toBe('forward')
+  expect(wheelMode(undefined)).toBe('scroll')
+})
+
+test('wheel encodes as SGR 1006', () => {
+  expect(encodeWheel(-1, 3, 7, none)).toBe('\x1b[<64;3;7M')
+  expect(encodeWheel(2, 1, 1, { ...none, ctrlKey: true })).toBe('\x1b[<81;1;1M\x1b[<81;1;1M')
+})

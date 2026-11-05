@@ -58,6 +58,15 @@ async function loadWorkspaces(project: ProjectEntry): Promise<WorkspaceEntry[]> 
   }
 }
 
+async function loadCatalog() {
+  const listed = JSON.parse(await invoke<string>('list_projects')) as { projects: ProjectEntry[] }
+  const projects = listed.projects.toSorted((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
+  const loaded = await Promise.all(projects.map(async (p) => [p.id, await loadWorkspaces(p)]))
+  return { projects, workspaces: Object.fromEntries(loaded) as Record<string, WorkspaceEntry[]> }
+}
+
+const sleep = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 export function useDaemon() {
   const [status, setStatus] = useState<DaemonStatus>({ kind: 'loading' })
   const [projects, setProjects] = useState<ProjectEntry[]>([])
@@ -173,23 +182,17 @@ export function useDaemon() {
 
     const boot = async () => {
       try {
-        const listed = JSON.parse(await invoke<string>('list_projects')) as {
-          projects: ProjectEntry[]
-        }
-        const sorted = listed.projects.toSorted((a, b) =>
-          b.lastOpenedAt.localeCompare(a.lastOpenedAt)
-        )
-        setProjects(sorted)
-        latest.current.projects = sorted
-        const first = sorted[0]
+        const catalog = await loadCatalog()
+        setProjects(catalog.projects)
+        setWorkspaces(catalog.workspaces)
+        latest.current.projects = catalog.projects
+        const first = catalog.projects[0]
         if (!first) {
           setStatus({ kind: 'no-projects' })
           return
         }
         project.current = first.id
         setProjectId(first.id)
-        const loaded = await Promise.all(sorted.map(async (p) => [p.id, await loadWorkspaces(p)]))
-        setWorkspaces(Object.fromEntries(loaded))
         await invoke('ensure_daemon', { projectId: first.id })
         await connect()
       } catch (error) {
@@ -281,6 +284,42 @@ export function useDaemon() {
     [selectTab]
   )
 
+  const reloadCatalog = useCallback(async () => {
+    const catalog = await loadCatalog()
+    setProjects(catalog.projects)
+    setWorkspaces(catalog.workspaces)
+    latest.current.projects = catalog.projects
+    return catalog
+  }, [])
+
+  /** With the TUI attached, the TUI performs the create: poll the catalog until it lands. */
+  const createProject = useCallback(
+    async (path: string) => {
+      const name = path.split('/').findLast((part) => part !== '') ?? path
+      await invoke('create_project', { name, path })
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const catalog = await reloadCatalog()
+        const created = catalog.projects.find((p) => p.projectPath === path)
+        if (created) {
+          selectWorkspace(created.id, catalog.workspaces[created.id]?.[0]?.id ?? null)
+          return
+        }
+        await sleep(300)
+      }
+    },
+    [reloadCatalog, selectWorkspace]
+  )
+
+  const createWorkspace = useCallback(
+    async (pid: string, name: string, base: string | null) => {
+      const raw = await invoke<string>('create_workspace', { base, name, projectId: pid })
+      const created = JSON.parse(raw) as { id?: string }
+      await reloadCatalog()
+      if (created.id !== undefined) selectWorkspace(pid, created.id)
+    },
+    [reloadCatalog, selectWorkspace]
+  )
+
   const tabsByProject = useMemo(
     () => (projectId === null ? otherTabs : { ...otherTabs, [projectId]: session.tabs }),
     [otherTabs, projectId, session.tabs]
@@ -289,7 +328,9 @@ export function useDaemon() {
   return {
     activeTabId,
     attention,
+    createProject,
     createTab,
+    createWorkspace,
     dismissAttention: () => setAttention(null),
     done,
     projectId,

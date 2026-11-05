@@ -1,20 +1,27 @@
+import type { QuotaCache } from '../model/quota'
+
 import { Icon } from './icons'
+import { Quotas } from './quotas'
+
+const MODE_LABEL = { git: 'Git', normal: 'Terminal', settings: 'Settings', stats: 'Stats' } as const
 
 interface Props {
-  mode: 'normal' | 'git'
+  mode: 'normal' | 'git' | 'stats' | 'settings'
   connected: boolean
   projectName: string
   workspaceName: string
   path: string | undefined
   onProjects: () => void
   onToggleGit: () => void
+  quotas: QuotaCache
+  quotaError: string | null
 }
 
 export function StatusBar(props: Props) {
   const git = props.mode === 'git'
   return (
     <footer className="statusbar">
-      <span className={git ? 'mode mode-git' : 'mode'}>{git ? 'Git' : 'Terminal'}</span>
+      <span className={git ? 'mode mode-git' : 'mode'}>{MODE_LABEL[props.mode]}</span>
       <button type="button" className="item strong" onClick={props.onProjects}>
         {props.projectName}
       </button>
@@ -32,6 +39,7 @@ export function StatusBar(props: Props) {
         {git ? 'Back to tabs' : 'Git mode'}
         <span className="kbd">⌘G</span>
       </button>
+      <Quotas cache={props.quotas} error={props.quotaError} />
       <span className="item">
         <span className={props.connected ? 'st st-done' : 'st st-waiting'} />
         {props.connected ? 'daemon' : 'reconnecting…'}

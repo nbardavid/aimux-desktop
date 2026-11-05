@@ -1,5 +1,5 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import type { PullRequest } from '../git/pr'
 import type { FileChange } from './use-git'
@@ -8,6 +8,7 @@ import { FileList } from './file-list'
 import { Icon } from './icons'
 
 interface Props {
+  setup: ReactNode
   changes: FileChange[] | null | undefined
   pr: PullRequest | null
   onOpenFile: (file: FileChange) => void
@@ -21,7 +22,7 @@ const PR_DOT = {
 } as const
 const CHECK_DOT = { failing: 'st-failing', passing: 'st-done', pending: 'st-waiting' } as const
 
-export function GitPanel({ changes, onOpenFile, pr }: Props) {
+export function GitPanel({ changes, onOpenFile, pr, setup }: Props) {
   const [view, setView] = useState<'diff' | 'github'>('diff')
   return (
     <aside className="git" aria-label="Git">
@@ -92,6 +93,7 @@ export function GitPanel({ changes, onOpenFile, pr }: Props) {
             <div className="quiet">No pull request for this branch</div>
           ))}
       </div>
+      {setup}
     </aside>
   )
 }

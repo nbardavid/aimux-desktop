@@ -111,3 +111,99 @@ pub fn create_tab(
     }
     run_aimux(&args)
 }
+
+#[tauri::command(async)]
+pub fn create_project(name: String, path: String) -> Result<String, String> {
+    run_aimux(&["project", "create", &name, "--project", &path])
+}
+
+#[tauri::command(async)]
+pub fn create_workspace(
+    project_id: String,
+    name: String,
+    base: Option<String>,
+) -> Result<String, String> {
+    let mut args = vec![
+        "workspace",
+        "create",
+        "--project",
+        &project_id,
+        "--name",
+        &name,
+    ];
+    if let Some(base) = base.as_deref() {
+        args.extend(["--base", base]);
+    }
+    run_aimux(&args)
+}
+
+fn tab_id(created: &str) -> Result<String, String> {
+    let parsed: serde_json::Value = serde_json::from_str(created).map_err(|e| e.to_string())?;
+    parsed["tabId"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| "no tabId in `tab create` output".into())
+}
+
+/// A visible terminal tab that runs the project's setup script in the workspace.
+#[tauri::command(async)]
+pub fn run_setup(project_id: String, workspace_id: String) -> Result<String, String> {
+    let script = crate::files::ensure_setup_script(project_id.clone())?;
+    let command = format!("bash '{}'", script.replace('\'', "'\\''"));
+    let created = run_aimux(&[
+        "tab",
+        "create",
+        "--project",
+        &project_id,
+        "--workspace",
+        &workspace_id,
+        "--assistant",
+        "terminal",
+        "--title",
+        "Setup",
+        "--command",
+        &command,
+    ])?;
+    tab_id(&created)
+}
+
+/// An assistant tab asked to write the setup script; the prompt is submitted in the background.
+#[tauri::command(async)]
+pub fn setup_agent(
+    project_id: String,
+    workspace_id: String,
+    assistant: String,
+) -> Result<String, String> {
+    let script = crate::files::ensure_setup_script(project_id.clone())?;
+    let created = run_aimux(&[
+        "tab",
+        "create",
+        "--project",
+        &project_id,
+        "--workspace",
+        &workspace_id,
+        "--assistant",
+        &assistant,
+        "--title",
+        "Setup script",
+    ])?;
+    let tab = tab_id(&created)?;
+    let prompt = format!(
+        "Write the setup script at {script}. It runs in every new git worktree of this project, \
+         from the worktree root, to install what a fresh checkout lacks: dependencies, .env files \
+         copied from the main checkout, caches. Replace the stub; keep `#!/usr/bin/env bash` and \
+         `set -euo pipefail`. Make it idempotent and non-interactive, use no secrets, exit \
+         non-zero on failure. Do not run it."
+    );
+    let home = home();
+    let bin = aimux_bin(env("AIMUX_BIN").as_deref(), &home);
+    // `tab run` waits for the assistant to be ready, then for its turn: leave it running.
+    Command::new(bin)
+        .args(["tab", "run", "--project", &project_id, &tab, &prompt])
+        .env("PATH", tool_path())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(tab)
+}
