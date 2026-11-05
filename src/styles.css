@@ -1,99 +1,240 @@
+@import 'tailwindcss' source('.');
+@import 'tw-animate-css';
+
 /* A flat, warm white app: hairlines between panes, grey for what is selected, one tan
-   underline for the tab on screen. Colour otherwise says what needs attention. */
+   underline for the tab on screen. Colour otherwise says what needs attention.
+
+   The tokens are shadcn's names (background, foreground, muted, accent, border, ring,
+   sidebar…) plus the app's own (good, warn, critical, chrome, pill, hover, label, faint…),
+   registered in `@theme inline` below so utilities use them: `bg-background`,
+   `text-muted-foreground`, `border-border`, `bg-chrome`, `text-warn`, `h-bar`. */
 :root {
-  --paper: #ffffff;
-  --side: #fdfcfc;
-  --ink: #2b2826;
-  --ink-soft: #3d3a38;
-  --line-ink: #4a4644;
-  --muted: #6c6a69;
-  --faint: #8d8885;
-  --label: #9b9999;
-  --line: #eae8e6;
-  --line-strong: #dcd9d6;
-  --hover: #f5f4f3;
-  --active: #f1f0f0;
-  --pill: #ecebeb;
-  --chrome: #faf9f8;
+  /* Controls (buttons, inputs) take lg = 7px; rows in a popup md = 6px; popups xl = 10px;
+     dialogs 2xl = 12px; key caps sm = 4px. */
+  --radius: 7px;
+
+  --background: #ffffff;
+  --foreground: #2b2826;
+  --card: #ffffff;
+  --card-foreground: #2b2826;
+  --popover: #ffffff;
+  --popover-foreground: #2b2826;
+  /* The ink button: the one filled action. */
+  --primary: #2b2826;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f4f3;
+  --secondary-foreground: #2b2826;
+  --muted: #f5f4f3;
+  --muted-foreground: #6c6a69;
+  /* What a hovered or highlighted row turns: a grey, never a colour. */
+  --accent: #f5f4f3;
+  --accent-foreground: #2b2826;
+  --destructive: #c43a2b;
+  --destructive-foreground: #ffffff;
+  --border: #eae8e6;
+  --input: #dcd9d6;
+  --ring: #c29c87;
+
+  --sidebar: #fdfcfc;
+  --sidebar-foreground: #2b2826;
+  --sidebar-primary: #2b2826;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f0f0;
+  --sidebar-accent-foreground: #2b2826;
+  --sidebar-border: #eae8e6;
+  --sidebar-ring: #c29c87;
+
+  /* The app's own. */
   --good: #4d8a5b;
   --warn: #c99a1e;
   --critical: #c43a2b;
   --neutral: #b4b8bf;
-  --accent: #c29c87;
-  --term-fg: var(--ink);
-  --term-bg: var(--paper);
+  --tan: #c29c87;
+  --chrome: #faf9f8;
+  --pill: #ecebeb;
+  --hover: var(--accent);
+  --active: #f1f0f0;
+  --label: #9b9999;
+  --faint: #8d8885;
+  --ink-soft: #3d3a38;
+  /* The ink button's hover. */
+  --line-ink: #4a4644;
+  --line-strong: var(--input);
+  --term-fg: var(--foreground);
+  --term-bg: var(--background);
   /* One height for every bar on the top edge, so their hairlines line up. */
   --bar: 40px;
   --mono: 'Geist Mono', ui-monospace, monospace;
+  --shadow-popover: 0 0 0 1px rgb(43 40 38 / 0.06), 0 12px 32px -12px rgb(43 40 38 / 0.3);
+  --shadow-dialog: 0 24px 64px -24px rgb(43 40 38 / 0.32);
+
+  /* The names the hand-written rules below were written with. */
+  --paper: var(--background);
+  --ink: var(--foreground);
+  --line: var(--border);
+  --side: var(--sidebar);
+
   color-scheme: light;
 }
 
-* {
-  box-sizing: border-box;
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: var(--mono);
+
+  /* The UI's two sizes: text-sm is the body's 13px, text-xs the 11px of labels and meta. */
+  --text-xs: 11px;
+  --text-xs--line-height: 1.4;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.45;
+
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: calc(var(--radius) - 1px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 3px);
+  --radius-2xl: calc(var(--radius) + 5px);
+
+  --spacing-bar: var(--bar);
+
+  --shadow-popover: var(--shadow-popover);
+  --shadow-dialog: var(--shadow-dialog);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-critical: var(--critical);
+  --color-neutral: var(--neutral);
+  --color-tan: var(--tan);
+  --color-side: var(--sidebar);
+  --color-chrome: var(--chrome);
+  --color-pill: var(--pill);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-label: var(--label);
+  --color-faint: var(--faint);
+  --color-ink-soft: var(--ink-soft);
+  --color-line-ink: var(--line-ink);
+  --color-line-strong: var(--line-strong);
 }
 
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
+/* Element defaults, in Tailwind's base layer: after its preflight, under every utility. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
 
-body {
-  overflow: hidden;
-  background: var(--paper);
-  color: var(--ink);
-  font:
-    13px/1.45 -apple-system,
-    BlinkMacSystemFont,
-    system-ui,
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -webkit-user-select: none;
-  user-select: none;
-  cursor: default;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
 
-::selection {
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
-}
+  /* Preflight's 4 changed how tool output with tabs lines up. */
+  html {
+    tab-size: 8;
+  }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+  body {
+    overflow: hidden;
+    background: var(--background);
+    color: var(--foreground);
+    font:
+      13px/1.45 -apple-system,
+      BlinkMacSystemFont,
+      system-ui,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
 
-::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background: rgb(43 40 38 / 0.14) padding-box;
-}
+  ::selection {
+    background: color-mix(in srgb, var(--tan) 28%, transparent);
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgb(43 40 38 / 0.26) padding-box;
-}
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: rgb(43 40 38 / 0.14) padding-box;
+  }
 
-button {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(43 40 38 / 0.26) padding-box;
+  }
 
-button:focus-visible,
-input:focus-visible,
-[role='separator']:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  button {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  [role='separator']:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+
+  /* What preflight resets and the hand-written rules relied on: the browser's own look
+     for rendered markdown (list markers, link underlines, heading and rule margins), and
+     its placeholder grey and field padding. */
+  .md :where(*) {
+    all: revert;
+    box-sizing: border-box;
+  }
+
+  ::placeholder {
+    color: revert;
+  }
+
+  :where(input, textarea, select) {
+    padding: revert;
+  }
 }
 
 .icon {
@@ -180,7 +321,7 @@ input:focus-visible,
   place-items: center;
   height: 100%;
   padding: 24px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   text-align: center;
 }
 
@@ -377,7 +518,7 @@ input:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -415,7 +556,7 @@ input:focus-visible,
   height: 32px;
   padding: 0 10px;
   border-radius: 8px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13.5px;
   transition: background-color 0.12s;
 }
@@ -515,7 +656,7 @@ input:focus-visible,
   height: 34px;
   padding: 0 4px 0 0;
   border-radius: 8px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13.5px;
   transition: background-color 0.12s;
 }
@@ -605,7 +746,7 @@ input:focus-visible,
   padding: 0 8px;
   border: 1px dashed var(--line-strong);
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11.5px;
   white-space: nowrap;
 }
@@ -712,7 +853,7 @@ body.resizing * {
   padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 7px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -766,7 +907,7 @@ body.resizing * {
   left: 8px;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--accent);
+  background: var(--tan);
   content: '';
   transform: scaleX(0);
   transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1);
@@ -1114,7 +1255,7 @@ body.resizing * {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -1130,7 +1271,7 @@ body.resizing * {
 }
 
 .gh-meta {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-family: var(--mono);
   font-size: 11px;
 }
@@ -1158,7 +1299,7 @@ body.resizing * {
 .gh-body {
   max-height: 260px;
   overflow: auto;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -1203,7 +1344,7 @@ body.resizing * {
   bottom: 0;
   left: -4px;
   height: 2px;
-  background: var(--accent);
+  background: var(--tan);
   content: '';
 }
 
@@ -1219,7 +1360,7 @@ body.resizing * {
   padding: 18px 16px;
   border: 1px dashed var(--line-strong);
   border-radius: 10px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   line-height: 1.5;
   text-align: center;
@@ -1503,7 +1644,7 @@ body.resizing * {
   flex-wrap: wrap;
   gap: 2px 10px;
   padding-left: 70px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11.5px;
 }
 
@@ -1715,12 +1856,12 @@ body.resizing * {
 }
 
 .input:hover {
-  border-color: var(--muted);
+  border-color: var(--muted-foreground);
 }
 
 .input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--tan);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tan) 22%, transparent);
 }
 
 .segmented {
@@ -1736,7 +1877,7 @@ body.resizing * {
   height: 24px;
   padding: 0 10px;
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -1835,7 +1976,7 @@ body.resizing * {
 }
 
 .toast-text {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   overflow-wrap: anywhere;
 }
@@ -1879,7 +2020,7 @@ body.resizing * {
   padding: 0 10px;
   border-radius: 8px;
   font-size: 13.5px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-weight: 500;
 }
 
@@ -1910,7 +2051,7 @@ body.resizing * {
 .page-note {
   max-width: 68ch;
   margin: 0 0 20px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   line-height: 1.5;
 }
@@ -1953,7 +2094,7 @@ body.resizing * {
 }
 
 .row-help {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
 }
 
@@ -1978,7 +2119,7 @@ body.resizing * {
   padding: 0 6px;
   border-radius: 4px;
   background: var(--hover);
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 500;
   line-height: 18px;
@@ -2025,7 +2166,7 @@ body.resizing * {
 }
 
 .tile-label {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12.5px;
   font-weight: 500;
 }
@@ -2095,19 +2236,19 @@ body.resizing * {
 }
 
 .hm-1 {
-  background: color-mix(in srgb, var(--accent) 22%, var(--hover));
+  background: color-mix(in srgb, var(--tan) 22%, var(--hover));
 }
 
 .hm-2 {
-  background: color-mix(in srgb, var(--accent) 45%, var(--hover));
+  background: color-mix(in srgb, var(--tan) 45%, var(--hover));
 }
 
 .hm-3 {
-  background: color-mix(in srgb, var(--accent) 70%, var(--hover));
+  background: color-mix(in srgb, var(--tan) 70%, var(--hover));
 }
 
 .hm-4 {
-  background: var(--accent);
+  background: var(--tan);
 }
 
 .vbars {
@@ -2134,7 +2275,7 @@ body.resizing * {
 }
 
 .vbar:hover span {
-  background: var(--accent);
+  background: var(--tan);
 }
 
 .vbar em {
@@ -2205,7 +2346,7 @@ body.resizing * {
 }
 
 .facts dt {
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .facts dd {
@@ -2287,7 +2428,7 @@ body.resizing * {
   height: 1.05em;
   margin-left: 2px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--tan);
   content: '';
   vertical-align: -0.15em;
   animation: caret 1s ease-in-out infinite;
@@ -2370,7 +2511,7 @@ body.resizing * {
 
 .md a {
   color: var(--ink);
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--tan);
   text-underline-offset: 2px;
 }
 
@@ -2399,7 +2540,7 @@ body.resizing * {
 .md blockquote {
   padding-left: 12px;
   border-left: 2px solid var(--line-strong);
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .md table {
@@ -2452,7 +2593,7 @@ body.resizing * {
   padding: 4px 8px 6px 16px;
   border-left: 2px solid var(--line);
   margin-left: 8px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 13px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -2572,8 +2713,8 @@ body.resizing * {
 }
 
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--tan) 55%, var(--line));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tan) 14%, transparent);
 }
 
 .composer-field {
@@ -2699,7 +2840,7 @@ body.resizing * {
   padding: 0 6px;
   border-radius: 4px;
   background: var(--pill);
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 10.5px;
   line-height: 17px;
 }
@@ -2712,7 +2853,7 @@ body.resizing * {
 }
 
 .cmd-menu.is-hint .cmd-name {
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 /* A command in the conversation: the prompt as a chip, its output as a muted card. */
@@ -2750,7 +2891,7 @@ body.resizing * {
 
 .cmd-out-more {
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
@@ -2777,7 +2918,7 @@ body.resizing * {
 .perm-what {
   max-height: 120px;
   overflow: auto;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-family: var(--mono);
   font-size: 12px;
   white-space: pre-wrap;
@@ -2974,7 +3115,7 @@ body.resizing * {
   height: 28px;
   margin-right: -6px;
   padding: 0 6px 0 8px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-family: var(--mono);
   font-size: 12px;
 }
@@ -3189,7 +3330,7 @@ body.resizing * {
 }
 
 .iq-value {
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3358,7 +3499,7 @@ body.resizing * {
   padding: 0 5px;
   border-radius: 999px;
   background: var(--active);
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -3493,7 +3634,7 @@ body.resizing * {
 }
 
 .tone-neutral {
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .head-branch {
@@ -3501,7 +3642,7 @@ body.resizing * {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-family: var(--mono);
   font-size: 12px;
 }

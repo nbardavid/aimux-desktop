@@ -83,5 +83,11 @@ branding.
 - Release: `bun bump patch|minor|major` (semver; commits, tags, pushes; Actions builds and
   publishes).
   Needs the owner's go-ahead like any push.
-- The owner runs dev servers (`bun run dev`) themselves. Hand them the command; don't leave
-  long-running processes in the background.
+- **UI is tested in the browser.** `bun run web:dev` (http://localhost:1420) serves the app
+  with Tauri IPC mocked by fixture data (`src/dev/`, dev only, never in a build). Check every
+  UI change there with the chrome-devtools tools: reach the screen, screenshot it, drive it by
+  keyboard and mouse, read the console. Keep the fixtures covering new screens and states.
+  Start the server for the check and stop it after.
+- The real app (`bun run dev`) is only for what the mock cannot show: the background host,
+  real Claude processes, terminals, git on disk, the updater. The owner runs it; hand them
+  the command and don't leave long-running processes in the background.

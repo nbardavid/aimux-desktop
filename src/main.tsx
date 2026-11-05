@@ -9,11 +9,22 @@ import '@xterm/xterm/css/xterm.css'
 
 import './styles.css'
 
-const root = document.querySelector('#root')
-if (root) {
-  createRoot(root).render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  )
+// In a plain browser (vite dev only), Tauri's IPC is answered from fixtures, and
+// `?gallery` shows the UI primitives instead of the app.
+const preview = import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)
+const gallery = preview && new URLSearchParams(location.search).has('gallery')
+
+async function start() {
+  if (preview) await import('./dev/mock-ipc')
+  const Root = gallery ? (await import('./dev/gallery')).Gallery : App
+  const root = document.querySelector('#root')
+  if (root) {
+    createRoot(root).render(
+      <StrictMode>
+        <Root />
+      </StrictMode>
+    )
+  }
 }
+
+void start()
