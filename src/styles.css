@@ -38,7 +38,7 @@ body {
   background: var(--paper);
   color: var(--ink);
   font:
-    14px/1.4 'Funnel Sans',
+    13px/1.4 'Funnel Sans',
     system-ui,
     sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -134,15 +134,13 @@ input:focus-visible {
   display: flex;
   flex: none;
   flex-direction: column;
-  width: 288px;
   min-height: 0;
-  border-right: 1px solid var(--line);
   background: var(--sunken);
 }
 
 .titlebar {
   flex: none;
-  height: 44px;
+  height: 38px;
 }
 
 .side-head {
@@ -150,13 +148,13 @@ input:focus-visible {
   flex: none;
   align-items: center;
   justify-content: space-between;
-  height: 40px;
-  padding: 0 10px 0 18px;
+  height: 30px;
+  padding: 0 6px 0 14px;
 }
 
 .side-title {
   font-family: 'Funnel Display', sans-serif;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
@@ -165,8 +163,8 @@ input:focus-visible {
   display: grid;
   flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   color: var(--faint);
 }
@@ -180,11 +178,11 @@ input:focus-visible {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 8px 12px;
+  padding: 0 6px 8px;
 }
 
 .project {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .project-row {
@@ -192,7 +190,7 @@ input:focus-visible {
   align-items: center;
   gap: 6px;
   width: 100%;
-  height: 32px;
+  height: 28px;
   padding: 0 6px 0 8px;
   border-radius: 6px;
   font-weight: 600;
@@ -232,7 +230,7 @@ input:focus-visible {
   flex-direction: column;
   gap: 1px;
   width: 100%;
-  padding: 6px 10px 7px 30px;
+  padding: 4px 8px 5px 26px;
   border-radius: 6px;
 }
 
@@ -264,7 +262,7 @@ input:focus-visible {
 }
 
 .ws-diff {
-  font-size: 12px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   white-space: nowrap;
@@ -277,7 +275,7 @@ input:focus-visible {
   min-width: 0;
   color: var(--muted);
   font-family: 'Geist Mono', monospace;
-  font-size: 11.5px;
+  font-size: 11px;
 }
 
 .ws-branch span {
@@ -354,7 +352,7 @@ input:focus-visible {
   display: flex;
   flex: none;
   align-items: stretch;
-  height: 44px;
+  height: 38px;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
 }
@@ -393,9 +391,9 @@ input:focus-visible {
 .tab-main {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   height: 100%;
-  padding: 0 4px 0 14px;
+  padding: 0 3px 0 12px;
 }
 
 .tab-index {
@@ -446,7 +444,7 @@ input:focus-visible {
   position: relative;
   flex: 1;
   min-height: 0;
-  padding: 14px 18px;
+  padding: 8px 12px;
   outline: none;
 }
 
@@ -506,11 +504,9 @@ input:focus-visible {
 /* Git panel */
 .git {
   display: flex;
-  flex: 0 1 336px;
+  flex: none;
   flex-direction: column;
-  min-width: 260px;
   min-height: 0;
-  border-left: 1px solid var(--line);
 }
 
 /* One row, as tall as the tab bar: the view switch, then the branch's PR. */
@@ -521,7 +517,7 @@ input:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  height: 44px;
+  height: 38px;
   padding: 0 8px 0 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -553,11 +549,11 @@ input:focus-visible {
 }
 
 .seg {
-  height: 26px;
-  padding: 0 12px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -583,10 +579,10 @@ input:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  margin-top: 6px;
+  height: 26px;
+  margin-top: 4px;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -606,10 +602,10 @@ input:focus-visible {
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 30px;
+  height: 26px;
   padding: 0 10px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .file:hover {
@@ -753,7 +749,7 @@ input:focus-visible {
   flex: none;
   align-items: center;
   gap: 12px;
-  height: 52px;
+  height: 38px;
   padding: 0 14px 0 18px;
   border-bottom: 1px solid var(--line);
 }
@@ -848,23 +844,23 @@ input:focus-visible {
   flex: none;
   align-items: center;
   gap: 10px;
-  height: 30px;
+  height: 24px;
   padding: 0 12px 0 8px;
   border-top: 1px solid var(--line);
   background: var(--sunken);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .mode {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 8px;
+  height: 16px;
+  padding: 0 6px;
   border-radius: 4px;
   background: var(--ink);
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -1059,8 +1055,8 @@ input:focus-visible {
 .toast {
   position: absolute;
   z-index: 4;
-  right: 348px;
-  bottom: 42px;
+  right: 16px;
+  bottom: 36px;
   display: flex;
   gap: 10px;
   width: 330px;
@@ -1327,23 +1323,27 @@ input:focus-visible {
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px 14px;
+  gap: 8px;
+  padding: 0;
   border-top: 1px solid var(--line);
 }
 
 .setup-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  gap: 6px;
 }
 
 .setup-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  padding: 0 12px;
 }
 
 .setup-actions .btn {
@@ -1356,6 +1356,7 @@ input:focus-visible {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.5;
+  padding: 0 12px 12px;
 }
 
 .mono {
@@ -1367,7 +1368,7 @@ input:focus-visible {
   display: flex;
   flex: none;
   gap: 4px;
-  padding: 10px 10px 12px;
+  padding: 6px 6px 8px;
   border-top: 1px solid var(--line);
 }
 
@@ -1375,11 +1376,12 @@ input:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
+  height: 28px;
   padding: 0 10px;
   border-radius: 6px;
   color: var(--muted);
   font-weight: 500;
+  font-size: 12.5px;
 }
 
 .ghost:hover {
@@ -1405,7 +1407,7 @@ input:focus-visible {
   flex: none;
   flex-direction: column;
   gap: 1px;
-  width: 220px;
+  width: 200px;
   padding: 12px 10px;
   border-right: 1px solid var(--line);
 }
@@ -1413,7 +1415,7 @@ input:focus-visible {
 .page-title {
   padding: 6px 10px 14px;
   font-family: 'Funnel Display', sans-serif;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
@@ -1598,7 +1600,7 @@ input:focus-visible {
 
 .tile-value {
   font-family: 'Funnel Display', sans-serif;
-  font-size: 30px;
+  font-size: 24px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: -0.03em;
@@ -1780,4 +1782,66 @@ input:focus-visible {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   text-align: right;
+}
+
+/* Resizing and panel toggles */
+.splitter {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: 1px;
+  background: var(--line);
+  cursor: col-resize;
+}
+
+.splitter::before {
+  position: absolute;
+  inset: 0 -4px;
+  content: '';
+}
+
+.splitter:hover,
+.splitter:active,
+.splitter:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+
+body.resizing {
+  cursor: col-resize;
+}
+
+body.resizing * {
+  user-select: none;
+}
+
+.tab-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 6px;
+}
+
+.icon-btn.is-on {
+  color: var(--ink);
+}
+
+/* The traffic lights sit over the tab bar once the sidebar is hidden. */
+.tabbar.no-side {
+  padding-left: 76px;
+}
+
+.setup-head .chev {
+  display: grid;
+  color: var(--faint);
+  transition: transform 0.12s;
+}
+
+.setup-head .chev.is-open {
+  transform: rotate(90deg);
+}
+
+.setup-head:hover {
+  background: var(--hovered);
 }

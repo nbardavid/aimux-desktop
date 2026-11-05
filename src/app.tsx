@@ -9,12 +9,14 @@ import { Picker, type PickerItem } from './app/picker'
 import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
 import { type DiffStat, Sidebar } from './app/sidebar'
+import { Splitter } from './app/splitter'
 import { StatsView } from './app/stats-view'
 import { StatusBar } from './app/status-bar'
 import { TabBar } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { useDaemon } from './app/use-daemon'
 import { type FileChange, useGit } from './app/use-git'
+import { LIMITS, useLayout } from './app/use-layout'
 import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
 import { WorkspaceDialog } from './app/workspace-dialog'
@@ -60,6 +62,7 @@ export function App() {
   )
   const git = useGit(ws?.path, paths)
   const quotas = useQuotas()
+  const { layout, update } = useLayout()
   const setup = useSetup(projectId)
   const changes = ws?.path === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
@@ -71,7 +74,10 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey) return
       const index = Number(e.key)
-      if (e.key === 'p') setOverlay('projects')
+      // e.code: with Option held, e.key is the composed character.
+      if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
+      else if (e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
+      else if (e.key === 'p') setOverlay('projects')
       else if (e.key === 't') setOverlay('new-tab')
       else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
       else if (tabs[index - 1] !== undefined && index >= 1)
@@ -81,7 +87,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [daemon, tabs])
+  }, [daemon, layout.gitOpen, layout.sideOpen, tabs, update])
 
   useEffect(() => {
     if (notice === null) return
@@ -166,25 +172,39 @@ export function App() {
 
   return (
     <div className="app">
+      {!layout.sideOpen && mode !== 'normal' && <div className="titlebar" data-tauri-drag-region />}
       <div className="cols">
-        <Sidebar
-          projects={projects}
-          workspaces={workspaces}
-          tabsByProject={tabsByProject}
-          done={daemon.done}
-          diffs={diffs}
-          projectId={projectId}
-          workspaceId={ws?.id ?? null}
-          onSelect={(pid, wid) => {
-            setMode('normal')
-            daemon.selectWorkspace(pid, wid)
-          }}
-          onProjects={() => setOverlay('projects')}
-          onNewProject={() => void newProject()}
-          onNewWorkspace={setNewWorkspaceIn}
-          onStats={() => setMode((m) => (m === 'stats' ? 'normal' : 'stats'))}
-          onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
-        />
+        {layout.sideOpen && (
+          <>
+            <Sidebar
+              width={layout.sideWidth}
+              projects={projects}
+              workspaces={workspaces}
+              tabsByProject={tabsByProject}
+              done={daemon.done}
+              diffs={diffs}
+              projectId={projectId}
+              workspaceId={ws?.id ?? null}
+              onSelect={(pid, wid) => {
+                setMode('normal')
+                daemon.selectWorkspace(pid, wid)
+              }}
+              onProjects={() => setOverlay('projects')}
+              onNewProject={() => void newProject()}
+              onNewWorkspace={setNewWorkspaceIn}
+              onStats={() => setMode((m) => (m === 'stats' ? 'normal' : 'stats'))}
+              onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
+            />
+            <Splitter
+              label="Resize the projects sidebar"
+              value={layout.sideWidth}
+              min={LIMITS.side[0]}
+              max={LIMITS.side[1]}
+              direction={1}
+              onChange={(sideWidth) => update({ sideWidth })}
+            />
+          </>
+        )}
         {mode === 'normal' && (
           <>
             <main className="center">
@@ -195,6 +215,10 @@ export function App() {
                 onSelect={daemon.selectTab}
                 onClose={daemon.closeTab}
                 onNew={() => setOverlay('new-tab')}
+                sideOpen={layout.sideOpen}
+                gitOpen={layout.gitOpen}
+                onToggleSide={() => update({ sideOpen: !layout.sideOpen })}
+                onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
               />
               {tab ? (
                 <TerminalView
@@ -219,21 +243,34 @@ export function App() {
                 </div>
               )}
             </main>
-            <GitPanel
-              changes={changes}
-              pr={git.pr}
-              onOpenFile={openFile}
-              setup={
-                <SetupSection
-                  status={setup.status}
-                  workspaceId={ws?.id ?? null}
-                  workspaceName={ws?.name ?? ''}
-                  onEdit={() => void runSetup('edit_setup_script')}
-                  onRun={() => void runSetup('run_setup')}
-                  onAgent={() => void runSetup('setup_agent')}
+            {layout.gitOpen && (
+              <>
+                <Splitter
+                  label="Resize the git panel"
+                  value={layout.gitWidth}
+                  min={LIMITS.git[0]}
+                  max={LIMITS.git[1]}
+                  direction={-1}
+                  onChange={(gitWidth) => update({ gitWidth })}
                 />
-              }
-            />
+                <GitPanel
+                  width={layout.gitWidth}
+                  changes={changes}
+                  pr={git.pr}
+                  onOpenFile={openFile}
+                  setup={
+                    <SetupSection
+                      status={setup.status}
+                      workspaceId={ws?.id ?? null}
+                      workspaceName={ws?.name ?? ''}
+                      onEdit={() => void runSetup('edit_setup_script')}
+                      onRun={() => void runSetup('run_setup')}
+                      onAgent={() => void runSetup('setup_agent')}
+                    />
+                  }
+                />
+              </>
+            )}
           </>
         )}
         {mode === 'git' && ws?.path !== undefined && (

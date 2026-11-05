@@ -12,6 +12,18 @@ const PATHS = {
   chevron: <path d="m9 6 6 6-6 6" />,
   close: <path d="M18 6 6 18M6 6l12 12" />,
   external: <path d="M7 17 17 7M8 7h9v9" />,
+  panelLeft: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </>
+  ),
+  panelRight: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   search: (
     <>

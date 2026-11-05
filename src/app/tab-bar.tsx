@@ -11,11 +11,21 @@ interface Props {
   onSelect: (id: string) => void
   onClose: (id: string) => void
   onNew: () => void
+  sideOpen: boolean
+  gitOpen: boolean
+  onToggleSide: () => void
+  onToggleGit: () => void
 }
 
-export function TabBar({ activeId, done, onClose, onNew, onSelect, tabs }: Props) {
+export function TabBar(props: Props) {
+  const { activeId, done, onClose, onNew, onSelect, tabs } = props
   return (
-    <div className="tabbar" role="tablist" aria-label="Tabs" data-tauri-drag-region>
+    <div
+      className={props.sideOpen ? 'tabbar' : 'tabbar no-side'}
+      role="tablist"
+      aria-label="Tabs"
+      data-tauri-drag-region
+    >
       {tabs.map((tab, i) => {
         const active = tab.id === activeId
         const signal = signalOf([tab], done)
@@ -46,6 +56,28 @@ export function TabBar({ activeId, done, onClose, onNew, onSelect, tabs }: Props
       <button type="button" className="tab-add" aria-label="New tab" onClick={onNew}>
         <Icon name="plus" small />
       </button>
+      <span className="tab-tools">
+        <button
+          type="button"
+          className={props.sideOpen ? 'icon-btn is-on' : 'icon-btn'}
+          aria-label="Projects sidebar (⌘B)"
+          aria-pressed={props.sideOpen}
+          title="Projects sidebar (⌘B)"
+          onClick={props.onToggleSide}
+        >
+          <Icon name="panelLeft" small />
+        </button>
+        <button
+          type="button"
+          className={props.gitOpen ? 'icon-btn is-on' : 'icon-btn'}
+          aria-label="Git panel (⌥⌘B)"
+          aria-pressed={props.gitOpen}
+          title="Git panel (⌥⌘B)"
+          onClick={props.onToggleGit}
+        >
+          <Icon name="panelRight" small />
+        </button>
+      </span>
     </div>
   )
 }

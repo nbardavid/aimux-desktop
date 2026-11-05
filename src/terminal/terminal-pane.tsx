@@ -6,8 +6,8 @@ import { blockRects, type Rect } from './blocks'
 import { spanColor } from './colors'
 import { gridSize, measureCell, type Size } from './grid'
 
-export const CELL_HEIGHT = 21
-export const TERMINAL_FONT = `13px/${CELL_HEIGHT}px "Geist Mono", monospace`
+export const CELL_HEIGHT = 19
+export const TERMINAL_FONT = `12.5px/${CELL_HEIGHT}px "Geist Mono", monospace`
 
 interface Props {
   snapshot: TerminalSnapshot | undefined

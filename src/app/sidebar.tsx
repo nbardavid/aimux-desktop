@@ -25,6 +25,7 @@ interface Props {
   onNewWorkspace: (projectId: string) => void
   onStats: () => void
   onSettings: () => void
+  width: number
 }
 
 const plural = (n: number) => `${n} ${n === 1 ? 'tab' : 'tabs'}`
@@ -40,7 +41,7 @@ export function Sidebar(props: Props) {
     })
 
   return (
-    <nav className="side" aria-label="Projects">
+    <nav className="side" aria-label="Projects" style={{ width: props.width }}>
       {/* The window's traffic lights sit here: the strip drags the window. */}
       <div className="titlebar" data-tauri-drag-region />
       <div className="side-head">

@@ -1,4 +1,8 @@
+import { useState } from 'react'
+
 import type { SetupStatus } from './use-setup'
+
+import { Icon } from './icons'
 
 interface Props {
   status: SetupStatus | null
@@ -25,43 +29,56 @@ export function SetupSection({
   workspaceId,
   workspaceName,
 }: Props) {
+  const [open, setOpen] = useState(false)
   if (status === null) return null
   const run = lastRun(status, workspaceId)
   // A project with no workspace records has no worktree for the script to run in.
   const inWorkspace = workspaceId !== null
   return (
     <div className="setup">
-      <div className="setup-head">
+      <button
+        type="button"
+        className="setup-head"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className={open ? 'chev is-open' : 'chev'}>
+          <Icon name="chevron" small />
+        </span>
+        <span className="grow">Setup script</span>
         {status.exists ? (
           <span className="status">
             <span className={`st ${run.dot}`} />
             {run.text}
           </span>
         ) : (
-          <span>No setup script</span>
+          <span className="faint">none</span>
         )}
-        <span className="mono faint">{workspaceName}</span>
-      </div>
-      <div className="setup-actions">
-        {status.exists && inWorkspace && (
-          <button type="button" className="btn btn-outline" onClick={onRun}>
-            Run
-          </button>
-        )}
-        <button type="button" className="btn btn-outline" onClick={onEdit}>
-          {status.exists ? 'Edit' : 'Create'}
-        </button>
-        {inWorkspace && (
-          <button type="button" className="btn btn-outline" onClick={onAgent}>
-            Write it with an agent
-          </button>
-        )}
-      </div>
-      <div className="setup-text">
-        {status.exists
-          ? 'Runs in each new workspace the TUI sees created.'
-          : 'A setup script installs what a fresh worktree lacks: dependencies, .env, caches.'}
-      </div>
+      </button>
+      {open && (
+        <>
+          <div className="setup-actions">
+            {status.exists && inWorkspace && (
+              <button type="button" className="btn btn-outline" onClick={onRun}>
+                Run
+              </button>
+            )}
+            <button type="button" className="btn btn-outline" onClick={onEdit}>
+              {status.exists ? 'Edit' : 'Create'}
+            </button>
+            {inWorkspace && (
+              <button type="button" className="btn btn-outline" onClick={onAgent}>
+                Write it with an agent
+              </button>
+            )}
+          </div>
+          <div className="setup-text">
+            {status.exists
+              ? `Runs in each new workspace the TUI sees created. This one: ${workspaceName}.`
+              : 'A setup script installs what a fresh worktree lacks: dependencies, .env, caches.'}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { FileList } from './file-list'
 import { Icon } from './icons'
 
 interface Props {
+  width: number
   setup: ReactNode
   changes: FileChange[] | null | undefined
   pr: PullRequest | null
@@ -22,10 +23,10 @@ const PR_DOT = {
 } as const
 const CHECK_DOT = { failing: 'st-failing', passing: 'st-done', pending: 'st-waiting' } as const
 
-export function GitPanel({ changes, onOpenFile, pr, setup }: Props) {
+export function GitPanel({ changes, onOpenFile, pr, setup, width }: Props) {
   const [view, setView] = useState<'diff' | 'github'>('diff')
   return (
-    <aside className="git" aria-label="Git">
+    <aside className="git" aria-label="Git" style={{ width }}>
       <div className="git-top" data-tauri-drag-region>
         {pr && (
           <div className="pr-line">
