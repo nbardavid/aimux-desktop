@@ -1,0 +1,69 @@
+:root {
+  --term-fg: #d8dee9;
+  --term-bg: #16181d;
+  --chrome-bg: #1d2027;
+  --chrome-fg: #aeb4c0;
+  --chrome-dim: #6b7280;
+  --accent: #7aa2f7;
+  --border: #2a2e37;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--term-bg);
+  color: var(--chrome-fg);
+  font:
+    13px -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  overflow: hidden;
+}
+
+.terminal {
+  height: 100%;
+  overflow: hidden;
+  color: var(--term-fg);
+  background: var(--term-bg);
+  font-variant-ligatures: none;
+  font-feature-settings:
+    'liga' 0,
+    'calt' 0;
+  user-select: text;
+  cursor: text;
+}
+
+.terminal-line {
+  height: var(--cell-h);
+  white-space: pre;
+}
+
+.cursor-bar {
+  box-shadow: inset 2px 0 0 var(--term-fg);
+}
+
+.cursor-underline {
+  box-shadow: inset 0 -2px 0 var(--term-fg);
+}
+
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% {
+    background-color: transparent;
+    color: inherit;
+    box-shadow: none;
+  }
+}
