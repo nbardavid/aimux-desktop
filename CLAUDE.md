@@ -47,6 +47,14 @@ branding.
     ⌘1–9, ⌘B, ⌥⌘B, ⌘G;
   - no browser context menu;
   - a macOS menu that leaves ⌘W to the app.
+- **Updates**: the installed app checks GitHub releases at launch and every six hours; a
+  newer one shows an "Update to x.y.z" pill in the top bar. One click installs and restarts
+  the window only. Updates are signed; a dev build never updates.
+- **Dev and prod are two apps**: the installed "aimux" is prod; `bun run dev` is "aimux Dev",
+  with its own identifier, data folder (profile `dev`) and host. The owner works on this
+  repo from prod.
+- **Open source**: public at `nbardavid/aimux-desktop`, MIT, crediting BrimVeyn/aimux where
+  it started (its `desktop/` history is kept).
 - **The look**: light, flat, white surfaces, system font, warm neutrals. Never a hatched or
   decorative background. Dark mode is not done yet.
 
@@ -59,8 +67,8 @@ branding.
 - English everywhere: UI, code, commits, docs. The owner chats in French and dictates by
   voice (expect odd words; "n8n" or "Emacs" have meant aimux).
 - bun only, never npm.
-- Try things with `AIMUX_PROFILE=gui-dev`: it gives the app its own data folder, so the
-  owner's real projects stay untouched.
+- Try things in a dev build or with `AIMUX_PROFILE=gui-dev`: both get their own data folder
+  and host, so the owner's real projects and running work stay untouched.
 - Commit only when asked, one approval per commit. Pushing needs its own approval. No
   Co-Authored-By line.
 - Before calling something done, run the tests, the lint and the formatter, and say plainly
@@ -69,7 +77,10 @@ branding.
 ## Checks and trial runs
 
 - Checks: `bun run lint && bun run format && bun test && (cd src-tauri && cargo test)`.
-- Build: `bun run build`. Launch for a trial:
+- Build (signs the update archive): `TAURI_SIGNING_PRIVATE_KEY=~/.tauri/aimux-desktop.key bun run build`.
+  Launch for a trial:
   `open --env AIMUX_PROFILE=gui-dev src-tauri/target/release/bundle/macos/aimux.app`.
+- Release: `bun run release <x.y.z>` (commits, tags, pushes; Actions builds and publishes).
+  Needs the owner's go-ahead like any push.
 - The owner runs dev servers (`bun run dev`) themselves. Hand them the command; don't leave
   long-running processes in the background.

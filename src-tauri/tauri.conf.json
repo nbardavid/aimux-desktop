@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "aimux",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "dev.aimux.desktop",
   "build": {
     "beforeDevCommand": "bun run web:dev",
@@ -29,6 +29,18 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZEQjEzOUVCRUE2RDQwQzEKUldUQlFHM3E2em14YlpWWk1VeHpQd2ZXdWY1TkZZQ2Zwa1RxM3ViZHhTaVlKK2htcWxLU3F5aEMK",
+      "endpoints": [
+        "https://github.com/nbardavid/aimux-desktop/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

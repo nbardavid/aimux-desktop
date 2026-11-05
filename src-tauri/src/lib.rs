@@ -6,6 +6,7 @@ pub mod host_client;
 pub mod pty;
 pub mod quota;
 pub mod store;
+pub mod update;
 
 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Runtime};
@@ -64,6 +65,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(host_client::Presence::default())
         .manage(store::Store::default())
         .invoke_handler(tauri::generate_handler![
@@ -106,6 +108,8 @@ pub fn run() {
             git_write::git_branch,
             git_write::git_checkout,
             git_write::pr_merge,
+            update::update_check,
+            update::update_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

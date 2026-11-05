@@ -101,9 +101,12 @@ pub fn sanitize(raw: &str) -> String {
     }
 }
 
-/// `AIMUX_PROFILE` keeps a trial run (`gui-dev`) apart from everyday data.
+/// `AIMUX_PROFILE` keeps a trial run (`gui-dev`) apart from everyday data. A dev build is
+/// `dev` unless told otherwise, so it never touches the installed app's data or host.
 fn profile() -> Option<String> {
-    env("AIMUX_PROFILE").filter(|p| p != "default")
+    env("AIMUX_PROFILE")
+        .or_else(|| cfg!(debug_assertions).then(|| "dev".into()))
+        .filter(|p| p != "default")
 }
 
 /// `~/.local/share/aimux-desktop[-<profile>]`, or `AIMUX_DESKTOP_HOME`.

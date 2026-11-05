@@ -26,6 +26,7 @@ import { Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { TopBar } from './app/top-bar'
+import { UpdateButton, useUpdate } from './app/update-button'
 import { useCatalog } from './app/use-catalog'
 import { chatSignal, type ChatTab, useChats } from './app/use-chats'
 import { type FileChange, useGit } from './app/use-git'
@@ -123,6 +124,7 @@ export function App() {
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
   const terminals = useTerminals()
+  const appUpdate = useUpdate()
   const host = useHost()
   /** The tab on screen, when the window has the focus: what needs no calling out. */
   const watching = useRef<string | null>(null)
@@ -523,6 +525,7 @@ export function App() {
       onShowSide={() => update({ sideOpen: true })}
       onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
       onGitMode={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
+      tools={<UpdateButton update={appUpdate} />}
     >
       {tabsRow}
     </TopBar>

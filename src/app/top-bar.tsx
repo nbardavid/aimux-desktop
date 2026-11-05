@@ -16,6 +16,8 @@ interface Props {
   onShowSide: () => void
   onToggleGit: () => void
   onGitMode: () => void
+  /** Shown first among the switches: the update pill. */
+  tools?: ReactNode
 }
 
 /** The window's top row: where you are, its tabs, and the switches for what sits around them. */
@@ -40,6 +42,7 @@ export function TopBar(props: Props) {
       )}
       <div className="bar-tabs">{props.children}</div>
       <span className="bar-tools">
+        {props.tools}
         {props.canDiff && (
           <button
             type="button"

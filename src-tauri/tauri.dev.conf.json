@@ -1,0 +1,7 @@
+{
+  "productName": "aimux Dev",
+  "identifier": "dev.aimux.desktop.dev",
+  "bundle": {
+    "createUpdaterArtifacts": false
+  }
+}
