@@ -75,29 +75,34 @@ export function QuotaWindows({ cache }: { cache: QuotaCache }) {
   )
 }
 
-/** The status-bar tile and, on click, every window of every tool. */
+/** One thin meter per tool for the sidebar's foot; a click shows every window. */
 export function Quotas({ cache, error }: { cache: QuotaCache; error: string | null }) {
   const [open, setOpen] = useState(false)
   const tools = (['claude', 'codex'] as const).filter((tool) => cache[tool] !== undefined)
   if (tools.length === 0 && error === null) return null
   return (
-    <span className="quota-anchor">
+    <div className="quota-anchor">
       <button
         type="button"
-        className="item"
+        className="meters"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
         {tools.map((tool) => {
-          const percent = cache[tool]?.snapshot.percent
+          const percent = cache[tool]?.snapshot.percent ?? null
           return (
-            <span key={tool} className="quota-chip">
-              {TOOL_LABEL[tool]}{' '}
-              <span className="num">{percent == null ? '—' : `${Math.round(percent)}%`}</span>
+            <span key={tool} className="meter-row">
+              <span className="meter-label">{TOOL_LABEL[tool]}</span>
+              <span className="quota-bar">
+                <span className={barTone(percent ?? 0)} style={{ width: `${percent ?? 0}%` }} />
+              </span>
+              <span className="meter-pct">
+                {percent === null ? '—' : `${Math.round(percent)}%`}
+              </span>
             </span>
           )
         })}
-        {tools.length === 0 && <span className="faint">quotas unavailable</span>}
+        {tools.length === 0 && <span className="faint">Quotas unavailable</span>}
       </button>
       {open && (
         <div className="popover" role="dialog" aria-label="Quotas">
@@ -105,6 +110,6 @@ export function Quotas({ cache, error }: { cache: QuotaCache; error: string | nu
           {error !== null && <div className="field-error">{error}</div>}
         </div>
       )}
-    </span>
+    </div>
   )
 }

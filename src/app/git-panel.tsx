@@ -9,10 +9,10 @@ import { Icon } from './icons'
 
 interface Props {
   width: number
-  setup: ReactNode
   changes: FileChange[] | null | undefined
   pr: PullRequest | null
   onOpenFile: (file: FileChange) => void
+  setup: ReactNode
 }
 
 const PR_DOT = {
@@ -24,71 +24,65 @@ const PR_DOT = {
 const CHECK_DOT = { failing: 'st-failing', passing: 'st-done', pending: 'st-waiting' } as const
 
 export function GitPanel({ changes, onOpenFile, pr, setup, width }: Props) {
-  const [view, setView] = useState<'diff' | 'github'>('diff')
+  const [view, setView] = useState<'changes' | 'pr'>('changes')
+  const views = [
+    { count: changes?.length ?? 0, id: 'changes', label: 'Changes' },
+    { count: null, id: 'pr', label: pr ? `PR #${pr.number}` : 'Pull request' },
+  ] as const
   return (
     <aside className="git" aria-label="Git" style={{ width }}>
-      <div className="git-top" data-tauri-drag-region>
-        {pr && (
-          <div className="pr-line">
-            <span className="pr-num">#{pr.number}</span>
-            <span className="status">
-              <span className={`st ${PR_DOT[pr.state]}`} />
-              {pr.state}
-            </span>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Open on GitHub"
-              onClick={() => void openUrl(pr.url)}
-            >
-              <Icon name="external" small />
-            </button>
-          </div>
-        )}
-        <div className="segmented" role="radiogroup" aria-label="Git view">
-          {(['diff', 'github'] as const).map((id) => (
-            <button
-              type="button"
-              key={id}
-              role="radio"
-              aria-checked={view === id}
-              className={view === id ? 'seg is-on' : 'seg'}
-              onClick={() => setView(id)}
-            >
-              {id === 'diff' ? 'Diff' : 'GitHub'}
-            </button>
-          ))}
-        </div>
+      <div className="panel-tabs" role="tablist" aria-label="Git view" data-tauri-drag-region>
+        {views.map((v) => (
+          <button
+            type="button"
+            key={v.id}
+            role="tab"
+            aria-selected={view === v.id}
+            className={view === v.id ? 'panel-tab is-active' : 'panel-tab'}
+            onClick={() => setView(v.id)}
+          >
+            {v.label}
+            {v.count !== null && v.count > 0 && <span className="count">{v.count}</span>}
+          </button>
+        ))}
       </div>
       <div className="git-scroll">
-        {view === 'diff' &&
+        {view === 'changes' &&
           (changes ? (
             <FileList changes={changes} onOpen={onOpenFile} />
           ) : (
             <div className="quiet">{changes === null ? 'Not a git repository' : 'Reading…'}</div>
           ))}
-        {view === 'github' &&
+        {view === 'pr' &&
           (pr ? (
             <div className="gh">
+              <div className="gh-top">
+                <span className="status">
+                  <span className={`st ${PR_DOT[pr.state]}`} />
+                  {pr.state}
+                </span>
+                <button type="button" className="link-btn" onClick={() => void openUrl(pr.url)}>
+                  GitHub
+                  <Icon name="external" small />
+                </button>
+              </div>
               <div className="gh-title">{pr.title}</div>
               <div className="gh-meta">
                 <span className="add">+{pr.additions}</span>{' '}
                 <span className="del">−{pr.deletions}</span> · {pr.changedFiles} files
               </div>
-              {pr.body !== '' && <div className="gh-body">{pr.body}</div>}
               {pr.checks.length > 0 && (
-                <div>
-                  <div className="git-section flush">Checks</div>
+                <div className="checks">
                   {pr.checks.map((check) => (
                     <div className="check-row" key={check.name}>
-                      <span className="status">
-                        <span className={`st ${CHECK_DOT[check.state]}`} />
-                        {check.name}
-                      </span>
+                      <span className={`st ${CHECK_DOT[check.state]}`} />
+                      <span className="grow">{check.name}</span>
+                      <span className="faint">{check.state}</span>
                     </div>
                   ))}
                 </div>
               )}
+              {pr.body !== '' && <div className="gh-body">{pr.body}</div>}
             </div>
           ) : (
             <div className="quiet">No pull request for this branch</div>

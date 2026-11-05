@@ -58,7 +58,7 @@ export function FileList(props: Props) {
   if (props.changes.length === 0) return <div className="quiet">Working tree clean</div>
   return (
     <>
-      <Section {...props} label="Changes" files={props.changes.filter((f) => !f.untracked)} />
+      <Section {...props} label="Modified" files={props.changes.filter((f) => !f.untracked)} />
       <Section {...props} label="Untracked" files={props.changes.filter((f) => f.untracked)} />
     </>
   )

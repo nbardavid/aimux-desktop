@@ -6,12 +6,12 @@ import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
 import { Icon } from './app/icons'
 import { Picker, type PickerItem } from './app/picker'
+import { Quotas } from './app/quotas'
 import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
 import { type DiffStat, Sidebar } from './app/sidebar'
 import { Splitter } from './app/splitter'
 import { StatsView } from './app/stats-view'
-import { StatusBar } from './app/status-bar'
 import { TabBar } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { useDaemon } from './app/use-daemon'
@@ -50,7 +50,6 @@ export function App() {
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
 
-  const project = projects.find((p) => p.id === projectId)
   const list = (projectId === null ? undefined : workspaces[projectId]) ?? []
   const ws = list.find((w) => w.id === daemon.workspaceId) ?? list[0]
   const tabs = ws ? tabsOf(session.tabs, ws, list) : session.tabs
@@ -172,12 +171,15 @@ export function App() {
 
   return (
     <div className="app">
-      {!layout.sideOpen && mode !== 'normal' && <div className="titlebar" data-tauri-drag-region />}
+      {!layout.sideOpen && <div className="titlebar" data-tauri-drag-region />}
       <div className="cols">
         {layout.sideOpen && (
           <>
             <Sidebar
               width={layout.sideWidth}
+              page={mode === 'stats' || mode === 'settings' ? mode : null}
+              connected={status.kind === 'ready'}
+              foot={<Quotas cache={quotas.cache} error={quotas.error} />}
               projects={projects}
               workspaces={workspaces}
               tabsByProject={tabsByProject}
@@ -219,6 +221,7 @@ export function App() {
                 gitOpen={layout.gitOpen}
                 onToggleSide={() => update({ sideOpen: !layout.sideOpen })}
                 onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
+                onGitMode={() => setMode('git')}
               />
               {tab ? (
                 <TerminalView
@@ -289,18 +292,6 @@ export function App() {
         {mode === 'stats' && <StatsView quotas={quotas.cache} />}
         {mode === 'settings' && <SettingsView />}
       </div>
-
-      <StatusBar
-        mode={mode}
-        connected={status.kind === 'ready'}
-        projectName={project?.name ?? ''}
-        workspaceName={ws?.name ?? ''}
-        path={ws?.path}
-        onProjects={() => setOverlay('projects')}
-        onToggleGit={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
-        quotas={quotas.cache}
-        quotaError={quotas.error}
-      />
 
       {daemon.attention && (
         <div className="toast" role="status">

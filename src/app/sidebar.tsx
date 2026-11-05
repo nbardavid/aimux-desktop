@@ -1,6 +1,6 @@
 import type { TabSessionSummary } from '@aimux/ipc'
 
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 
 import { type ProjectEntry, signalOf, tabsOf, type WorkspaceEntry } from '../model/catalog'
 import { Icon } from './icons'
@@ -19,6 +19,7 @@ interface Props {
   diffs: Record<string, DiffStat>
   projectId: string | null
   workspaceId: string | null
+  page: 'stats' | 'settings' | null
   onSelect: (projectId: string, workspaceId: string | null) => void
   onProjects: () => void
   onNewProject: () => void
@@ -26,9 +27,10 @@ interface Props {
   onStats: () => void
   onSettings: () => void
   width: number
+  /** Quotas and the daemon's state, under the tree. */
+  foot: ReactNode
+  connected: boolean
 }
-
-const plural = (n: number) => `${n} ${n === 1 ? 'tab' : 'tabs'}`
 
 export function Sidebar(props: Props) {
   const { diffs, done, onSelect, projectId, projects, tabsByProject, workspaceId } = props
@@ -42,28 +44,26 @@ export function Sidebar(props: Props) {
 
   return (
     <nav className="side" aria-label="Projects" style={{ width: props.width }}>
-      {/* The window's traffic lights sit here: the strip drags the window. */}
-      <div className="titlebar" data-tauri-drag-region />
-      <div className="side-head">
-        <span className="side-title">Projects</span>
-        <span className="side-actions">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Find a project"
-            onClick={props.onProjects}
-          >
-            <Icon name="search" />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Open a folder as a project"
-            onClick={props.onNewProject}
-          >
-            <Icon name="plus" />
-          </button>
-        </span>
+      {/* The window's traffic lights sit on the left of this row; the row drags the window. */}
+      <div className="side-top" data-tauri-drag-region>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Find a project (⌘P)"
+          title="Find a project (⌘P)"
+          onClick={props.onProjects}
+        >
+          <Icon name="search" small />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Open a folder as a project"
+          title="Open a folder as a project"
+          onClick={props.onNewProject}
+        >
+          <Icon name="plus" small />
+        </button>
       </div>
       <div className="tree">
         {projects.map((project) => {
@@ -72,23 +72,23 @@ export function Sidebar(props: Props) {
           const tabs = tabsByProject[project.id] ?? []
           return (
             <div className="project" key={project.id}>
-              <div className="project-row-wrap">
+              <div className="project-row">
                 <button
                   type="button"
-                  className={open ? 'project-row is-open' : 'project-row'}
+                  className="project-name"
                   aria-expanded={open}
                   onClick={() => toggle(project.id)}
                 >
-                  <span className="chev">
+                  <span className={open ? 'chev is-open' : 'chev'}>
                     <Icon name="chevron" small />
                   </span>
                   <span className="grow">{project.name}</span>
-                  <span className="tabs-count">{plural(tabs.length)}</span>
                 </button>
                 <button
                   type="button"
                   className="icon-btn row-add"
                   aria-label={`New workspace in ${project.name}`}
+                  title="New workspace"
                   onClick={() => props.onNewWorkspace(project.id)}
                 >
                   <Icon name="plus" small />
@@ -105,24 +105,20 @@ export function Sidebar(props: Props) {
                       key={ws.id ?? 'root'}
                       className={active ? 'ws is-active' : 'ws'}
                       aria-current={active}
+                      title={ws.path}
                       onClick={() => onSelect(project.id, ws.id)}
                     >
                       <span className="ws-line">
                         <span className="ws-name">{ws.name}</span>
+                        {signal && <StatusDot signal={signal} />}
                         {diff && diff.add + diff.del > 0 && (
                           <span className="ws-diff">
                             <span className="add">+{diff.add}</span>{' '}
                             <span className="del">−{diff.del}</span>
                           </span>
                         )}
-                        {signal && <StatusDot signal={signal} />}
                       </span>
-                      {ws.branch !== undefined && (
-                        <span className="ws-branch">
-                          <Icon name="branch" small />
-                          <span>{ws.branch}</span>
-                        </span>
-                      )}
+                      {ws.branch !== undefined && <span className="ws-branch">{ws.branch}</span>}
                     </button>
                   )
                 })}
@@ -130,15 +126,32 @@ export function Sidebar(props: Props) {
           )
         })}
       </div>
+      {props.foot}
       <div className="side-foot">
-        <button type="button" className="ghost" onClick={props.onSettings}>
-          <Icon name="sliders" />
+        <button
+          type="button"
+          className={props.page === 'settings' ? 'foot-btn is-on' : 'foot-btn'}
+          aria-pressed={props.page === 'settings'}
+          onClick={props.onSettings}
+        >
+          <Icon name="sliders" small />
           Settings
         </button>
-        <button type="button" className="ghost" onClick={props.onStats}>
-          <Icon name="chart" />
+        <button
+          type="button"
+          className={props.page === 'stats' ? 'foot-btn is-on' : 'foot-btn'}
+          aria-pressed={props.page === 'stats'}
+          onClick={props.onStats}
+        >
+          <Icon name="chart" small />
           Stats
         </button>
+        <span
+          className={props.connected ? 'st st-done daemon' : 'st st-waiting daemon'}
+          role="img"
+          aria-label={props.connected ? 'Connected to the daemon' : 'Reconnecting to the daemon'}
+          title={props.connected ? 'Connected to the daemon' : 'Reconnecting…'}
+        />
       </div>
     </nav>
   )

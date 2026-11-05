@@ -15,6 +15,7 @@ interface Props {
   gitOpen: boolean
   onToggleSide: () => void
   onToggleGit: () => void
+  onGitMode: () => void
 }
 
 export function TabBar(props: Props) {
@@ -57,6 +58,15 @@ export function TabBar(props: Props) {
         <Icon name="plus" small />
       </button>
       <span className="tab-tools">
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Git mode (⌘G)"
+          title="Git mode (⌘G)"
+          onClick={props.onGitMode}
+        >
+          <Icon name="branch" small />
+        </button>
         <button
           type="button"
           className={props.sideOpen ? 'icon-btn is-on' : 'icon-btn'}
