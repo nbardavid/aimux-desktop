@@ -77,8 +77,8 @@ fn count_lines(file: &Path) -> Option<u32> {
 pub fn tool_path() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
     let path = std::env::var("PATH").unwrap_or_default();
-    // A Finder launch gets a bare PATH: add where bun, git and gh usually live.
-    format!("{home}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:{path}")
+    // A Finder launch gets a bare PATH: add where bun, claude, git and gh usually live.
+    format!("{home}/.bun/bin:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}")
 }
 
 fn run(program: &str, cwd: &str, args: &[&str]) -> Result<(bool, String), String> {

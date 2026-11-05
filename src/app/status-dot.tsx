@@ -8,7 +8,13 @@ const LABEL: Record<Signal, string> = {
 
 /** A dot alone where space is tight; `withLabel` adds the word. */
 export function StatusDot({ signal, withLabel = false }: { signal: Signal; withLabel?: boolean }) {
-  const dot = <span className={`st st-${signal}`} title={withLabel ? undefined : LABEL[signal]} />
+  const dot = (
+    <span
+      className={`st st-${signal}`}
+      role={withLabel ? undefined : 'img'}
+      aria-label={withLabel ? undefined : LABEL[signal]}
+    />
+  )
   if (!withLabel) return dot
   return (
     <span className="status">

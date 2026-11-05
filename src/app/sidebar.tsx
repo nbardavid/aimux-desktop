@@ -68,7 +68,7 @@ export function Sidebar(props: Props) {
           type="button"
           className="icon-btn"
           aria-label="Hide the sidebar (⌘B)"
-          title="Hide the sidebar (⌘B)"
+          data-tip="Hide sidebar · ⌘B"
           onClick={props.onHide}
         >
           <Icon name="panelLeft" />
@@ -107,7 +107,6 @@ export function Sidebar(props: Props) {
                   type="button"
                   className="project-name"
                   aria-expanded={open}
-                  title={project.projectPath}
                   onClick={() => toggle(project.id)}
                 >
                   <ProjectAvatar name={project.name} />
@@ -120,7 +119,6 @@ export function Sidebar(props: Props) {
                   type="button"
                   className="icon-btn"
                   aria-label={`New workspace in ${project.name}`}
-                  title="New workspace"
                   onClick={() => props.onNewWorkspace(project.id)}
                 >
                   <Icon name="plus" />
@@ -137,7 +135,6 @@ export function Sidebar(props: Props) {
                       key={ws.id ?? 'root'}
                       className={active ? 'ws is-active' : 'ws'}
                       aria-current={active}
-                      title={ws.branch === undefined ? ws.path : `${ws.branch} · ${ws.path}`}
                       onClick={() => onSelect(project.id, ws.id)}
                     >
                       <Icon name="branch" small />
@@ -145,8 +142,8 @@ export function Sidebar(props: Props) {
                       {signal && <StatusDot signal={signal} />}
                       {diff && diff.add + diff.del > 0 && (
                         <span className="ws-diff">
-                          <span className="add">+{diff.add}</span>{' '}
-                          <span className="del">−{diff.del}</span>
+                          {diff.add > 0 && <span className="add">+{diff.add}</span>}
+                          {diff.del > 0 && <span className="del">−{diff.del}</span>}
                         </span>
                       )}
                     </button>
@@ -165,7 +162,8 @@ export function Sidebar(props: Props) {
             className="st st-waiting"
             role="img"
             aria-label="Reconnecting to the daemon"
-            title="Reconnecting…"
+            data-tip="Reconnecting to the daemon…"
+            data-tip-side="top"
           />
         )}
         <button
@@ -173,7 +171,9 @@ export function Sidebar(props: Props) {
           className={props.page === 'settings' ? 'icon-btn is-on' : 'icon-btn'}
           aria-label="Settings"
           aria-pressed={props.page === 'settings'}
-          title="Settings"
+          data-tip="Settings"
+          data-tip-side="top"
+          data-tip-align="end"
           onClick={props.onSettings}
         >
           <Icon name="gear" />

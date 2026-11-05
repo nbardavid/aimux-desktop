@@ -30,7 +30,6 @@ function Section({
             type="button"
             key={file.path}
             className={file.path === selected ? 'file is-active' : 'file'}
-            title={file.path}
             onClick={() => onOpen(file)}
           >
             <span className={`letter letter-${file.status.toLowerCase()}`}>{file.status}</span>

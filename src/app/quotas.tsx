@@ -87,13 +87,12 @@ export function Quotas({ cache, error }: { cache: QuotaCache; error: string | nu
         type="button"
         className={open ? 'chip is-on' : 'chip'}
         aria-expanded={open}
-        title="Quotas"
         onClick={() => setOpen((o) => !o)}
       >
         {tools.map((tool) => {
           const percent = cache[tool]?.snapshot.percent ?? null
           return (
-            <span key={tool} className="chip-part" title={TOOL_LABEL[tool]}>
+            <span key={tool} className="chip-part">
               <span className={`st ${barTone(percent ?? 0)}`} />
               {TOOL_SHORT[tool]}
               <span className="num">{percent === null ? '—' : `${Math.round(percent)}%`}</span>

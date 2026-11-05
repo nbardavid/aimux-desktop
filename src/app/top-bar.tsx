@@ -22,7 +22,7 @@ export function TopBar(props: Props) {
           type="button"
           className="icon-btn"
           aria-label="Show the sidebar (⌘B)"
-          title="Show the sidebar (⌘B)"
+          data-tip="Show sidebar · ⌘B"
           onClick={props.onShowSide}
         >
           <Icon name="panelLeft" />
@@ -46,7 +46,7 @@ export function TopBar(props: Props) {
         type="button"
         className={props.gitMode ? 'bar-btn is-on' : 'bar-btn'}
         aria-pressed={props.gitMode}
-        title="Review the diff (⌘G)"
+        data-tip="Review the diff · ⌘G"
         onClick={props.onGitMode}
       >
         <Icon name="branch" small />
@@ -57,7 +57,8 @@ export function TopBar(props: Props) {
         className={props.gitOpen ? 'icon-btn is-on' : 'icon-btn'}
         aria-label="Git panel (⌥⌘B)"
         aria-pressed={props.gitOpen}
-        title="Git panel (⌥⌘B)"
+        data-tip="Git panel · ⌥⌘B"
+        data-tip-align="end"
         onClick={props.onToggleGit}
       >
         <Icon name="panelRight" />

@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod commands;
 pub mod files;
 pub mod frame;
@@ -11,7 +12,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::DaemonState::default())
+        .manage(chat::ChatState::default())
         .invoke_handler(tauri::generate_handler![
+            chat::chat_start,
+            chat::chat_send,
+            chat::chat_stop,
             commands::daemon_connect,
             commands::daemon_send,
             commands::list_projects,

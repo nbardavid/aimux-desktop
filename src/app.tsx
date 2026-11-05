@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { useEffect, useMemo, useState } from 'react'
 
+import { ChatView } from './app/chat-view'
 import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
 import { Icon } from './app/icons'
@@ -15,6 +16,7 @@ import { StatsView } from './app/stats-view'
 import { TabBar } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { TopBar } from './app/top-bar'
+import { useChats } from './app/use-chats'
 import { useDaemon } from './app/use-daemon'
 import { type FileChange, useGit } from './app/use-git'
 import { LIMITS, useLayout } from './app/use-layout'
@@ -24,6 +26,7 @@ import { WorkspaceDialog } from './app/workspace-dialog'
 import { tabsOf } from './model/catalog'
 
 const ASSISTANTS: PickerItem[] = [
+  { glyph: 'Ch', key: 'chat', label: 'Claude chat', sub: 'native view · preview' },
   { glyph: 'Cl', key: 'claude', label: 'Claude Code', sub: 'claude' },
   { glyph: 'Cx', key: 'codex', label: 'Codex', sub: 'codex' },
   { glyph: 'Oc', key: 'opencode', label: 'OpenCode', sub: 'opencode' },
@@ -50,11 +53,15 @@ export function App() {
   const [newWorkspaceIn, setNewWorkspaceIn] = useState<string | null>(null)
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
+  const chats = useChats()
+  const [chatId, setChatId] = useState<string | null>(null)
 
   const list = (projectId === null ? undefined : workspaces[projectId]) ?? []
   const ws = list.find((w) => w.id === daemon.workspaceId) ?? list[0]
   const tabs = ws ? tabsOf(session.tabs, ws, list) : session.tabs
   const tab = tabs.find((t) => t.id === daemon.activeTabId) ?? tabs[0]
+  const wsChats = chats.chats.filter((c) => c.cwd === ws?.path)
+  const chat = wsChats.find((c) => c.id === chatId)
 
   const paths = useMemo(
     () => [...new Set(Object.values(workspaces).flatMap((l) => l.flatMap((w) => w.path ?? [])))],
@@ -80,9 +87,10 @@ export function App() {
       else if (e.key === 'p') setOverlay('projects')
       else if (e.key === 't') setOverlay('new-tab')
       else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
-      else if (tabs[index - 1] !== undefined && index >= 1)
+      else if (tabs[index - 1] !== undefined && index >= 1) {
+        setChatId(null)
         daemon.selectTab(tabs[index - 1]?.id ?? null)
-      else return
+      } else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
@@ -130,6 +138,11 @@ export function App() {
 
   const createTab = (assistant: string) => {
     setOverlay(null)
+    if (assistant === 'chat') {
+      if (ws?.path === undefined) setNotice('A chat needs a workspace folder.')
+      else setChatId(chats.create(ws.path))
+      return
+    }
     daemon.createTab(assistant, ws?.id ?? null).catch((error: unknown) => setNotice(String(error)))
   }
 
@@ -233,13 +246,35 @@ export function App() {
                 <main className="center">
                   <TabBar
                     tabs={tabs}
-                    activeId={tab?.id}
+                    chats={wsChats.map((c) => ({
+                      id: c.id,
+                      title: c.title,
+                      working: c.state.status === 'working',
+                    }))}
+                    activeId={chat?.id ?? tab?.id}
                     done={daemon.done}
-                    onSelect={daemon.selectTab}
+                    onSelect={(id) => {
+                      setChatId(null)
+                      daemon.selectTab(id)
+                    }}
                     onClose={daemon.closeTab}
                     onNew={() => setOverlay('new-tab')}
+                    onSelectChat={setChatId}
+                    onCloseChat={(id) => {
+                      chats.close(id)
+                      if (id === chatId) setChatId(null)
+                    }}
                   />
-                  {tab ? (
+                  {chat && (
+                    <ChatView
+                      cwd={chat.cwd}
+                      state={chat.state}
+                      onSend={(text) => chats.send(chat.id, text)}
+                      onAnswer={(p, choice) => chats.answer(chat.id, p, choice)}
+                      onInterrupt={() => chats.interrupt(chat.id)}
+                    />
+                  )}
+                  {!chat && tab && (
                     <TerminalView
                       tabId={tab.id}
                       viewport={session.viewports[tab.id]}
@@ -248,7 +283,8 @@ export function App() {
                       scrollToBottom={daemon.scrollToBottom}
                       resize={daemon.resize}
                     />
-                  ) : (
+                  )}
+                  {!chat && !tab && (
                     <div className="quiet fill">
                       <span>No tabs in {ws?.name ?? 'this workspace'}</span>
                       <button
