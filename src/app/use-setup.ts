@@ -4,12 +4,11 @@ import { useCallback, useEffect, useState } from 'react'
 export interface SetupStatus {
   exists: boolean
   path: string
-  runs: Record<string, { exitCode: number | null; ranAt: string | null }>
 }
 
 const POLL_MS = 3000
 
-/** The project's setup script, as the TUI's setup widget watches it. */
+/** Whether the project has a setup script, re-read while it may be edited elsewhere. */
 export function useSetup(projectId: string | null) {
   const [status, setStatus] = useState<SetupStatus | null>(null)
 

@@ -1,24 +1,21 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useRef, useState } from 'react'
 
-import type { ProjectEntry } from '../model/catalog'
+import type { Project } from '../model/catalog'
 
 import { type ChatSettings, cycleEffort, type ModelInfo } from '../model/agents'
-import { suggestName } from '../model/names'
 import { ModelSelect } from './agent-select'
 import { Combo, type ComboOption } from './combo'
 import { Icon } from './icons'
 import { ProjectAvatar } from './sidebar'
 
 interface Props {
-  projects: ProjectEntry[]
+  projects: Project[]
   projectId: string
-  /** Names already used in each project, so the new one never collides. */
-  takenNames: (projectId: string) => string[]
   selection: ChatSettings
   models: ModelInfo[]
   onSelection: (s: ChatSettings) => void
-  onCreate: (projectId: string, name: string, base: string | null, prompt: string) => Promise<void>
+  onCreate: (projectId: string, base: string | null, prompt: string) => Promise<void>
   onClose: () => void
 }
 
@@ -76,7 +73,7 @@ export function NewWorkspace(props: Props) {
   const [error, setError] = useState<string | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
   const project = props.projects.find((p) => p.id === projectId)
-  const branches = useBranches(project?.projectPath)
+  const branches = useBranches(project?.path)
   const [picked, setPicked] = useState<{ projectId: string; base: string } | null>(null)
   const base = picked?.projectId === projectId ? picked.base : (branches?.default ?? null)
   const recent = (recentBases()[projectId] ?? []).filter(
@@ -99,12 +96,10 @@ export function NewWorkspace(props: Props) {
     setBusy(true)
     setError(null)
     if (base !== null) rememberBase(projectId, base)
-    props
-      .onCreate(projectId, suggestName(props.takenNames(projectId)), base, prompt.trim())
-      .then(props.onClose, (error_: unknown) => {
-        setBusy(false)
-        setError(String(error_).replace(/^Error: /, ''))
-      })
+    props.onCreate(projectId, base, prompt.trim()).then(props.onClose, (error_: unknown) => {
+      setBusy(false)
+      setError(String(error_).replace(/^Error: /, ''))
+    })
   }
 
   return (

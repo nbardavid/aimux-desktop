@@ -1,12 +1,19 @@
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ChatView } from './app/chat-view'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
+import { HostBar } from './app/host-bar'
 import { Icon } from './app/icons'
 import { Inbox } from './app/inbox'
 import { NewWorkspace } from './app/new-workspace'
@@ -16,20 +23,22 @@ import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
 import { type DiffStat, type RowMenu, Sidebar } from './app/sidebar'
 import { Splitter } from './app/splitter'
-import { StatsView } from './app/stats-view'
 import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { TopBar } from './app/top-bar'
-import { useChats } from './app/use-chats'
-import { useDaemon } from './app/use-daemon'
+import { useCatalog } from './app/use-catalog'
+import { chatSignal, type ChatTab, useChats } from './app/use-chats'
 import { type FileChange, useGit } from './app/use-git'
+import { HOST_BLOCKED, useHost } from './app/use-host'
 import { LIMITS, useLayout } from './app/use-layout'
 import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
+import { useTerminals } from './app/use-terminals'
 import { chatFlags, type ChatSettings, DEFAULT_CHAT, normalize } from './model/agents'
-import { isWorktree, signalOf, tabsOf, worktreesOf } from './model/catalog'
+import { byProject, strongest, type Workspace } from './model/catalog'
 import { inboxOf } from './model/inbox'
+import { nameCandidates } from './model/names'
 
 // What a new tab can be, as in Conductor: a native Claude chat, or a shell.
 const NEW_TAB: PickerItem[] = [
@@ -53,7 +62,28 @@ function readChatSettings(): ChatSettings {
 
 const copy = (text: string) => void navigator.clipboard.writeText(text)
 
-const plural = (n: number) => `${n} ${n === 1 ? 'tab' : 'tabs'}`
+const plural = (n: number) => `${n} ${n === 1 ? 'workspace' : 'workspaces'}`
+
+const SETUP_PROMPT = (script: string) =>
+  `Write the setup script at ${script}. It runs in every new git worktree of this project, ` +
+  'from the worktree root, to install what a fresh checkout lacks: dependencies, .env files ' +
+  'copied from the main checkout, caches. Replace the stub; keep `#!/usr/bin/env bash` and ' +
+  '`set -euo pipefail`. Make it idempotent and non-interactive, use no secrets, exit ' +
+  'non-zero on failure. Do not run it.'
+
+/** A chat asking for you while you look elsewhere. */
+interface Attention {
+  chatId: string
+  projectId: string
+  workspaceId: string
+  title: string
+  where: string
+}
+
+async function notify(body: string): Promise<void> {
+  const granted = (await isPermissionGranted()) || (await requestPermission()) === 'granted'
+  if (granted) sendNotification({ body, title: 'aimux' })
+}
 
 function sum(changes: FileChange[] | null | undefined): DiffStat {
   let add = 0
@@ -66,11 +96,12 @@ function sum(changes: FileChange[] | null | undefined): DiffStat {
 }
 
 export function App() {
-  const daemon = useDaemon()
-  const { projectId, projects, session, status, tabsByProject, workspaces } = daemon
-  const [mode, setMode] = useState<'normal' | 'git' | 'stats' | 'settings'>('normal')
+  const store = useCatalog()
+  const { catalog, project, projects, status, workspace: ws } = store
+  const projectId = project?.id ?? null
+  const [mode, setMode] = useState<'normal' | 'git' | 'settings'>('normal')
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
-  // Where the assistant menu drops from; null opens it as a palette (⇧⌘T).
+  // Where the new-tab menu drops from.
   const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null)
   const models = useModels()
   const [stored, setSelectionState] = useState(readChatSettings)
@@ -82,6 +113,8 @@ export function App() {
   const [inboxAt, setInboxAt] = useState<{ x: number; y: number } | null>(null)
   // A tab whose agent is working closes on the second ask: ⌘W twice, or × twice.
   const [armed, setArmed] = useState<string | null>(null)
+  const [activeByWs, setActiveByWs] = useState<Record<string, string>>({})
+  const [attention, setAttention] = useState<Attention | null>(null)
   const keys = useRef({
     close: () => {},
     compose: () => {},
@@ -89,31 +122,122 @@ export function App() {
   })
   const [gitFile, setGitFile] = useState<FileChange>()
   const [notice, setNotice] = useState<string | null>(null)
-  const chats = useChats()
-  const [chatId, setChatId] = useState<string | null>(null)
+  const terminals = useTerminals()
+  const host = useHost()
+  /** The tab on screen, when the window has the focus: what needs no calling out. */
+  const watching = useRef<string | null>(null)
 
-  const all = useMemo(
-    () => (projectId === null ? undefined : workspaces[projectId]) ?? [],
-    [projectId, workspaces]
-  )
-  const worktrees = useMemo(() => worktreesOf(workspaces), [workspaces])
-  const list = all.filter(isWorktree)
-  const ws = list.find((w) => w.id === daemon.workspaceId) ?? list[0]
-  // Matched against every workspace, so the main checkout's tabs never leak into a worktree.
-  const tabs = useMemo(() => (ws ? tabsOf(session.tabs, ws, all) : []), [all, session.tabs, ws])
-  const tab = tabs.find((t) => t.id === daemon.activeTabId) ?? tabs[0]
-  const wsChats = chats.chats.filter((c) => c.cwd === ws?.path)
-  const chat = wsChats.find((c) => c.id === chatId)
+  const workspaces = useMemo(() => byProject(catalog), [catalog])
+  const placeOf = (workspaceId: string) => {
+    const w = catalog.workspaces.find((x) => x.id === workspaceId)
+    const p = projects.find((x) => x.id === w?.projectId)
+    return { project: p, workspace: w }
+  }
+  const placeRef = useRef(placeOf)
+  placeRef.current = placeOf
 
-  const paths = useMemo(
-    () => [...new Set(Object.values(worktrees).flatMap((l) => l.flatMap((w) => w.path ?? [])))],
-    [worktrees]
+  const chats = useChats({
+    canStart: () => host.state.kind === 'ready',
+    onAttention: (chat: ChatTab, kind) => {
+      if (watching.current === chat.record.id) return
+      const { project: p, workspace: w } = placeRef.current(chat.record.workspaceId)
+      if (!p || !w) return
+      void (async () => {
+        if (!(await getCurrentWindow().isFocused())) {
+          await notify(
+            `${chat.record.title} ${kind === 'waiting' ? 'is waiting for you' : 'is done'}`
+          )
+        } else if (kind === 'waiting') {
+          setAttention({
+            chatId: chat.record.id,
+            projectId: p.id,
+            title: chat.record.title,
+            where: `${p.name} · ${w.name}`,
+            workspaceId: w.id,
+          })
+        }
+      })()
+    },
+    onRecord: store.saveChat,
+  })
+
+  /** A setup script's end is kept for the git panel, even when the window missed it. */
+  const { reload } = store
+  const setupRan = useCallback(
+    (workspaceId: string) => (exitCode: number | null) =>
+      void invoke('setup_ran', { exitCode, workspaceId }).then(reload),
+    [reload]
   )
+
+  // Chats an earlier launch left open come back, in the worktrees that still exist: live when
+  // the background host still runs them, asleep otherwise. Its terminals come back as tabs.
+  // A host too old to keep gives nothing back until it is restarted.
+  const restored = useRef(false)
+  useEffect(() => {
+    if (status.kind !== 'ready' || host.state.kind === 'loading' || restored.current) return
+    restored.current = true
+    const list = host.state.kind === 'ready' ? host.state.list : { chats: [], terms: [] }
+    chats.restore(
+      catalog.chats.flatMap((record) => {
+        const w = catalog.workspaces.find((x) => x.id === record.workspaceId)
+        return w ? [{ cwd: w.path, record }] : []
+      }),
+      list.chats
+    )
+    for (const t of list.terms) {
+      terminals.reattach(t, t.tag === 'setup' ? setupRan(t.workspaceId) : undefined)
+    }
+  }, [catalog, chats, host.state, setupRan, status.kind, terminals])
+
+  const wsChats = chats.chats.filter((c) => c.record.workspaceId === ws?.id)
+  const wsTerms = terminals.tabs.filter((t) => t.workspaceId === ws?.id)
+  const tabItems: (TabItem & { at: number })[] = [
+    ...wsChats.map((c) => ({
+      at: c.record.createdAt,
+      chat: true,
+      id: c.record.id,
+      signal: chatSignal(c),
+      title: c.record.title,
+    })),
+    ...wsTerms.map((t) => ({
+      at: t.createdAt,
+      chat: false,
+      id: t.id,
+      signal: null,
+      title: t.title,
+    })),
+  ].toSorted((a, b) => a.at - b.at)
+  const active = tabItems.find((t) => t.id === activeByWs[ws?.id ?? '']) ?? tabItems[0]
+  const chat = active?.chat === true ? wsChats.find((c) => c.record.id === active.id) : undefined
+  const term = active?.chat === false ? wsTerms.find((t) => t.id === active.id) : undefined
+
+  const selectTab = (workspaceId: string, tabId: string) =>
+    setActiveByWs((state) => ({ ...state, [workspaceId]: tabId }))
+
+  // The chat on screen runs, and what it finished is read.
+  const chatOnScreen = chat?.record.id
+  useEffect(() => {
+    if (chatOnScreen === undefined) return
+    void chats.wake(chatOnScreen).catch(() => {})
+  }, [chatOnScreen, chats])
+  useEffect(() => {
+    const look = async () => {
+      const focused = await getCurrentWindow().isFocused()
+      watching.current = focused && mode === 'normal' ? (active?.id ?? null) : null
+      if (watching.current !== null) chats.seen(watching.current)
+    }
+    void look()
+    const window_ = getCurrentWindow()
+    const unlisten = window_.onFocusChanged(() => void look())
+    return () => void unlisten.then((f) => f())
+  }, [active?.id, chats, mode])
+
+  const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
   const git = useGit(ws?.path, paths)
   const quotas = useQuotas()
   const { layout, update } = useLayout()
   const setup = useSetup(projectId)
-  const changes = ws?.path === undefined ? undefined : git.changes[ws.path]
+  const changes = ws === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
     () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, sum(c)])),
     [git.changes]
@@ -131,21 +255,20 @@ export function App() {
       else if (e.key === 'w') keys.current.close()
       else if (e.key === 'n') keys.current.compose()
       else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
-      else if (tabs[index - 1] !== undefined && index >= 1) {
-        setChatId(null)
-        daemon.selectTab(tabs[index - 1]?.id ?? null)
+      else if (index >= 1 && tabItems[index - 1] !== undefined && ws !== undefined) {
+        selectTab(ws.id, tabItems[index - 1]?.id ?? '')
       } else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [daemon, layout.gitOpen, layout.sideOpen, tabs, update])
+  })
 
   // No browser menu (Reload, Inspect…): rows bring their own; text fields keep Copy and Paste.
   useEffect(() => {
     const onMenu = (e: MouseEvent) => {
       const editable =
-        e.target instanceof HTMLElement && e.target.closest('input, textarea') !== null
+        e.target instanceof HTMLElement && e.target.closest('input, textarea, .xterm') !== null
       if (!editable && (window.getSelection()?.toString() ?? '') === '') e.preventDefault()
     }
     window.addEventListener('contextmenu', onMenu)
@@ -168,33 +291,29 @@ export function App() {
     const path = await openDialog({ directory: true, title: 'Open a folder as a project' })
     if (typeof path !== 'string') return
     try {
-      await daemon.createProject(path)
-      // The first project boots the app: start over on it.
-      if (status.kind === 'no-projects') window.location.reload()
+      await store.addProject(path)
+      setMode('normal')
     } catch (error) {
       setNotice(String(error))
     }
   }
 
-  if (status.kind === 'no-projects') {
+  if (status.kind !== 'ready') {
+    return <main className="splash">{status.kind === 'error' ? status.message : 'Opening…'}</main>
+  }
+
+  if (projects.length === 0) {
     return (
       <main className="splash">
         <div className="quiet fill">
-          <span>No projects yet</span>
-          <button type="button" className="btn btn-primary" onClick={() => void newProject()}>
+          <span className="empty-title">Open a repository to start</span>
+          <span>Each piece of work then gets its own worktree, with its chats and terminals.</span>
+          <button type="button" className="btn btn-ink" onClick={() => void newProject()}>
             Open a folder
           </button>
         </div>
       </main>
     )
-  }
-
-  if (status.kind === 'loading' || status.kind === 'error') {
-    const message = {
-      error: status.kind === 'error' ? status.message : '',
-      loading: 'Connecting to aimux…',
-    }[status.kind]
-    return <main className="splash">{message}</main>
   }
 
   const setSelection = (next: ChatSettings) => {
@@ -206,130 +325,149 @@ export function App() {
     }
   }
 
+  const newChat = (w: Workspace, prompt?: string) => {
+    const id = chats.create(w.id, w.path, chatFlags(selection))
+    selectTab(w.id, id)
+    if (prompt !== undefined && prompt !== '') chats.send(id, prompt)
+    return id
+  }
+
   /** A chat (with the last model and effort picked) or a shell, in this workspace. */
   const createTab = (kind: string) => {
     setOverlay(null)
-    if (kind === 'chat') {
-      if (ws?.path === undefined) setNotice('A chat needs a workspace folder.')
-      else setChatId(chats.create(ws.path, chatFlags(selection)))
-      return
-    }
-    setChatId(null)
-    daemon
-      .createTab({ assistant: 'terminal', effort: '', model: '' }, ws?.id ?? null)
-      .catch((error: unknown) => setNotice(String(error)))
+    if (ws === undefined) return
+    if (host.state.kind !== 'ready') setNotice(HOST_BLOCKED)
+    else if (kind === 'chat') newChat(ws)
+    else selectTab(ws.id, terminals.create({ cwd: ws.path, workspaceId: ws.id }))
   }
 
-  /** The composer's Create: a worktree, a chat in it, and the prompt as its first message. */
-  const startWork = async (pid: string, name: string, base: string | null, prompt: string) => {
+  /** The project's setup script in a tab of `w`; how it ended is kept for the git panel. */
+  const runSetup = async (w: Workspace) => {
+    if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
+    const script = await invoke<string>('ensure_setup_script', { projectId: w.projectId })
+    const id = terminals.create({
+      command: `bash '${script.replaceAll("'", "'\\''")}'`,
+      cwd: w.path,
+      onExit: setupRan(w.id),
+      tag: 'setup',
+      title: 'Setup',
+      workspaceId: w.id,
+    })
+    return id
+  }
+
+  /** The composer's Create: a worktree, its setup, a chat in it with the prompt sent. */
+  const startWork = async (pid: string, base: string | null, prompt: string) => {
+    if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
     setMode('normal')
-    const created = await daemon.createWorkspace(pid, name, base)
-    if (created.path === undefined) throw new Error('The workspace has no folder to chat in.')
-    const id = chats.create(created.path, chatFlags(selection))
-    setChatId(id)
-    if (prompt !== '') chats.send(id, prompt)
+    const taken = (workspaces[pid] ?? []).map((w) => w.name)
+    const created = await store.createWorkspace(pid, nameCandidates(taken), base)
+    const hasScript = await invoke<{ exists: boolean }>('setup_status', { projectId: pid })
+    if (hasScript.exists) await runSetup(created)
+    newChat(created, prompt)
+  }
+
+  /** Its tabs close only once the worktree is gone: a refusal (changes) leaves them be. */
+  const removeWorkspace = async (w: Workspace, force: boolean) => {
+    await store.removeWorkspace(w.id, force)
+    terminals.closeWorkspace(w.id)
+    for (const c of chats.chats) if (c.record.workspaceId === w.id) chats.close(c.record.id)
   }
 
   const rowMenu = (row: RowMenu) => {
-    const path = row.kind === 'project' ? row.project.projectPath : row.workspace.path
+    const path = row.kind === 'project' ? row.project.path : row.workspace.path
     const items: MenuItem[] = []
     if (row.kind === 'project')
       items.push({ label: 'New workspace…', run: () => setComposeIn(row.project.id) })
-    if (path !== undefined) {
-      items.push({ label: 'Show in Finder', run: async () => revealItemInDir(path) })
-      items.push({ label: 'Copy path', run: () => copy(path) })
-    }
-    if (row.kind === 'workspace' && row.workspace.branch !== undefined) {
-      const branch = row.workspace.branch
+    items.push({ label: 'Show in Finder', run: async () => revealItemInDir(path) })
+    items.push({ label: 'Copy path', run: () => copy(path) })
+    if (row.kind === 'workspace') {
+      const { branch } = row.workspace
       items.push({ label: 'Copy branch name', run: () => copy(branch) })
     }
     if (row.kind === 'project') {
+      const owned = workspaces[row.project.id] ?? []
       items.push('separator', {
         confirm: {
           button: 'Close project',
-          text: `Close ${row.project.name}? It leaves aimux; its folder and worktrees stay on disk.`,
+          text: `Close ${row.project.name}? It leaves the app; its folder and worktrees stay on disk.`,
         },
         danger: true,
         label: 'Close project…',
-        run: async () => daemon.closeProject(row.project.id),
+        run: async () => {
+          await store.removeProject(row.project.id)
+          for (const w of owned) {
+            terminals.closeWorkspace(w.id)
+            for (const c of chats.chats) if (c.record.workspaceId === w.id) chats.close(c.record.id)
+          }
+        },
       })
     }
-    const { project: owner, workspace } =
-      row.kind === 'workspace' ? row : { project: row.project, workspace: null }
-    // The primary checkout is the project itself: it has no worktree to delete.
-    if (workspace !== null && workspace.id !== null && workspace.source !== 'primary') {
-      const wid = workspace.id
-      const branch = workspace.branch === undefined ? '' : ` The branch ${workspace.branch} stays.`
+    if (row.kind === 'workspace') {
+      const w = row.workspace
       items.push('separator', {
         confirm: {
           button: 'Delete',
-          text: `Delete ${workspace.name}? Its tabs close and its worktree folder is removed.${branch}`,
+          text: `Delete ${w.name}? Its tabs close and its worktree folder is removed. The branch ${w.branch} stays.`,
         },
         danger: true,
         label: 'Delete workspace…',
         retry: {
           button: 'Delete anyway',
-          run: async () => daemon.removeWorkspace(owner.id, wid, true),
-          text: `${workspace.name} has uncommitted changes. Deleting it anyway discards them.`,
+          run: async () => removeWorkspace(w, true),
+          text: `${w.name} has uncommitted changes. Deleting it anyway discards them.`,
           when: (error) => /modified|untracked|--force/.test(error),
         },
-        run: async () => daemon.removeWorkspace(owner.id, wid, false),
+        run: async () => removeWorkspace(w, false),
       })
     }
     setCtxMenu({ items, x: row.x, y: row.y })
   }
 
   const requestClose = (id: string) => {
-    const chatTab = wsChats.find((c) => c.id === id)
-    const busy = chatTab
-      ? chatTab.state.status === 'working'
-      : signalOf(
-          tabs.filter((t) => t.id === id),
-          daemon.done
-        ) === 'working'
-    if (busy && armed !== id) {
+    const chatTab = wsChats.find((c) => c.record.id === id)
+    if (chatTab?.state.status === 'working' && armed !== id) {
       setArmed(id)
       return
     }
     setArmed(null)
     if (chatTab) {
       chats.close(id)
-      if (id === chatId) setChatId(null)
-    } else daemon.closeTab(id)
+      store.forgetChat(id)
+    } else terminals.close(id)
   }
 
   keys.current = {
     close: () => {
-      const id = chat?.id ?? tab?.id
-      if (id !== undefined && mode === 'normal') requestClose(id)
+      if (active !== undefined && mode === 'normal') requestClose(active.id)
     },
     compose: () => projectId !== null && setComposeIn(projectId),
     newTab: (kind: 'chat' | 'terminal') => createTab(kind),
   }
 
   // After a merge, the worktree that carried the branch is dead weight.
-  let cleanup: { label: string; run: () => Promise<void> } | null = null
-  if (ws !== undefined && ws.id !== null && projectId !== null) {
-    const [pid, wid] = [projectId, ws.id]
-    cleanup = { label: 'Delete workspace', run: async () => daemon.removeWorkspace(pid, wid, true) }
+  const cleanup =
+    ws === undefined
+      ? null
+      : { label: 'Delete workspace', run: async () => removeWorkspace(ws, true) }
+
+  const inbox = inboxOf(
+    chats.chats.map((c) => ({
+      signal: c.record.id === watching.current ? null : chatSignal(c),
+      tabId: c.record.id,
+      title: c.record.title,
+      workspaceId: c.record.workspaceId,
+    })),
+    projects,
+    catalog.workspaces
+  )
+
+  const signals: Record<string, ReturnType<typeof strongest>> = {}
+  for (const w of catalog.workspaces) {
+    signals[w.id] = strongest(
+      chats.chats.filter((c) => c.record.workspaceId === w.id).map(chatSignal)
+    )
   }
-
-  const inbox = inboxOf(projects, workspaces, tabsByProject, daemon.done)
-
-  const tabItems: TabItem[] = [
-    ...tabs.map((t) => ({
-      chat: false,
-      id: t.id,
-      signal: signalOf([t], daemon.done),
-      title: t.title,
-    })),
-    ...wsChats.map((c) => ({
-      chat: true,
-      id: c.id,
-      signal: c.state.status === 'working' ? ('working' as const) : null,
-      title: c.title,
-    })),
-  ]
 
   const tabMenu = (item: TabItem, x: number, y: number) =>
     setCtxMenu({
@@ -341,33 +479,30 @@ export function App() {
       y,
     })
 
-  const openAttention = () => {
-    const hit = daemon.attention
-    if (!hit) return
-    const hitList = worktrees[hit.projectId] ?? []
-    const hitTab = tabsByProject[hit.projectId]?.find((t) => t.id === hit.tabId)
-    const wid = hitList.find((w) => w.id === hitTab?.workspaceId)?.id ?? hitList[0]?.id ?? null
-    daemon.selectWorkspace(hit.projectId, wid, hit.tabId)
+  /** Takes you to a chat anywhere: its project, its workspace, its tab. */
+  const goTo = (pid: string, wid: string, tabId: string) => {
+    setMode('normal')
+    store.select(pid, wid)
+    selectTab(wid, tabId)
   }
 
   const projectItems: PickerItem[] = projects.map((p) => ({
     key: p.id,
     label: p.name,
-    meta: plural(tabsByProject[p.id]?.length ?? 0),
-    sub: p.projectPath,
+    meta: plural(workspaces[p.id]?.length ?? 0),
+    sub: p.path,
   }))
 
-  /** Edit opens the script; Run and Agent open a tab in this workspace and focus it. */
-  const runSetup = async (command: 'edit_setup_script' | 'run_setup' | 'setup_agent') => {
-    if (projectId === null) return
+  const setupAction = async (what: 'edit' | 'run' | 'chat') => {
+    if (ws === undefined) return
     try {
-      const tabId = await invoke<string | null>(command, {
-        assistant: 'claude',
-        projectId,
-        workspaceId: ws?.id ?? null,
-      })
+      if (what === 'edit') await invoke('edit_setup_script', { projectId: ws.projectId })
+      else if (what === 'run') selectTab(ws.id, await runSetup(ws))
+      else {
+        const script = await invoke<string>('ensure_setup_script', { projectId: ws.projectId })
+        newChat(ws, SETUP_PROMPT(script))
+      }
       void setup.refresh()
-      if (typeof tabId === 'string') daemon.selectTab(tabId)
     } catch (error) {
       setNotice(String(error))
     }
@@ -383,6 +518,7 @@ export function App() {
       title={title}
       sideOpen={layout.sideOpen}
       gitOpen={gitOpen}
+      canDiff={ws !== undefined}
       gitMode={mode === 'git'}
       onShowSide={() => update({ sideOpen: true })}
       onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
@@ -391,11 +527,13 @@ export function App() {
       {tabsRow}
     </TopBar>
   )
+  const hostBar = host.state.kind === 'blocked' && (
+    <HostBar lose={host.state.lose} onRestart={host.restart} />
+  )
   const pageTitle = {
     git: `${ws?.name ?? ''} · Diff`,
     normal: undefined,
     settings: 'Settings',
-    stats: 'Stats',
   }[mode]
 
   return (
@@ -405,19 +543,17 @@ export function App() {
           <>
             <Sidebar
               width={layout.sideWidth}
-              page={mode === 'stats' || mode === 'settings' ? mode : null}
-              connected={status.kind === 'ready'}
+              page={mode === 'settings' ? mode : null}
               foot={<Quotas cache={quotas.cache} error={quotas.error} />}
               projects={projects}
-              workspaces={worktrees}
-              tabsByProject={tabsByProject}
-              done={daemon.done}
+              workspaces={workspaces}
+              signals={signals}
               diffs={diffs}
               projectId={projectId}
               workspaceId={ws?.id ?? null}
               onSelect={(pid, wid) => {
                 setMode('normal')
-                daemon.selectWorkspace(pid, wid)
+                store.select(pid, wid)
               }}
               onProjects={() => setOverlay('projects')}
               onNewProject={() => void newProject()}
@@ -428,7 +564,6 @@ export function App() {
                 waiting: inbox.filter((e) => e.kind === 'waiting').length,
               }}
               onInbox={setInboxAt}
-              onStats={() => setMode((m) => (m === 'stats' ? 'normal' : 'stats'))}
               onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
               onHide={() => update({ sideOpen: false })}
             />
@@ -444,64 +579,52 @@ export function App() {
         )}
         <div className="main">
           {mode !== 'normal' && topBar(pageTitle, null)}
+          {mode !== 'normal' && hostBar}
           <div className="work">
             {mode === 'normal' && (
               <>
                 <main className="center">
                   {topBar(
                     ws?.name,
-                    layout.gitOpen,
-                    <TabBar
-                      items={tabItems}
-                      activeId={chat?.id ?? tab?.id}
-                      armedId={armed}
-                      renamingId={renaming}
-                      onSelect={(item) => {
-                        if (item.chat) setChatId(item.id)
-                        else {
-                          setChatId(null)
-                          daemon.selectTab(item.id)
-                        }
-                      }}
-                      onClose={(item) => requestClose(item.id)}
-                      onMenu={tabMenu}
-                      onRename={(item) => setRenaming(item.id)}
-                      onRenamed={(item, title) => {
-                        setRenaming(null)
-                        if (title === null || title === item.title) return
-                        if (item.chat) chats.rename(item.id, title)
-                        else daemon.renameTab(item.id, title)
-                      }}
-                      onNew={(at) => {
-                        setMenuAt(at)
-                        setOverlay('new-tab')
-                      }}
-                    />
+                    ws === undefined ? null : layout.gitOpen,
+                    ws !== undefined && (
+                      <TabBar
+                        items={tabItems}
+                        activeId={active?.id}
+                        armedId={armed}
+                        renamingId={renaming}
+                        onSelect={(item) => selectTab(ws.id, item.id)}
+                        onClose={(item) => requestClose(item.id)}
+                        onMenu={tabMenu}
+                        onRename={(item) => setRenaming(item.id)}
+                        onRenamed={(item, title) => {
+                          setRenaming(null)
+                          if (title === null || title === item.title) return
+                          if (item.chat) chats.rename(item.id, title)
+                          else terminals.rename(item.id, title)
+                        }}
+                        onNew={(at) => {
+                          setMenuAt(at)
+                          setOverlay('new-tab')
+                        }}
+                      />
+                    )
                   )}
+                  {hostBar}
                   {chat && (
                     <ChatView
                       cwd={chat.cwd}
                       state={chat.state}
-                      onSend={(text) => chats.send(chat.id, text)}
-                      onAnswer={(p, choice) => chats.answer(chat.id, p, choice)}
-                      onInterrupt={() => chats.interrupt(chat.id)}
+                      onSend={(text) => chats.send(chat.record.id, text)}
+                      onAnswer={(p, choice) => chats.answer(chat.record.id, p, choice)}
+                      onInterrupt={() => chats.interrupt(chat.record.id)}
                     />
                   )}
-                  {!chat && tab && (
-                    <TerminalView
-                      tabId={tab.id}
-                      viewport={session.viewports[tab.id]}
-                      write={daemon.write}
-                      scroll={daemon.scroll}
-                      scrollToBottom={daemon.scrollToBottom}
-                      resize={daemon.resize}
-                    />
-                  )}
+                  {term && <TerminalView tabId={term.id} attach={terminals.attach} />}
                   {ws === undefined && (
                     <div className="quiet fill">
                       <span className="empty-title">
-                        No workspace in{' '}
-                        {projects.find((p) => p.id === projectId)?.name ?? 'this project'} yet
+                        No workspace in {project?.name ?? 'this project'} yet
                       </span>
                       <span>
                         Each workspace is a worktree on its own branch, with its chats and
@@ -517,9 +640,9 @@ export function App() {
                       </button>
                     </div>
                   )}
-                  {ws !== undefined && !chat && !tab && (
+                  {ws !== undefined && active === undefined && (
                     <div className="quiet fill">
-                      <span>No tabs in {ws?.name ?? 'this workspace'}</span>
+                      <span>No tabs in {ws.name}</span>
                       <span className="empty-actions">
                         <button
                           type="button"
@@ -552,7 +675,7 @@ export function App() {
                     />
                     <GitPanel
                       width={layout.gitWidth}
-                      path={ws?.path}
+                      path={ws.path}
                       changes={changes}
                       pr={git.pr}
                       branch={git.branch}
@@ -563,11 +686,10 @@ export function App() {
                       setup={
                         <SetupSection
                           status={setup.status}
-                          workspaceId={ws?.id ?? null}
-                          workspaceName={ws?.name ?? ''}
-                          onEdit={() => void runSetup('edit_setup_script')}
-                          onRun={() => void runSetup('run_setup')}
-                          onAgent={() => void runSetup('setup_agent')}
+                          workspace={ws}
+                          onEdit={() => void setupAction('edit')}
+                          onRun={() => void setupAction('run')}
+                          onAgent={() => void setupAction('chat')}
                         />
                       }
                     />
@@ -575,7 +697,7 @@ export function App() {
                 )}
               </>
             )}
-            {mode === 'git' && ws?.path !== undefined && (
+            {mode === 'git' && ws !== undefined && (
               <GitMode
                 path={ws.path}
                 changes={changes ?? []}
@@ -584,28 +706,39 @@ export function App() {
                 onExit={() => setMode('normal')}
               />
             )}
-            {mode === 'git' && ws?.path === undefined && (
-              <div className="quiet fill">Not a git repository</div>
+            {mode === 'git' && ws === undefined && (
+              <div className="quiet fill">No workspace selected</div>
             )}
-            {mode === 'stats' && <StatsView quotas={quotas.cache} />}
-            {mode === 'settings' && <SettingsView />}
+            {mode === 'settings' && (
+              <SettingsView
+                terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
+                onRestartHost={host.restart}
+              />
+            )}
           </div>
         </div>
       </div>
 
-      {daemon.attention && (
+      {attention && (
         <div className="toast" role="status">
           <div className="toast-body">
             <span className="toast-title">
               <span className="st st-waiting" />
-              {daemon.attention.title} is waiting for you
+              {attention.title} is waiting for you
             </span>
-            <span className="toast-text">{daemon.attention.projectName}</span>
+            <span className="toast-text">{attention.where}</span>
             <div className="toast-actions">
-              <button type="button" className="btn btn-ink" onClick={openAttention}>
-                Open tab
+              <button
+                type="button"
+                className="btn btn-ink"
+                onClick={() => {
+                  goTo(attention.projectId, attention.workspaceId, attention.chatId)
+                  setAttention(null)
+                }}
+              >
+                Open chat
               </button>
-              <button type="button" className="btn btn-outline" onClick={daemon.dismissAttention}>
+              <button type="button" className="btn btn-outline" onClick={() => setAttention(null)}>
                 Later
               </button>
             </div>
@@ -625,7 +758,6 @@ export function App() {
         <NewWorkspace
           projects={projects}
           projectId={composeIn}
-          takenNames={(pid) => (workspaces[pid] ?? []).map((w) => w.name)}
           selection={selection}
           models={models}
           onSelection={setSelection}
@@ -638,11 +770,7 @@ export function App() {
           entries={inbox}
           at={inboxAt}
           onClose={() => setInboxAt(null)}
-          onOpen={(entry) => {
-            setMode('normal')
-            setChatId(null)
-            daemon.selectWorkspace(entry.projectId, entry.workspaceId, entry.tabId)
-          }}
+          onOpen={(entry) => goTo(entry.projectId, entry.workspaceId, entry.tabId)}
         />
       )}
       {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}
@@ -655,7 +783,7 @@ export function App() {
           onPick={(pid) => {
             setOverlay(null)
             setMode('normal')
-            daemon.selectWorkspace(pid, worktrees[pid]?.[0]?.id ?? null)
+            store.select(pid, null)
           }}
         />
       )}

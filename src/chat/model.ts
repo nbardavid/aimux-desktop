@@ -242,10 +242,63 @@ export function reduceLine(state: ChatState, line: string): ChatState {
     case 'aimux_exit': {
       return { ...state, pending: [], status: 'exited' }
     }
+    case 'aimux_sent': {
+      // What a window wrote to Claude, replayed to the next window: its prompts and answers.
+      const sent = obj(m.message)
+      if (sent.type === 'control_response')
+        return resolvePermission(state, str(obj(sent.response).request_id))
+      const text = sent.type === 'user' ? promptText(obj(sent.message).content) : ''
+      return text === ''
+        ? state
+        : addUserTurn(state, text, str(sent.uuid) || `u${state.turns.length}`)
+    }
     default: {
       return state
     }
   }
+}
+
+const HARNESS_TEXT = /^<(command-|local-command-|system-reminder|bash-)/
+
+function promptText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((part) => (obj(part).type === 'text' ? str(obj(part).text) : ''))
+    .filter((t) => t !== '')
+    .join('\n')
+}
+
+/**
+ * A chat rebuilt from the transcript Claude Code keeps on disk, for a tab reopened after a
+ * restart: the prompts, the answers, the tool calls with their results. The transcript
+ * writes one line per content block, so blocks of one message are joined back.
+ */
+export function replayTranscript(lines: readonly string[]): ChatState {
+  let state = initialChat
+  for (const line of lines) {
+    let m: Json
+    try {
+      m = obj(JSON.parse(line))
+    } catch {
+      continue
+    }
+    if (m.isSidechain === true || m.isMeta === true) continue
+    const message = obj(m.message)
+    if (m.type === 'assistant') {
+      const id = str(message.id)
+      const content = Array.isArray(message.content) ? message.content : []
+      const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
+      state = withTurn(state, id, (t) => ({ ...t, blocks: [...t.blocks, ...blocks] }))
+    } else if (m.type === 'user') {
+      const text = promptText(message.content)
+      if (text !== '' && !HARNESS_TEXT.test(text)) {
+        state = { ...addUserTurn(state, text, str(m.uuid) || `u${state.turns.length}`) }
+      }
+      state = onUser(state, message)
+    }
+  }
+  return { ...state, sessionId: null, status: 'starting' }
 }
 
 /** The local echo of what the user sent, shown before Claude answers. */

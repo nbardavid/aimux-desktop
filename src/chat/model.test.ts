@@ -4,9 +4,12 @@ import {
   addUserTurn,
   type ChatState,
   initialChat,
+  type Permission,
   permissionLine,
   reduceLine,
+  replayTranscript,
   toolSummary,
+  userLine,
 } from './model'
 
 function feed(lines: unknown[], from: ChatState = initialChat) {
@@ -149,6 +152,29 @@ describe('reduceLine', () => {
     expect(s.turns).toEqual([{ blocks: [{ kind: 'text', text: 'hello' }], id: 'u1', role: 'user' }])
     expect(s.status).toBe('working')
   })
+
+  test('a replayed send shows the prompt', () => {
+    const sent = JSON.stringify({
+      message: JSON.parse(userLine('hi there', null)),
+      type: 'aimux_sent',
+    })
+    const state = reduceLine(initialChat, sent)
+    expect(state.turns.at(-1)?.role).toBe('user')
+    expect(state.turns.at(-1)?.blocks[0]).toEqual({ kind: 'text', text: 'hi there' })
+  })
+
+  test('a replayed answer clears the permission', () => {
+    const asked = JSON.stringify({
+      request: { input: {}, subtype: 'can_use_tool', tool_name: 'Bash' },
+      request_id: 'r1',
+      type: 'control_request',
+    })
+    let state = reduceLine(initialChat, asked)
+    expect(state.pending).toHaveLength(1)
+    const answer = permissionLine(state.pending[0] as Permission, 'allow')
+    state = reduceLine(state, JSON.stringify({ message: JSON.parse(answer), type: 'aimux_sent' }))
+    expect(state.pending).toHaveLength(0)
+  })
 })
 
 describe('permissionLine', () => {
@@ -181,4 +207,35 @@ test('toolSummary shows paths relative to the workspace', () => {
   expect(toolSummary('Read', { file_path: '/w/src/a.ts' }, '/w')).toBe('src/a.ts')
   expect(toolSummary('Bash', { command: 'ls -la' }, '/w')).toBe('ls -la')
   expect(toolSummary('mcp__x__y', { query: 'cats' }, '/w')).toBe('cats')
+})
+
+test('a transcript replays prompts, joined blocks and tool results', () => {
+  const lines = [
+    JSON.stringify({ mode: 'x', type: 'mode' }),
+    JSON.stringify({ message: { content: 'Fix it', role: 'user' }, type: 'user', uuid: 'u1' }),
+    JSON.stringify({
+      message: { content: [{ thinking: 'hmm', type: 'thinking' }], id: 'm1' },
+      type: 'assistant',
+    }),
+    JSON.stringify({
+      message: {
+        content: [{ id: 't1', input: { command: 'ls' }, name: 'Bash', type: 'tool_use' }],
+        id: 'm1',
+      },
+      type: 'assistant',
+    }),
+    JSON.stringify({
+      message: { content: [{ content: 'a.ts', tool_use_id: 't1', type: 'tool_result' }] },
+      type: 'user',
+    }),
+    JSON.stringify({ isMeta: true, message: { content: 'caveat' }, type: 'user' }),
+    JSON.stringify({ message: { content: '<command-name>/x</command-name>' }, type: 'user' }),
+  ]
+  const state = replayTranscript(lines)
+  expect(state.turns.map((t) => t.role)).toEqual(['user', 'assistant'])
+  const blocks = state.turns[1]?.blocks ?? []
+  expect(blocks.map((b) => b.kind)).toEqual(['thinking', 'tool'])
+  const tool = blocks[1]
+  expect(tool?.kind === 'tool' ? tool.result?.text : null).toBe('a.ts')
+  expect(state.status).toBe('starting')
 })

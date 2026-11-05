@@ -72,10 +72,68 @@ function Control({
   )
 }
 
-/** Writes straight into aimux.json; the TUI reads it when it starts. */
-export function SettingsView() {
+/** Restarting the host closes its terminals, so it asks twice; chats resume from transcripts. */
+function RestartHost({
+  onRestart,
+  terminals,
+}: {
+  onRestart: () => Promise<void>
+  terminals: number
+}) {
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const again =
+    terminals === 0
+      ? 'Click again'
+      : `Click again: closes ${terminals} ${terminals === 1 ? 'terminal' : 'terminals'}`
+  return (
+    <div className="rows">
+      <div className="row">
+        <div className="row-text">
+          <span className="row-label">Background process</span>
+          <span className={error === null ? 'row-help' : 'field-error'}>
+            {error ??
+              'Runs your chats and terminals, and keeps them going while the window is closed.'}
+          </span>
+        </div>
+        <div className="row-control" onMouseLeave={() => setArmed(false)}>
+          <button
+            type="button"
+            className={armed ? 'btn btn-danger' : 'btn btn-outline'}
+            disabled={busy}
+            onClick={() => {
+              if (!armed) {
+                setArmed(true)
+                return
+              }
+              setBusy(true)
+              void onRestart().catch((error_: unknown) => {
+                setBusy(false)
+                setArmed(false)
+                setError(String(error_))
+              })
+            }}
+          >
+            {armed ? again : 'Restart background process'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Writes straight into settings.json; a new workspace reads it when it is made. */
+export function SettingsView({
+  onRestartHost,
+  terminals,
+}: {
+  onRestartHost: () => Promise<void>
+  /** Terminals that restarting the background process would close. */
+  terminals: number
+}) {
   const [stored, setStored] = useState<Stored | null>(null)
-  const [path, setPath] = useState('aimux.json')
+  const [path, setPath] = useState('settings.json')
   const [error, setError] = useState<string | null>(null)
   const [section, setSection] = useState(SECTIONS[0]?.id)
 
@@ -121,8 +179,7 @@ export function SettingsView() {
       <div className="page-body">
         <h1 className="section-title">{shown?.label}</h1>
         <p className="page-note">
-          Saved in <span className="mono">{path}</span>. The TUI reads them when it starts; a value
-          set in aimux.config.ts wins over this screen.
+          Saved in <span className="mono">{path}</span>.
         </p>
         {error !== null && <div className="field-error">{error}</div>}
         {stored && (
@@ -133,12 +190,7 @@ export function SettingsView() {
               return (
                 <div className="row" key={row.id}>
                   <div className="row-text">
-                    <span className="row-label">
-                      {row.label}
-                      {'restart' in row && row.restart === true && (
-                        <span className="tag">restart</span>
-                      )}
-                    </span>
+                    <span className="row-label">{row.label}</span>
                     <span className="row-help">{row.help}</span>
                   </div>
                   <div className="row-control">
@@ -158,6 +210,7 @@ export function SettingsView() {
             })}
           </div>
         )}
+        <RestartHost terminals={terminals} onRestart={onRestartHost} />
       </div>
     </div>
   )

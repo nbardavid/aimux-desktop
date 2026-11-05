@@ -10,6 +10,8 @@ interface Props {
   sideOpen: boolean
   /** Shown only beside the terminal, where the git panel can sit. */
   gitOpen: boolean | null
+  /** Whether there is a workspace whose diff to review. */
+  canDiff: boolean
   gitMode: boolean
   onShowSide: () => void
   onToggleGit: () => void
@@ -38,16 +40,18 @@ export function TopBar(props: Props) {
       )}
       <div className="bar-tabs">{props.children}</div>
       <span className="bar-tools">
-        <button
-          type="button"
-          className={props.gitMode ? 'bar-btn is-on' : 'bar-btn'}
-          aria-pressed={props.gitMode}
-          data-tip="Review the diff · ⌘G"
-          onClick={props.onGitMode}
-        >
-          <Icon name="branch" small />
-          Diff
-        </button>
+        {props.canDiff && (
+          <button
+            type="button"
+            className={props.gitMode ? 'bar-btn is-on' : 'bar-btn'}
+            aria-pressed={props.gitMode}
+            data-tip="Review the diff · ⌘G"
+            onClick={props.onGitMode}
+          >
+            <Icon name="branch" small />
+            Diff
+          </button>
+        )}
         {props.gitOpen !== null && (
           <button
             type="button"

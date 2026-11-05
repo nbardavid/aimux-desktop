@@ -1,35 +1,31 @@
-import type { TabSessionSummary } from '@aimux/ipc'
-
 import { expect, test } from 'bun:test'
 
 import { inboxOf } from './inbox'
 
-const tab = (id: string, activity: string, workspaceId?: string) =>
-  ({ activity, id, title: id, workspaceId }) as unknown as TabSessionSummary
-
-test('questions before finished turns, worktrees only', () => {
+test('questions before finished turns, nothing else', () => {
+  const workspaces = [
+    {
+      base: 'main',
+      branch: 'aimux/cedar',
+      createdAt: 0,
+      id: 'w1',
+      name: 'cedar',
+      path: '/w1',
+      projectId: 'p',
+    },
+  ]
   const entries = inboxOf(
-    [{ id: 'p', lastOpenedAt: '', name: 'demo' }],
-    {
-      p: [
-        { id: 'w0', name: 'root', source: 'primary' },
-        { id: 'w1', name: 'cedar' },
-        { id: 'w2', name: 'opal' },
-      ],
-    },
-    {
-      p: [
-        tab('a', 'idle', 'w1'),
-        tab('b', 'waiting-input', 'w2'),
-        tab('c', 'working', 'w1'),
-        tab('d', 'waiting-input'),
-      ],
-    },
-    new Set(['a'])
+    [
+      { signal: 'done', tabId: 'a', title: 'A', workspaceId: 'w1' },
+      { signal: 'working', tabId: 'b', title: 'B', workspaceId: 'w1' },
+      { signal: 'waiting', tabId: 'c', title: 'C', workspaceId: 'w1' },
+      { signal: 'waiting', tabId: 'd', title: 'D', workspaceId: 'gone' },
+    ],
+    [{ id: 'p', lastOpenedAt: 0, name: 'demo', path: '/p' }],
+    workspaces
   )
-  // `d` lives in the main checkout: the GUI leaves it to the TUI.
   expect(entries.map((e) => [e.tabId, e.kind, e.workspaceName])).toEqual([
-    ['b', 'waiting', 'opal'],
+    ['c', 'waiting', 'cedar'],
     ['a', 'done', 'cedar'],
   ])
 })

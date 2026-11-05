@@ -1784,6 +1784,24 @@ body.resizing * {
   transform: translateX(14px);
 }
 
+/* The background process is too old to keep: a strip under the top bar, until restarted. */
+.host-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--warn) 12%, var(--paper));
+  color: #7a5a08;
+  font-size: 12.5px;
+}
+
+.host-bar .btn {
+  height: 26px;
+  padding: 0 10px;
+}
+
 /* Toast */
 .toast {
   position: absolute;
@@ -1914,6 +1932,10 @@ body.resizing * {
 
 .row + .row {
   border-top: 1px solid var(--line);
+}
+
+.rows + .rows {
+  margin-top: 16px;
 }
 
 .row-text {

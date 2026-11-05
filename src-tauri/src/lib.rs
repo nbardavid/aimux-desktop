@@ -1,11 +1,11 @@
 pub mod chat;
-pub mod commands;
-pub mod files;
-pub mod frame;
 pub mod git;
 pub mod git_write;
-pub mod link;
-pub mod paths;
+pub mod host;
+pub mod host_client;
+pub mod pty;
+pub mod quota;
+pub mod store;
 
 use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Runtime};
@@ -64,34 +64,37 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::DaemonState::default())
-        .manage(chat::ChatState::default())
+        .manage(host_client::Presence::default())
+        .manage(store::Store::default())
         .invoke_handler(tauri::generate_handler![
-            chat::chat_start,
-            chat::chat_send,
-            chat::chat_stop,
+            host_client::host_status,
+            host_client::host_restart,
+            host_client::chat_open,
+            host_client::chat_send,
+            host_client::chat_stop,
+            host_client::term_open,
+            host_client::term_write,
+            host_client::term_resize,
+            host_client::term_kill,
+            chat::chat_history,
             chat::claude_models,
-            commands::daemon_connect,
-            commands::daemon_send,
-            commands::list_projects,
-            commands::ensure_daemon,
-            commands::list_workspaces,
-            commands::create_tab,
-            commands::create_project,
-            commands::create_workspace,
-            commands::remove_workspace,
-            commands::close_project,
-            commands::run_setup,
-            commands::setup_agent,
-            files::read_stats,
-            files::read_settings,
-            files::write_setting,
-            files::read_quota_cache,
-            files::write_quota_cache,
-            files::fetch_claude_usage,
-            files::setup_status,
-            files::ensure_setup_script,
-            files::edit_setup_script,
+            store::catalog,
+            store::project_add,
+            store::project_remove,
+            store::project_open,
+            store::workspace_create,
+            store::workspace_remove,
+            store::chat_save,
+            store::chat_forget,
+            store::read_settings,
+            store::write_setting,
+            store::setup_status,
+            store::ensure_setup_script,
+            store::edit_setup_script,
+            store::setup_ran,
+            quota::read_quota_cache,
+            quota::write_quota_cache,
+            quota::fetch_claude_usage,
             git::git_status,
             git::git_diff,
             git::git_branches,

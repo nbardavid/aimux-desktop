@@ -1,8 +1,7 @@
-import type { TabSessionSummary } from '@aimux/ipc'
-
 import { type MouseEvent, type ReactNode, useState } from 'react'
 
-import { type ProjectEntry, signalOf, tabsOf, type WorkspaceEntry } from '../model/catalog'
+import type { Project, Signal, Workspace } from '../model/catalog'
+
 import { Icon } from './icons'
 import { StatusDot } from './status-dot'
 
@@ -13,18 +12,18 @@ export interface DiffStat {
 
 /** What a right-click (or a row's ··· button) asks a menu for. */
 export type RowMenu =
-  | { kind: 'project'; project: ProjectEntry; x: number; y: number }
-  | { kind: 'workspace'; project: ProjectEntry; workspace: WorkspaceEntry; x: number; y: number }
+  | { kind: 'project'; project: Project; x: number; y: number }
+  | { kind: 'workspace'; project: Project; workspace: Workspace; x: number; y: number }
 
 interface Props {
-  projects: ProjectEntry[]
-  workspaces: Record<string, WorkspaceEntry[]>
-  tabsByProject: Record<string, TabSessionSummary[]>
-  done: ReadonlySet<string>
+  projects: Project[]
+  workspaces: Record<string, Workspace[]>
+  /** What each workspace's tabs call attention to. */
+  signals: Record<string, Signal | null>
   diffs: Record<string, DiffStat>
   projectId: string | null
   workspaceId: string | null
-  page: 'stats' | 'settings' | null
+  page: 'settings' | null
   onSelect: (projectId: string, workspaceId: string | null) => void
   onProjects: () => void
   onNewProject: () => void
@@ -33,13 +32,11 @@ interface Props {
   /** How many agents wait for an answer, and how many finished, in every project. */
   inbox: { waiting: number; done: number }
   onInbox: (at: { x: number; y: number }) => void
-  onStats: () => void
   onSettings: () => void
   onHide: () => void
   width: number
   /** Quotas, at the left of the foot. */
   foot: ReactNode
-  connected: boolean
 }
 
 const AVATAR_TONES = ['#525890', '#5b7a5e', '#8a5a44', '#6b5b8a', '#44707f', '#8a6d2f']
@@ -67,7 +64,7 @@ function at(e: MouseEvent) {
 }
 
 export function Sidebar(props: Props) {
-  const { diffs, done, onMenu, onSelect, projectId, projects, tabsByProject, workspaceId } = props
+  const { diffs, onMenu, onSelect, projectId, projects, signals, workspaceId } = props
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const toggle = (id: string) =>
     setCollapsed((state) => {
@@ -120,15 +117,6 @@ export function Sidebar(props: Props) {
           <span className="grow">Search</span>
           <span className="kbd">⌘P</span>
         </button>
-        <button
-          type="button"
-          className={props.page === 'stats' ? 'nav is-on' : 'nav'}
-          aria-pressed={props.page === 'stats'}
-          onClick={props.onStats}
-        >
-          <Icon name="chart" />
-          Stats
-        </button>
       </div>
       <div className="side-label">
         <span className="grow">Projects</span>
@@ -146,7 +134,6 @@ export function Sidebar(props: Props) {
         {projects.map((project) => {
           const open = !collapsed.has(project.id)
           const list = props.workspaces[project.id] ?? []
-          const tabs = tabsByProject[project.id] ?? []
           return (
             <div className="project" key={project.id}>
               <div
@@ -188,15 +175,15 @@ export function Sidebar(props: Props) {
               {open &&
                 list.map((ws) => {
                   const active = project.id === projectId && ws.id === workspaceId
-                  const signal = active ? null : signalOf(tabsOf(tabs, ws, list), done)
-                  const diff = ws.path === undefined ? undefined : diffs[ws.path]
+                  const signal = active ? null : (signals[ws.id] ?? null)
+                  const diff = diffs[ws.path]
                   const menu = (e: MouseEvent) => {
                     e.preventDefault()
                     onMenu({ kind: 'workspace', project, workspace: ws, ...at(e) })
                   }
                   return (
                     <div
-                      key={ws.id ?? 'root'}
+                      key={ws.id}
                       className={active ? 'ws is-active' : 'ws'}
                       onContextMenu={menu}
                     >
@@ -234,16 +221,6 @@ export function Sidebar(props: Props) {
       <div className="side-foot">
         {props.foot}
         <span className="grow" />
-        {/* Said only when it is not the case. */}
-        {!props.connected && (
-          <span
-            className="st st-waiting"
-            role="img"
-            aria-label="Reconnecting to the daemon"
-            data-tip="Reconnecting to the daemon…"
-            data-tip-side="top"
-          />
-        )}
         <button
           type="button"
           className={props.page === 'settings' ? 'icon-btn is-on' : 'icon-btn'}

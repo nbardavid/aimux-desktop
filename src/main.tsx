@@ -5,6 +5,7 @@ import { App } from './app'
 import '@fontsource/geist-mono/400.css'
 import '@fontsource/geist-mono/500.css'
 import '@fontsource/geist-mono/600.css'
+import '@xterm/xterm/css/xterm.css'
 
 import './styles.css'
 
