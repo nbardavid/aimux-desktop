@@ -14,6 +14,7 @@ import { Splitter } from './app/splitter'
 import { StatsView } from './app/stats-view'
 import { TabBar } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
+import { TopBar } from './app/top-bar'
 import { useDaemon } from './app/use-daemon'
 import { type FileChange, useGit } from './app/use-git'
 import { LIMITS, useLayout } from './app/use-layout'
@@ -169,9 +170,16 @@ export function App() {
     setMode('git')
   }
 
+  const project = projects.find((p) => p.id === projectId)
+  const place = {
+    git: ws?.branch ?? ws?.name,
+    normal: ws?.branch ?? ws?.name,
+    settings: 'Settings',
+    stats: 'Stats',
+  }[mode]
+
   return (
     <div className="app">
-      {!layout.sideOpen && <div className="titlebar" data-tauri-drag-region />}
       <div className="cols">
         {layout.sideOpen && (
           <>
@@ -196,6 +204,7 @@ export function App() {
               onNewWorkspace={setNewWorkspaceIn}
               onStats={() => setMode((m) => (m === 'stats' ? 'normal' : 'stats'))}
               onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
+              onHide={() => update({ sideOpen: false })}
             />
             <Splitter
               label="Resize the projects sidebar"
@@ -207,90 +216,98 @@ export function App() {
             />
           </>
         )}
-        {mode === 'normal' && (
-          <>
-            <main className="center">
-              <TabBar
-                tabs={tabs}
-                activeId={tab?.id}
-                done={daemon.done}
-                onSelect={daemon.selectTab}
-                onClose={daemon.closeTab}
-                onNew={() => setOverlay('new-tab')}
-                sideOpen={layout.sideOpen}
-                gitOpen={layout.gitOpen}
-                onToggleSide={() => update({ sideOpen: !layout.sideOpen })}
-                onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
-                onGitMode={() => setMode('git')}
-              />
-              {tab ? (
-                <TerminalView
-                  tabId={tab.id}
-                  viewport={session.viewports[tab.id]}
-                  write={daemon.write}
-                  scroll={daemon.scroll}
-                  scrollToBottom={daemon.scrollToBottom}
-                  resize={daemon.resize}
-                />
-              ) : (
-                <div className="quiet fill">
-                  <span>No tabs in {ws?.name ?? 'this workspace'}</span>
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={() => setOverlay('new-tab')}
-                  >
-                    <Icon name="plus" small />
-                    New tab
-                  </button>
-                </div>
-              )}
-            </main>
-            {layout.gitOpen && (
+        <div className="main">
+          <TopBar
+            project={mode === 'stats' || mode === 'settings' ? undefined : project?.name}
+            place={place}
+            sideOpen={layout.sideOpen}
+            gitOpen={layout.gitOpen}
+            gitMode={mode === 'git'}
+            onShowSide={() => update({ sideOpen: true })}
+            onToggleGit={() => update({ gitOpen: !layout.gitOpen })}
+            onGitMode={() => setMode((m) => (m === 'git' ? 'normal' : 'git'))}
+          />
+          <div className="work">
+            {mode === 'normal' && (
               <>
-                <Splitter
-                  label="Resize the git panel"
-                  value={layout.gitWidth}
-                  min={LIMITS.git[0]}
-                  max={LIMITS.git[1]}
-                  direction={-1}
-                  onChange={(gitWidth) => update({ gitWidth })}
-                />
-                <GitPanel
-                  width={layout.gitWidth}
-                  changes={changes}
-                  pr={git.pr}
-                  onOpenFile={openFile}
-                  setup={
-                    <SetupSection
-                      status={setup.status}
-                      workspaceId={ws?.id ?? null}
-                      workspaceName={ws?.name ?? ''}
-                      onEdit={() => void runSetup('edit_setup_script')}
-                      onRun={() => void runSetup('run_setup')}
-                      onAgent={() => void runSetup('setup_agent')}
+                <main className="center">
+                  <TabBar
+                    tabs={tabs}
+                    activeId={tab?.id}
+                    done={daemon.done}
+                    onSelect={daemon.selectTab}
+                    onClose={daemon.closeTab}
+                    onNew={() => setOverlay('new-tab')}
+                  />
+                  {tab ? (
+                    <TerminalView
+                      tabId={tab.id}
+                      viewport={session.viewports[tab.id]}
+                      write={daemon.write}
+                      scroll={daemon.scroll}
+                      scrollToBottom={daemon.scrollToBottom}
+                      resize={daemon.resize}
                     />
-                  }
-                />
+                  ) : (
+                    <div className="quiet fill">
+                      <span>No tabs in {ws?.name ?? 'this workspace'}</span>
+                      <button
+                        type="button"
+                        className="btn btn-soft"
+                        onClick={() => setOverlay('new-tab')}
+                      >
+                        <Icon name="plus" small />
+                        New tab
+                      </button>
+                    </div>
+                  )}
+                </main>
+                {layout.gitOpen && (
+                  <>
+                    <Splitter
+                      label="Resize the git panel"
+                      value={layout.gitWidth}
+                      min={LIMITS.git[0]}
+                      max={LIMITS.git[1]}
+                      direction={-1}
+                      onChange={(gitWidth) => update({ gitWidth })}
+                    />
+                    <GitPanel
+                      width={layout.gitWidth}
+                      changes={changes}
+                      pr={git.pr}
+                      onOpenFile={openFile}
+                      setup={
+                        <SetupSection
+                          status={setup.status}
+                          workspaceId={ws?.id ?? null}
+                          workspaceName={ws?.name ?? ''}
+                          onEdit={() => void runSetup('edit_setup_script')}
+                          onRun={() => void runSetup('run_setup')}
+                          onAgent={() => void runSetup('setup_agent')}
+                        />
+                      }
+                    />
+                  </>
+                )}
               </>
             )}
-          </>
-        )}
-        {mode === 'git' && ws?.path !== undefined && (
-          <GitMode
-            path={ws.path}
-            branch={ws.branch}
-            changes={changes ?? []}
-            file={changes?.find((f) => f.path === gitFile?.path)}
-            onSelect={setGitFile}
-            onExit={() => setMode('normal')}
-          />
-        )}
-        {mode === 'git' && ws?.path === undefined && (
-          <div className="quiet fill">Not a git repository</div>
-        )}
-        {mode === 'stats' && <StatsView quotas={quotas.cache} />}
-        {mode === 'settings' && <SettingsView />}
+            {mode === 'git' && ws?.path !== undefined && (
+              <GitMode
+                path={ws.path}
+                changes={changes ?? []}
+                file={changes?.find((f) => f.path === gitFile?.path)}
+                onSelect={setGitFile}
+                onExit={() => setMode('normal')}
+              />
+            )}
+            {mode === 'git' && ws?.path === undefined && (
+              <div className="quiet fill">Not a git repository</div>
+            )}
+            {mode === 'stats' && <StatsView quotas={quotas.cache} />}
+            {mode === 'settings' && <SettingsView />}
+          </div>
+        </div>
       </div>
 
       {daemon.attention && (

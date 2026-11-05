@@ -106,7 +106,6 @@ export function SettingsView() {
   return (
     <div className="page">
       <nav className="page-nav" aria-label="Settings sections">
-        <div className="page-title">Settings</div>
         {SECTIONS.map((s) => (
           <button
             type="button"

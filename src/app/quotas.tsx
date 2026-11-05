@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { QuotaCache, UsageWindow } from '../model/quota'
 
 const TOOL_LABEL = { claude: 'Claude', codex: 'Codex' } as const
+const TOOL_SHORT = { claude: 'Cl', codex: 'Cx' } as const
 
 function barTone(percent: number) {
   if (percent >= 85) return 'bar-critical'
@@ -75,7 +76,7 @@ export function QuotaWindows({ cache }: { cache: QuotaCache }) {
   )
 }
 
-/** One thin meter per tool for the sidebar's foot; a click shows every window. */
+/** One figure per tool for the sidebar's foot; a click shows every window. */
 export function Quotas({ cache, error }: { cache: QuotaCache; error: string | null }) {
   const [open, setOpen] = useState(false)
   const tools = (['claude', 'codex'] as const).filter((tool) => cache[tool] !== undefined)
@@ -84,21 +85,18 @@ export function Quotas({ cache, error }: { cache: QuotaCache; error: string | nu
     <div className="quota-anchor">
       <button
         type="button"
-        className="meters"
+        className={open ? 'chip is-on' : 'chip'}
         aria-expanded={open}
+        title="Quotas"
         onClick={() => setOpen((o) => !o)}
       >
         {tools.map((tool) => {
           const percent = cache[tool]?.snapshot.percent ?? null
           return (
-            <span key={tool} className="meter-row">
-              <span className="meter-label">{TOOL_LABEL[tool]}</span>
-              <span className="quota-bar">
-                <span className={barTone(percent ?? 0)} style={{ width: `${percent ?? 0}%` }} />
-              </span>
-              <span className="meter-pct">
-                {percent === null ? '—' : `${Math.round(percent)}%`}
-              </span>
+            <span key={tool} className="chip-part" title={TOOL_LABEL[tool]}>
+              <span className={`st ${barTone(percent ?? 0)}`} />
+              {TOOL_SHORT[tool]}
+              <span className="num">{percent === null ? '—' : `${Math.round(percent)}%`}</span>
             </span>
           )
         })}

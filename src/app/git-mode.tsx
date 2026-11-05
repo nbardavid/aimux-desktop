@@ -5,11 +5,9 @@ import type { FileChange } from './use-git'
 
 import { type DiffLine, parseUnifiedDiff } from '../git/diff'
 import { FileList } from './file-list'
-import { Icon } from './icons'
 
 interface Props {
   path: string
-  branch: string | undefined
   changes: FileChange[]
   file: FileChange | undefined
   onSelect: (file: FileChange) => void
@@ -18,7 +16,7 @@ interface Props {
 
 const SIGN = { add: '+', ctx: '', del: '−', hunk: '' } as const
 
-export function GitMode({ branch, changes, file, onExit, onSelect, path }: Props) {
+export function GitMode({ changes, file, onExit, onSelect, path }: Props) {
   const [lines, setLines] = useState<DiffLine[]>([])
   const shown = file ?? changes[0]
 
@@ -41,8 +39,7 @@ export function GitMode({ branch, changes, file, onExit, onSelect, path }: Props
       <div className="gm-files">
         <div className="gm-head">
           <span className="grow">
-            <Icon name="branch" small />
-            {branch ?? 'detached'}
+            Changes <span className="count">{changes.length}</span>
           </span>
         </div>
         <div className="git-scroll">

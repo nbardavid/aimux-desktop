@@ -366,7 +366,6 @@ export function StatsView({ quotas }: { quotas: QuotaCache }) {
   return (
     <div className="page">
       <nav className="page-nav" aria-label="Stats pages">
-        <div className="page-title">Stats</div>
         {PAGES.map((p) => (
           <button
             type="button"
