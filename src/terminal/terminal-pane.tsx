@@ -1,11 +1,13 @@
 import type { TerminalSnapshot, TerminalSpan } from '@brimveyn/aimux-config'
 
-import { type CSSProperties, useEffect, useMemo, useRef } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
+import { blockRects, type Rect } from './blocks'
 import { spanColor } from './colors'
-import { gridSize, measureCell } from './grid'
+import { gridSize, measureCell, type Size } from './grid'
 
-export const TERMINAL_FONT = '13px/18px "SF Mono", Menlo, monospace'
+export const CELL_HEIGHT = 21
+export const TERMINAL_FONT = `13px/${CELL_HEIGHT}px "Geist Mono", monospace`
 
 interface Props {
   snapshot: TerminalSnapshot | undefined
@@ -29,6 +31,46 @@ function spanStyle(span: TerminalSpan, palette: readonly string[], cursor: boole
   }
 }
 
+const BLOCK = /[\u2580-\u259f]/
+
+function blockStyle(rects: Rect[], shade: number, cell: Size): CSSProperties {
+  const fill =
+    shade === 1 ? 'currentColor' : `color-mix(in srgb, currentColor ${shade * 100}%, transparent)`
+  const px = (n: number) => `${n}px`
+  return {
+    backgroundImage: rects.map(() => `linear-gradient(${fill}, ${fill})`).join(', '),
+    backgroundPosition: rects
+      .map(([x0, y0]) => `${px(x0 * cell.width)} ${px(y0 * cell.height)}`)
+      .join(', '),
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: rects
+      .map(([x0, y0, x1, y1]) => `${px((x1 - x0) * cell.width)} ${px((y1 - y0) * cell.height)}`)
+      .join(', '),
+    width: cell.width,
+  }
+}
+
+/** Block elements become cell-sized boxes; the rest stays text. */
+function renderText(text: string, cell: Size): ReactNode {
+  if (!BLOCK.test(text)) return text
+  const out: ReactNode[] = []
+  let plain = ''
+  for (const char of text) {
+    const block = blockRects(char)
+    if (!block) {
+      plain += char
+      continue
+    }
+    if (plain !== '') out.push(plain)
+    plain = ''
+    out.push(
+      <span key={out.length} className="blk" style={blockStyle(block.rects, block.shade, cell)} />
+    )
+  }
+  if (plain !== '') out.push(plain)
+  return out
+}
+
 function cursorShape(snapshot: TerminalSnapshot): string | null {
   const row = snapshot.cursorRow
   if (!snapshot.cursorVisible || row === undefined || row < 0 || row >= snapshot.lines.length) {
@@ -40,7 +82,11 @@ function cursorShape(snapshot: TerminalSnapshot): string | null {
 
 export function TerminalPane({ onResize, palette, snapshot }: Props) {
   const root = useRef<HTMLDivElement>(null)
-  const cell = useMemo(() => measureCell(TERMINAL_FONT), [])
+  const [cell, setCell] = useState(() => measureCell(TERMINAL_FONT))
+  // The first measure may run before the web font loads; measure again once it has.
+  useEffect(() => {
+    void document.fonts.load(TERMINAL_FONT).then(() => setCell(measureCell(TERMINAL_FONT)))
+  }, [])
   const style = useMemo(
     () => ({ '--cell-h': `${cell.height}px`, 'font': TERMINAL_FONT }) as CSSProperties,
     [cell]
@@ -82,7 +128,7 @@ export function TerminalPane({ onResize, palette, snapshot }: Props) {
                 style={spanStyle(span, palette, cursor && shape === 'block')}
                 title={span.link}
               >
-                {span.text}
+                {renderText(span.text, cell)}
               </span>
             )
           })}

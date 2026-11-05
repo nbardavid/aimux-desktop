@@ -1,54 +1,110 @@
 import type { TabSessionSummary } from '@aimux/ipc'
 
-import type { ProjectEntry } from './use-daemon'
+import { useState } from 'react'
+
+import { type ProjectEntry, signalOf, tabsOf, type WorkspaceEntry } from '../model/catalog'
+import { Icon } from './icons'
+import { StatusDot } from './status-dot'
+
+export interface DiffStat {
+  add: number
+  del: number
+}
 
 interface Props {
   projects: ProjectEntry[]
+  workspaces: Record<string, WorkspaceEntry[]>
+  tabsByProject: Record<string, TabSessionSummary[]>
+  done: ReadonlySet<string>
+  diffs: Record<string, DiffStat>
   projectId: string | null
-  tabs: TabSessionSummary[]
-  tabId: string | undefined
-  onProject: (id: string) => void
-  onTab: (id: string) => void
+  workspaceId: string | null
+  onSelect: (projectId: string, workspaceId: string | null) => void
+  onProjects: () => void
 }
 
-const ACTIVITY_LABEL = {
-  'idle': 'Idle',
-  'waiting-input': 'Waiting for you',
-  'working': 'Working',
-} as const
+const plural = (n: number) => `${n} ${n === 1 ? 'tab' : 'tabs'}`
 
-export function Sidebar({ onProject, onTab, projectId, projects, tabId, tabs }: Props) {
+export function Sidebar(props: Props) {
+  const { diffs, done, onSelect, projectId, projects, tabsByProject, workspaceId } = props
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const toggle = (id: string) =>
+    setCollapsed((state) => {
+      const next = new Set(state)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+
   return (
-    <nav className="sidebar">
-      <h2>Projects</h2>
-      <ul>
-        {projects.map((project) => (
-          <li key={project.id}>
-            <button
-              type="button"
-              aria-current={project.id === projectId}
-              title={project.projectPath}
-              onClick={() => onProject(project.id)}
-            >
-              {project.name}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <h2>Tabs</h2>
-      <ul>
-        {tabs.map((tab) => (
-          <li key={tab.id}>
-            <button type="button" aria-current={tab.id === tabId} onClick={() => onTab(tab.id)}>
-              <span
-                className={`activity activity-${tab.activity ?? 'unknown'}`}
-                title={tab.activity ? ACTIVITY_LABEL[tab.activity] : 'Unknown'}
-              />
-              {tab.title}
-            </button>
-          </li>
-        ))}
-      </ul>
+    <nav className="side" aria-label="Projects">
+      {/* The window's traffic lights sit here: the strip drags the window. */}
+      <div className="titlebar" data-tauri-drag-region />
+      <div className="side-head">
+        <span className="side-title">Projects</span>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="Open a project"
+          onClick={props.onProjects}
+        >
+          <Icon name="search" />
+        </button>
+      </div>
+      <div className="tree">
+        {projects.map((project) => {
+          const open = !collapsed.has(project.id)
+          const list = props.workspaces[project.id] ?? []
+          const tabs = tabsByProject[project.id] ?? []
+          return (
+            <div className="project" key={project.id}>
+              <button
+                type="button"
+                className={open ? 'project-row is-open' : 'project-row'}
+                aria-expanded={open}
+                onClick={() => toggle(project.id)}
+              >
+                <span className="chev">
+                  <Icon name="chevron" small />
+                </span>
+                <span className="grow">{project.name}</span>
+                <span className="tabs-count">{plural(tabs.length)}</span>
+              </button>
+              {open &&
+                list.map((ws) => {
+                  const active = project.id === projectId && ws.id === workspaceId
+                  const signal = active ? null : signalOf(tabsOf(tabs, ws, list), done)
+                  const diff = ws.path === undefined ? undefined : diffs[ws.path]
+                  return (
+                    <button
+                      type="button"
+                      key={ws.id ?? 'root'}
+                      className={active ? 'ws is-active' : 'ws'}
+                      aria-current={active}
+                      onClick={() => onSelect(project.id, ws.id)}
+                    >
+                      <span className="ws-line">
+                        <span className="ws-name">{ws.name}</span>
+                        {diff && diff.add + diff.del > 0 && (
+                          <span className="ws-diff">
+                            <span className="add">+{diff.add}</span>{' '}
+                            <span className="del">−{diff.del}</span>
+                          </span>
+                        )}
+                        {signal && <StatusDot signal={signal} />}
+                      </span>
+                      {ws.branch !== undefined && (
+                        <span className="ws-branch">
+                          <Icon name="branch" small />
+                          <span>{ws.branch}</span>
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+            </div>
+          )
+        })}
+      </div>
     </nav>
   )
 }

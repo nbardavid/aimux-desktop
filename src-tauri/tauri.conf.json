@@ -10,8 +10,21 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "aimux", "width": 1100, "height": 720 }],
-    "security": { "csp": null }
+    "windows": [
+      {
+        "label": "main",
+        "title": "aimux",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,

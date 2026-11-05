@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::git::tool_path;
 use crate::link::{spawn_link, LinkWriter};
 use crate::paths::{aimux_bin, daemon_socket_path};
 
@@ -60,10 +61,9 @@ fn run_aimux(args: &[&str]) -> Result<String, String> {
         return Err(not_found());
     }
     // A Finder launch gets a bare PATH; `aimux` is a `#!/usr/bin/env bun` script.
-    let path = format!("{home}/.bun/bin:{}", env("PATH").unwrap_or_default());
     let output = Command::new(&bin)
         .args(args)
-        .env("PATH", path)
+        .env("PATH", tool_path())
         .output()
         .map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => not_found(),
@@ -84,4 +84,30 @@ pub fn list_projects() -> Result<String, String> {
 #[tauri::command(async)]
 pub fn ensure_daemon(project_id: String) -> Result<(), String> {
     run_aimux(&["tab", "list", "--project", &project_id]).map(|_| ())
+}
+
+#[tauri::command(async)]
+pub fn list_workspaces(project_id: String) -> Result<String, String> {
+    run_aimux(&["workspace", "list", "--project", &project_id])
+}
+
+/// Through the CLI, so the assistant's command comes from the user's config, as in the TUI.
+#[tauri::command(async)]
+pub fn create_tab(
+    project_id: String,
+    assistant: String,
+    workspace_id: Option<String>,
+) -> Result<String, String> {
+    let mut args = vec![
+        "tab",
+        "create",
+        "--project",
+        &project_id,
+        "--assistant",
+        &assistant,
+    ];
+    if let Some(id) = workspace_id.as_deref() {
+        args.extend(["--workspace", id]);
+    }
+    run_aimux(&args)
 }
