@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "types": ["bun"],
+    "paths": {
+      "@aimux/ipc": ["../src/ipc/protocol.ts"],
+      "@brimveyn/aimux-config": ["../packages/aimux-config/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}
