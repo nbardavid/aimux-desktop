@@ -19,6 +19,8 @@ import { Inbox } from './app/inbox'
 import { NewWorkspace } from './app/new-workspace'
 import { Picker, type PickerItem } from './app/picker'
 import { Quotas } from './app/quotas'
+import { resumeTarget, type Session } from './app/resume'
+import { ResumePicker } from './app/resume-picker'
 import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
 import { type DiffStat, type RowMenu, Sidebar } from './app/sidebar'
@@ -36,7 +38,8 @@ import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
 import { useTerminals } from './app/use-terminals'
-import { chatFlags, type ChatSettings, DEFAULT_CHAT, normalize } from './model/agents'
+import { availableCommands } from './chat/commands'
+import { chatFlags, type ChatSettings, DEFAULT_CHAT, effortLabel, normalize } from './model/agents'
 import { byProject, strongest, type Workspace } from './model/catalog'
 import { inboxOf } from './model/inbox'
 import { nameCandidates } from './model/names'
@@ -72,6 +75,19 @@ const SETUP_PROMPT = (script: string) =>
   '`set -euo pipefail`. Make it idempotent and non-interactive, use no secrets, exit ' +
   'non-zero on failure. Do not run it.'
 
+/** An app command's picker: `/resume` as a palette, `/model` and `/effort` over the composer. */
+interface CommandPick {
+  name: 'resume' | 'model' | 'effort'
+  chatId: string
+  args: string
+}
+
+/** Just above the chat's composer, for the pickers its commands open. */
+function overComposer() {
+  const box = document.querySelector('.composer')?.getBoundingClientRect()
+  return box ? { bottom: window.innerHeight - box.top + 6, left: box.left } : undefined
+}
+
 /** A chat asking for you while you look elsewhere. */
 interface Attention {
   chatId: string
@@ -104,13 +120,16 @@ export function App() {
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
   // Where the new-tab menu drops from.
   const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null)
-  const models = useModels()
+  const { commands: appWideCommands, models } = useModels()
   const [stored, setSelectionState] = useState(readChatSettings)
   // What was picked under an older model list falls back to what this one offers.
   const selection = normalize(stored, models)
   const [composeIn, setComposeIn] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<MenuState | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
+  // A rename `/rename` started: its title also goes to Claude, so `/resume` shows it.
+  const renameTells = useRef<string | null>(null)
+  const [commandPick, setCommandPick] = useState<CommandPick | null>(null)
   const [inboxAt, setInboxAt] = useState<{ x: number; y: number } | null>(null)
   // A tab whose agent is working closes on the second ask: ⌘W twice, or × twice.
   const [armed, setArmed] = useState<string | null>(null)
@@ -471,6 +490,68 @@ export function App() {
     )
   }
 
+  const modelOf = (c: ChatTab) => models.find((m) => m.value === (c.record.model || 'default'))
+
+  /** The app's own `/` commands; Claude's others are sent as typed. */
+  const runCommand = (c: ChatTab, name: string, args: string) => {
+    const id = c.record.id
+    const said = args.toLowerCase()
+    if (name === 'clear') chats.clear(id)
+    else if (name === 'rename' && args !== '') {
+      chats.rename(id, args)
+      chats.send(id, `/rename ${args}`)
+    } else if (name === 'rename') {
+      renameTells.current = id
+      setRenaming(id)
+    } else if (name === 'model') {
+      const m = models.find((x) => x.value.toLowerCase() === said || x.name.toLowerCase() === said)
+      if (m) chats.setModel(id, m.value)
+      else setCommandPick({ args, chatId: id, name })
+    } else if (name === 'effort') {
+      const efforts = modelOf(c)?.efforts ?? []
+      const level = efforts.find((e) => e === said || effortLabel(e).toLowerCase() === said)
+      if (level !== undefined) chats.setEffort(id, level)
+      else setCommandPick({ args, chatId: id, name })
+    } else if (name === 'resume') setCommandPick({ args, chatId: id, name })
+  }
+
+  /** A session open in a tab is that tab; else it opens in a new one where it ran. */
+  const resume = (session: Session) => {
+    setCommandPick(null)
+    if (ws === undefined || projectId === null) return
+    const open = chats.chats.map((c) => ({
+      id: c.record.id,
+      sessionId: c.record.sessionId,
+      workspaceId: c.record.workspaceId,
+    }))
+    const target = resumeTarget(session, open, workspaces[projectId] ?? [], ws.id)
+    const pid = placeOf(target.workspaceId).project?.id ?? projectId
+    if (target.kind === 'tab') goTo(pid, target.workspaceId, target.chatId)
+    else {
+      const title = session.title || session.firstPrompt
+      goTo(
+        pid,
+        target.workspaceId,
+        chats.openSession(target.workspaceId, target.cwd, session.id, title)
+      )
+    }
+  }
+
+  const pickFor = commandPick && chats.chats.find((c) => c.record.id === commandPick.chatId)
+  const commandItems = (): PickerItem[] => {
+    if (!pickFor) return []
+    const current = (on: boolean) => (on ? 'current' : undefined)
+    if (commandPick?.name === 'model') {
+      const model = modelOf(pickFor)?.value
+      return models.map((m) => ({ key: m.value, label: m.name, meta: current(m.value === model) }))
+    }
+    return (modelOf(pickFor)?.efforts ?? []).map((e) => ({
+      key: e,
+      label: effortLabel(e),
+      meta: current(e === pickFor.record.effort),
+    }))
+  }
+
   const tabMenu = (item: TabItem, x: number, y: number) =>
     setCtxMenu({
       items: [
@@ -602,9 +683,14 @@ export function App() {
                         onRename={(item) => setRenaming(item.id)}
                         onRenamed={(item, title) => {
                           setRenaming(null)
+                          const tell = renameTells.current === item.id
+                          renameTells.current = null
                           if (title === null || title === item.title) return
-                          if (item.chat) chats.rename(item.id, title)
-                          else terminals.rename(item.id, title)
+                          if (!item.chat) terminals.rename(item.id, title)
+                          else {
+                            chats.rename(item.id, title)
+                            if (tell) chats.send(item.id, `/rename ${title}`)
+                          }
                         }}
                         onNew={(at) => {
                           setMenuAt(at)
@@ -618,7 +704,9 @@ export function App() {
                     <ChatView
                       cwd={chat.cwd}
                       state={chat.state}
+                      commands={availableCommands(chat.state.commands, appWideCommands)}
                       onSend={(text) => chats.send(chat.record.id, text)}
+                      onCommand={(name, args) => runCommand(chat, name, args)}
                       onAnswer={(p, choice) => chats.answer(chat.record.id, p, choice)}
                       onInterrupt={() => chats.interrupt(chat.record.id)}
                     />
@@ -787,6 +875,32 @@ export function App() {
             setOverlay(null)
             setMode('normal')
             store.select(pid, null)
+          }}
+        />
+      )}
+      {commandPick?.name === 'resume' && project && ws && (
+        <ResumePicker
+          projectId={project.id}
+          mainPath={project.path}
+          workspaces={workspaces[project.id] ?? []}
+          currentPath={ws.path}
+          initialQuery={commandPick.args}
+          onPick={resume}
+          onClose={() => setCommandPick(null)}
+        />
+      )}
+      {commandPick !== null && commandPick.name !== 'resume' && pickFor && (
+        <Picker
+          title={commandPick.name === 'model' ? 'Model' : 'Intelligence'}
+          items={commandItems()}
+          filterable={false}
+          anchor={overComposer()}
+          empty="This model has no effort levels."
+          onClose={() => setCommandPick(null)}
+          onPick={(key) => {
+            setCommandPick(null)
+            if (commandPick.name === 'model') chats.setModel(pickFor.record.id, key)
+            else chats.setEffort(pickFor.record.id, key)
           }}
         />
       )}

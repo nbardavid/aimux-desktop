@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { Icon } from './icons'
+import { pointerMoved } from './pointer'
 
 export interface ComboOption {
   value: string
@@ -57,6 +58,9 @@ export function Combo({
   }, [open])
 
   useEffect(() => setHot(0), [q])
+  useEffect(() => {
+    root.current?.querySelector('.combo-option.is-hot')?.scrollIntoView({ block: 'nearest' })
+  }, [hot, q])
 
   const toggle = () => {
     const box = root.current?.getBoundingClientRect()
@@ -130,7 +134,7 @@ export function Combo({
                   role="option"
                   aria-selected={o.value === selected}
                   className={i === hot ? 'combo-option is-hot' : 'combo-option'}
-                  onMouseEnter={() => setHot(i)}
+                  onMouseMove={(e) => pointerMoved(e) && setHot(i)}
                   onClick={() => pick(o.value)}
                 >
                   <span className="combo-label">{o.label}</span>

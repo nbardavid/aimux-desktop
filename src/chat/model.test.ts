@@ -4,6 +4,7 @@ import {
   addUserTurn,
   type ChatState,
   initialChat,
+  parseCommands,
   type Permission,
   permissionLine,
   reduceLine,
@@ -229,7 +230,7 @@ test('a transcript replays prompts, joined blocks and tool results', () => {
       type: 'user',
     }),
     JSON.stringify({ isMeta: true, message: { content: 'caveat' }, type: 'user' }),
-    JSON.stringify({ message: { content: '<command-name>/x</command-name>' }, type: 'user' }),
+    JSON.stringify({ message: { content: '<bash-stdout>x</bash-stdout>' }, type: 'user' }),
   ]
   const state = replayTranscript(lines)
   expect(state.turns.map((t) => t.role)).toEqual(['user', 'assistant'])
@@ -238,4 +239,105 @@ test('a transcript replays prompts, joined blocks and tool results', () => {
   const tool = blocks[1]
   expect(tool?.kind === 'tool' ? tool.result?.text : null).toBe('a.ts')
   expect(state.status).toBe('starting')
+})
+
+describe('commands', () => {
+  const synthetic = (text: string) =>
+    JSON.stringify({
+      message: { content: [{ text, type: 'text' }], id: 'm', model: '<synthetic>' },
+      type: 'assistant',
+    })
+
+  test('initialize carries the chat’s commands', () => {
+    const line = JSON.stringify({
+      response: {
+        response: {
+          commands: [{ argumentHint: '<x>', builtin: true, description: 'd', name: 'compact' }],
+        },
+        subtype: 'success',
+      },
+      type: 'control_response',
+    })
+    expect(reduceLine(initialChat, line).commands[0]).toEqual({
+      aliases: [],
+      argumentHint: '<x>',
+      builtin: true,
+      description: 'd',
+      name: 'compact',
+    })
+  })
+
+  test('parseCommands drops what is malformed', () => {
+    expect(parseCommands([{ name: 'x' }, { description: 'no name' }, 42])).toEqual([
+      { aliases: [], argumentHint: '', builtin: false, description: '', name: 'x' },
+    ])
+    expect(parseCommands(undefined)).toEqual([])
+  })
+
+  test('a typed command shows as a command', () => {
+    expect(addUserTurn(initialChat, '/compact keep tests', 'u').turns[0]?.blocks[0]).toEqual({
+      args: 'keep tests',
+      kind: 'command',
+      name: 'compact',
+    })
+  })
+
+  test('a path is not a command', () => {
+    expect(addUserTurn(initialChat, '/usr/bin/env is weird', 'u').turns[0]?.blocks[0]?.kind).toBe(
+      'text'
+    )
+  })
+
+  test('synthetic output after a command is a card', () => {
+    const s = addUserTurn(initialChat, '/context', 'u')
+    const out = reduceLine(s, synthetic('## Context'))
+    expect(out.turns.at(-1)?.blocks).toEqual([{ kind: 'output', text: '## Context' }])
+  })
+
+  test('a synthetic error after a normal prompt stays a message', () => {
+    const s = addUserTurn(initialChat, 'hello', 'u')
+    const out = reduceLine(s, synthetic('API Error'))
+    expect(out.turns.at(-1)?.blocks[0]?.kind).toBe('text')
+  })
+
+  test('a replayed send of a command shows as a command', () => {
+    const sent = JSON.stringify({
+      message: JSON.parse(userLine('/context', null)),
+      type: 'aimux_sent',
+    })
+    expect(reduceLine(initialChat, sent).turns[0]?.blocks[0]?.kind).toBe('command')
+  })
+
+  test('replayed local command output becomes a card', () => {
+    const lines = [
+      JSON.stringify({
+        content: '<local-command-stdout>Set model to opus</local-command-stdout>',
+        subtype: 'local_command',
+        type: 'system',
+      }),
+      JSON.stringify({
+        content: '<local-command-stdout></local-command-stdout>',
+        subtype: 'local_command',
+        type: 'system',
+      }),
+    ]
+    expect(replayTranscript(lines).turns).toHaveLength(1)
+    expect(replayTranscript(lines).turns[0]?.blocks).toEqual([
+      { kind: 'output', text: 'Set model to opus' },
+    ])
+  })
+
+  test('replayed command prompts become command chips', () => {
+    const content =
+      '<command-name>/compact</command-name>\n  <command-message>compact</command-message>\n  <command-args>keep tests</command-args>'
+    const lines = [
+      JSON.stringify({ message: { content, role: 'user' }, type: 'user', uuid: 'u1' }),
+      JSON.stringify({ content, subtype: 'local_command', type: 'system', uuid: 's1' }),
+    ]
+    const turns = replayTranscript(lines).turns
+    expect(turns.map((t) => t.blocks[0])).toEqual([
+      { args: 'keep tests', kind: 'command', name: 'compact' },
+      { args: 'keep tests', kind: 'command', name: 'compact' },
+    ])
+  })
 })

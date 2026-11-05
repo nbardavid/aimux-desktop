@@ -2,8 +2,14 @@
 // draw text as it is written; the full messages that follow only fill in what streaming
 // cannot give (a tool's parsed input, or a turn that was never streamed).
 
+import { parseCommand } from './commands'
+
 export type Block =
   | { kind: 'text'; text: string }
+  /** A user turn that is a `/` command. */
+  | { kind: 'command'; name: string; args: string }
+  /** What a local command printed, shown as a card rather than as Claude's answer. */
+  | { kind: 'output'; text: string }
   | { kind: 'thinking'; text: string }
   | {
       kind: 'tool'
@@ -28,6 +34,14 @@ export interface Permission {
   suggestions: unknown[]
 }
 
+export interface SlashCommand {
+  name: string
+  description: string
+  argumentHint: string
+  aliases: string[]
+  builtin: boolean
+}
+
 export interface ChatState {
   sessionId: string | null
   model: string | null
@@ -36,9 +50,12 @@ export interface ChatState {
   pending: Permission[]
   lastTurn: { costUsd: number; durationMs: number } | null
   errors: string[]
+  /** The commands this chat's Claude offers, from its `initialize` answer. */
+  commands: SlashCommand[]
 }
 
 export const initialChat: ChatState = {
+  commands: [],
   errors: [],
   lastTurn: null,
   model: null,
@@ -52,6 +69,27 @@ type Json = Record<string, unknown>
 
 const obj = (v: unknown): Json => (typeof v === 'object' && v !== null ? (v as Json) : {})
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
+
+/** The `commands` of Claude Code's `initialize` answer. */
+export function parseCommands(json: unknown): SlashCommand[] {
+  if (!Array.isArray(json)) return []
+  return json.flatMap((raw) => {
+    const c = obj(raw)
+    if (typeof c.name !== 'string' || c.name === '') return []
+    const aliases = Array.isArray(c.aliases)
+      ? c.aliases.filter((a): a is string => typeof a === 'string')
+      : []
+    return [
+      {
+        aliases,
+        argumentHint: str(c.argumentHint),
+        builtin: c.builtin === true,
+        description: str(c.description),
+        name: c.name,
+      },
+    ]
+  })
+}
 
 function resultText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -152,7 +190,17 @@ function onAssistant(state: ChatState, message: Json): ChatState {
   const content = Array.isArray(message.content) ? message.content : []
   const known = state.turns.find((t) => t.id === id)
   if (!known) {
-    const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
+    let blocks = content.map(blockOf).filter((b): b is Block => b !== null)
+    // A local command answers with a `<synthetic>` message: its output, not Claude speaking.
+    const prev = state.turns.at(-1)
+    if (
+      message.model === '<synthetic>' &&
+      prev?.role === 'user' &&
+      prev.blocks[0]?.kind === 'command'
+    ) {
+      const text = blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('\n\n')
+      blocks = [{ kind: 'output', text }]
+    }
     return withTurn(state, id, (t) => ({ ...t, blocks }))
   }
   let next = state
@@ -202,7 +250,11 @@ export function reduceLine(state: ChatState, line: string): ChatState {
     }
     case 'control_response': {
       // The answer to `initialize`: Claude is ready before its first turn says so.
-      return state.status === 'starting' ? { ...state, status: 'idle' } : state
+      const answer = obj(obj(m.response).response)
+      const next = Array.isArray(answer.commands)
+        ? { ...state, commands: parseCommands(answer.commands) }
+        : state
+      return next.status === 'starting' ? { ...next, status: 'idle' } : next
     }
     case 'stream_event': {
       return onStreamEvent({ ...state, status: 'working' }, obj(m.event))
@@ -259,6 +311,25 @@ export function reduceLine(state: ChatState, line: string): ChatState {
 }
 
 const HARNESS_TEXT = /^<(command-|local-command-|system-reminder|bash-)/
+const COMMAND_NAME = /<command-name>\/?([^<]+)<\/command-name>/
+const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
+const STDOUT = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/
+// oxlint-disable-next-line no-control-regex -- terminal colours in what a command printed
+const ANSI = /\u001B\[[\d;]*m/g
+
+/** How the transcript records a command and what it printed, as the chat shows them. */
+function harnessTurn(state: ChatState, text: string, id: string): ChatState {
+  const name = COMMAND_NAME.exec(text)?.[1]
+  if (name !== undefined) {
+    const args = (COMMAND_ARGS.exec(text)?.[1] ?? '').trim()
+    const turn: Turn = { blocks: [{ args, kind: 'command', name }], id, role: 'user' }
+    return { ...state, turns: [...state.turns, turn] }
+  }
+  const out = (STDOUT.exec(text)?.[1] ?? '').replaceAll(ANSI, '').trim()
+  if (out === '') return state
+  const turn: Turn = { blocks: [{ kind: 'output', text: out }], id, role: 'assistant' }
+  return { ...state, turns: [...state.turns, turn] }
+}
 
 function promptText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -285,16 +356,18 @@ export function replayTranscript(lines: readonly string[]): ChatState {
     }
     if (m.isSidechain === true || m.isMeta === true) continue
     const message = obj(m.message)
-    if (m.type === 'assistant') {
+    const uuid = str(m.uuid) || `u${state.turns.length}`
+    if (m.type === 'system' && m.subtype === 'local_command') {
+      state = harnessTurn(state, str(m.content), uuid)
+    } else if (m.type === 'assistant') {
       const id = str(message.id)
       const content = Array.isArray(message.content) ? message.content : []
       const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
       state = withTurn(state, id, (t) => ({ ...t, blocks: [...t.blocks, ...blocks] }))
     } else if (m.type === 'user') {
       const text = promptText(message.content)
-      if (text !== '' && !HARNESS_TEXT.test(text)) {
-        state = { ...addUserTurn(state, text, str(m.uuid) || `u${state.turns.length}`) }
-      }
+      if (HARNESS_TEXT.test(text)) state = harnessTurn(state, text, uuid)
+      else if (text !== '') state = addUserTurn(state, text, uuid)
       state = onUser(state, message)
     }
   }
@@ -303,10 +376,12 @@ export function replayTranscript(lines: readonly string[]): ChatState {
 
 /** The local echo of what the user sent, shown before Claude answers. */
 export function addUserTurn(state: ChatState, text: string, id: string): ChatState {
+  const command = parseCommand(text)
+  const block: Block = command ? { kind: 'command', ...command } : { kind: 'text', text }
   return {
     ...state,
     status: 'working',
-    turns: [...state.turns, { blocks: [{ kind: 'text', text }], id, role: 'user' }],
+    turns: [...state.turns, { blocks: [block], id, role: 'user' }],
   }
 }
 

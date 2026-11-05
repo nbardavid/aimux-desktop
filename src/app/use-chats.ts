@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 
 import type { ChatRecord, Signal } from '../model/catalog'
 
+import { parseCommand } from '../chat/commands'
 import {
   addUserTurn,
   type ChatState,
@@ -37,6 +38,8 @@ interface Hooks {
 
 const TITLE_LENGTH = 40
 
+const titleOf = (text: string) => text.replaceAll(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH)
+
 /** The host's mark between a chat's replay and what happens from now on. */
 function isLive(line: string): boolean {
   try {
@@ -66,6 +69,8 @@ export function useChats(hooks: Hooks) {
   const hosted = useRef(new Map<string, HostChat>())
   /** Chats past their replay: only what arrives after it calls for attention. */
   const live = useRef(new Set<string>())
+  /** A cleared chat's old Claude, until it is gone: the new one waits for it. */
+  const stopping = useRef(new Map<string, Promise<unknown>>())
   const latest = useRef({ chats, hooks })
   latest.current = { chats, hooks }
 
@@ -119,6 +124,7 @@ export function useChats(hooks: Hooks) {
       const host = hosted.current.get(id)
       hosted.current.delete(id)
       const start = async () => {
+        await stopping.current.get(id)
         const history =
           sessionId === null
             ? []
@@ -129,14 +135,18 @@ export function useChats(hooks: Hooks) {
         // Read-only until then: the transcript shows, nothing runs.
         if (!latest.current.hooks.canStart()) throw new Error(HOST_BLOCKED)
         const channel = new Channel<string>()
-        channel.onmessage = (line) => onLine(id, line)
+        // A cleared chat's old Claude may still speak: only this one's lines count.
+        channel.onmessage = (line) => {
+          if (procs.current.get(id) === proc) onLine(id, line)
+        }
         const begin = { cwd: chat.cwd, effort, historyLen: lines.length, model, resume: sessionId }
         await invoke('chat_open', { id, onLine: channel, start: host ? null : begin })
         if (!host) await invoke('chat_send', { id, line: initializeLine(`init-${id}`) })
       }
       const proc = start()
       procs.current.set(id, proc)
-      proc.catch((error: unknown) =>
+      proc.catch((error: unknown) => {
+        if (procs.current.get(id) !== proc) return
         edit(id, (c) => ({
           ...c,
           state: {
@@ -145,7 +155,7 @@ export function useChats(hooks: Hooks) {
             status: 'exited',
           },
         }))
-      )
+      })
       return proc
     },
     [edit, onLine]
@@ -179,17 +189,8 @@ export function useChats(hooks: Hooks) {
     [wake]
   )
 
-  const create = useCallback(
-    (workspaceId: string, cwd: string, agent: { model: string; effort: string }) => {
-      const record: ChatRecord = {
-        createdAt: Date.now(),
-        effort: agent.effort,
-        id: crypto.randomUUID(),
-        model: agent.model,
-        sessionId: null,
-        title: 'New chat',
-        workspaceId,
-      }
+  const add = useCallback(
+    (record: ChatRecord, cwd: string) => {
       const chat = { cwd, record, state: initialChat, unread: false }
       latest.current.chats = [...latest.current.chats, chat]
       setChats((list) => [...list, chat])
@@ -200,12 +201,48 @@ export function useChats(hooks: Hooks) {
     [wake]
   )
 
+  const create = useCallback(
+    (workspaceId: string, cwd: string, agent: { model: string; effort: string }) =>
+      add(
+        {
+          createdAt: Date.now(),
+          effort: agent.effort,
+          id: crypto.randomUUID(),
+          model: agent.model,
+          sessionId: null,
+          title: 'New chat',
+          workspaceId,
+        },
+        cwd
+      ),
+    [add]
+  )
+
+  /** An earlier session in a new tab: its transcript shows, then Claude resumes it. */
+  const openSession = useCallback(
+    (workspaceId: string, cwd: string, sessionId: string, title: string) =>
+      add(
+        {
+          createdAt: Date.now(),
+          // Claude Code's own defaults, as `claude --resume` would.
+          effort: '',
+          id: crypto.randomUUID(),
+          model: '',
+          sessionId,
+          title: titleOf(title) || 'New chat',
+          workspaceId,
+        },
+        cwd
+      ),
+    [add]
+  )
+
   const send = useCallback(
     (id: string, text: string) => {
       edit(id, (c) => {
-        const first = !c.state.turns.some((t) => t.role === 'user')
-        const title = text.replaceAll(/\s+/g, ' ').trim().slice(0, TITLE_LENGTH)
-        const record = first && c.record.title === 'New chat' ? { ...c.record, title } : c.record
+        // The first real prompt names the tab; a command does not.
+        const names = c.record.title === 'New chat' && parseCommand(text) === null
+        const record = names ? { ...c.record, title: titleOf(text) } : c.record
         return { ...c, record, state: addUserTurn(c.state, text, crypto.randomUUID()) }
       })
       // Claude Code fills in its own session id; an empty one is accepted.
@@ -232,6 +269,47 @@ export function useChats(hooks: Hooks) {
     [edit]
   )
 
+  /** The model for the rest of this chat, and for its resumes. `default` is Claude Code's. */
+  const setModel = useCallback(
+    (id: string, model: string) => {
+      edit(id, (c) => ({ ...c, record: { ...c.record, model: model === 'default' ? '' : model } }))
+      send(id, `/model ${model}`)
+    },
+    [edit, send]
+  )
+
+  const setEffort = useCallback(
+    (id: string, effort: string) => {
+      edit(id, (c) => ({ ...c, record: { ...c.record, effort } }))
+      send(id, `/effort ${effort}`)
+    },
+    [edit, send]
+  )
+
+  /** A fresh session in the same tab; the old one stays on disk for `/resume`. */
+  const clear = useCallback(
+    (id: string) => {
+      const proc = procs.current.get(id)
+      procs.current.delete(id)
+      hosted.current.delete(id)
+      live.current.delete(id)
+      const stopped = (proc ?? Promise.resolve())
+        .catch(() => {})
+        .then(async () => invoke('chat_stop', { id }))
+        .catch(() => {})
+      stopping.current.set(id, stopped)
+      const reset = (c: ChatTab): ChatTab =>
+        c.record.id === id
+          ? { ...c, record: { ...c.record, sessionId: null }, state: initialChat, unread: false }
+          : c
+      // `wake` reads the record before the next render: no session, no resume.
+      latest.current.chats = latest.current.chats.map(reset)
+      edit(id, reset)
+      void wake(id).catch(() => {})
+    },
+    [edit, wake]
+  )
+
   const seen = useCallback(
     (id: string) => {
       if (latest.current.chats.some((c) => c.record.id === id && c.unread)) {
@@ -251,7 +329,37 @@ export function useChats(hooks: Hooks) {
   }, [])
 
   return useMemo(
-    () => ({ answer, chats, close, create, interrupt, rename, restore, seen, send, wake }),
-    [answer, chats, close, create, interrupt, rename, restore, seen, send, wake]
+    () => ({
+      answer,
+      chats,
+      clear,
+      close,
+      create,
+      interrupt,
+      openSession,
+      rename,
+      restore,
+      seen,
+      send,
+      setEffort,
+      setModel,
+      wake,
+    }),
+    [
+      answer,
+      chats,
+      clear,
+      close,
+      create,
+      interrupt,
+      openSession,
+      rename,
+      restore,
+      seen,
+      send,
+      setEffort,
+      setModel,
+      wake,
+    ]
   )
 }

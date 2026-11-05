@@ -53,8 +53,8 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
     cmd.spawn().map_err(|e| format!("claude: {e}"))
 }
 
-/// The models Claude Code offers, as its `initialize` answer lists them (JSON). A headless
-/// Claude starts, answers, and is stopped: no turn is run, nothing reaches the API.
+/// Claude Code's `initialize` answer (JSON): the models it offers and its `/` commands. A
+/// headless Claude starts, answers, and is stopped: no turn is run, nothing reaches the API.
 #[tauri::command(async)]
 pub fn claude_models() -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
@@ -73,14 +73,14 @@ pub fn claude_models() -> Result<String, String> {
                 continue;
             };
             if message["type"] == "control_response" {
-                found = Some(message["response"]["response"]["models"].to_string());
+                found = Some(message["response"]["response"].to_string());
                 break;
             }
         }
     }
     let _ = child.kill();
     let _ = child.wait();
-    found.ok_or_else(|| "Claude Code did not list its models.".into())
+    found.ok_or_else(|| "Claude Code did not answer initialize.".into())
 }
 
 /// The transcript Claude Code keeps for `session_id`, one JSON object per line, so a chat

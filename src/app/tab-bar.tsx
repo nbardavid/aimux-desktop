@@ -31,7 +31,11 @@ interface Props {
 
 function RenameField({ item, onDone }: { item: TabItem; onDone: (title: string | null) => void }) {
   const field = useRef<HTMLInputElement>(null)
-  useEffect(() => field.current?.select(), [])
+  // Focus first: `/rename` starts it while the composer has the focus.
+  useEffect(() => {
+    field.current?.focus()
+    field.current?.select()
+  }, [])
   return (
     <input
       ref={field}

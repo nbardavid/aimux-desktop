@@ -2622,6 +2622,143 @@ body.resizing * {
   fill: currentColor;
 }
 
+/* The `/` menu floats over the composer: the composer itself never moves. */
+.composer {
+  position: relative;
+}
+
+.cmd-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  max-height: min(328px, 50vh);
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow:
+    0 0 0 1px rgb(43 40 38 / 0.07),
+    0 12px 32px -12px rgb(43 40 38 / 0.28);
+  scroll-padding: 4px;
+  animation: lift 0.14s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+
+.cmd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
+.cmd.is-hot {
+  background: var(--hover);
+}
+
+.cmd-name {
+  flex: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.cmd-hint {
+  flex: none;
+  color: var(--label);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.cmd-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  margin-left: 6px;
+  color: var(--faint);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+}
+
+.cmd-src {
+  flex: none;
+  align-self: center;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--pill);
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 17px;
+}
+
+.cmd-menu.is-hint {
+  overflow: hidden;
+  background: var(--chrome);
+  box-shadow: 0 0 0 1px var(--line);
+  animation: none;
+}
+
+.cmd-menu.is-hint .cmd-name {
+  color: var(--muted);
+}
+
+/* A command in the conversation: the prompt as a chip, its output as a muted card. */
+.msg-user.is-command {
+  padding: 6px 12px;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.cmd-chip-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.cmd-out {
+  position: relative;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chrome);
+  color: var(--ink-soft);
+}
+
+.cmd-out .md {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.cmd-out.is-folded .md {
+  max-height: calc(12 * 1.55em);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+.cmd-out-more {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cmd-out-more:hover {
+  color: var(--ink);
+}
+
 .perm {
   display: flex;
   flex-direction: column;

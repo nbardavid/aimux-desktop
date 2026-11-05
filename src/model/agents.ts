@@ -36,9 +36,10 @@ interface RawModel {
   supportedEffortLevels?: unknown
 }
 
-/** The `models` of Claude Code's `initialize` answer. */
+/** The `models` of Claude Code's `initialize` answer (the whole answer, or that list alone). */
 export function parseModels(json: string): ModelInfo[] {
-  const raw = JSON.parse(json) as unknown
+  const parsed = JSON.parse(json) as unknown
+  const raw = Array.isArray(parsed) ? parsed : (parsed as { models?: unknown } | null)?.models
   if (!Array.isArray(raw)) return []
   return (raw as RawModel[]).flatMap((m) => {
     if (typeof m.value !== 'string' || typeof m.displayName !== 'string') return []

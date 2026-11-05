@@ -5,6 +5,7 @@ pub mod host;
 pub mod host_client;
 pub mod pty;
 pub mod quota;
+pub mod sessions;
 pub mod store;
 pub mod update;
 
@@ -80,6 +81,7 @@ pub fn run() {
             host_client::term_kill,
             chat::chat_history,
             chat::claude_models,
+            sessions::claude_sessions,
             store::catalog,
             store::project_add,
             store::project_remove,

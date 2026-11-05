@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 
 import { Icon } from './icons'
+import { pointerMoved } from './pointer'
 
 export interface PickerItem {
   key: string
@@ -16,8 +17,13 @@ interface Props {
   filterable: boolean
   onPick: (key: string) => void
   onClose: () => void
-  /** Drops down from this point (a button's corner) instead of opening as a palette. */
-  anchor?: { left: number; top: number }
+  /** Drops down from this point (a button's corner), or rises above it (`bottom`), instead of
+   * opening as a palette. */
+  anchor?: { left: number; top: number } | { left: number; bottom: number }
+  /** What the filter starts with. */
+  initialQuery?: string
+  /** Said when there are no items at all (rather than none matching). */
+  empty?: string
 }
 
 function stepOf(e: KeyboardEvent): number {
@@ -27,8 +33,17 @@ function stepOf(e: KeyboardEvent): number {
 }
 
 /** The TUI's picker modal: filter, arrows, Enter, Esc. */
-export function Picker({ anchor, filterable, items, onClose, onPick, title }: Props) {
-  const [query, setQuery] = useState('')
+export function Picker({
+  anchor,
+  empty,
+  filterable,
+  initialQuery = '',
+  items,
+  onClose,
+  onPick,
+  title,
+}: Props) {
+  const [query, setQuery] = useState(initialQuery)
   const [hot, setHot] = useState(0)
   const root = useRef<HTMLDivElement>(null)
   const q = query.trim().toLowerCase()
@@ -36,6 +51,9 @@ export function Picker({ anchor, filterable, items, onClose, onPick, title }: Pr
 
   useEffect(() => root.current?.querySelector<HTMLElement>('input, .pick')?.focus(), [])
   useEffect(() => setHot(0), [q])
+  useEffect(() => {
+    root.current?.querySelector('.pick.is-hot')?.scrollIntoView({ block: 'nearest' })
+  }, [hot, q])
 
   const onKeyDown = (e: KeyboardEvent) => {
     const step = stepOf(e)
@@ -83,7 +101,7 @@ export function Picker({ anchor, filterable, items, onClose, onPick, title }: Pr
               role="option"
               aria-selected={i === hot}
               className={i === hot ? 'pick is-hot' : 'pick'}
-              onMouseEnter={() => setHot(i)}
+              onMouseMove={(e) => pointerMoved(e) && setHot(i)}
               onClick={() => onPick(item.key)}
             >
               {item.glyph !== undefined ? (
@@ -98,7 +116,11 @@ export function Picker({ anchor, filterable, items, onClose, onPick, title }: Pr
               {item.meta !== undefined && <span className="meta">{item.meta}</span>}
             </button>
           ))}
-          {shown.length === 0 && <div className="quiet">Nothing matches “{query}”</div>}
+          {shown.length === 0 && (
+            <div className="quiet">
+              {items.length === 0 && empty !== undefined ? empty : `Nothing matches “${query}”`}
+            </div>
+          )}
         </div>
         {!anchor && (
           <div className="dialog-foot">

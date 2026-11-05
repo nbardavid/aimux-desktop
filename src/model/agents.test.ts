@@ -21,6 +21,12 @@ test('parseModels reads Claude Code’s list and drops what is malformed', () =>
   expect(models[2]?.efforts).toEqual([])
 })
 
+test('parseModels takes the whole initialize answer too', () => {
+  const answer = JSON.stringify({ commands: [], models: [{ displayName: 'Opus', value: 'opus' }] })
+  expect(parseModels(answer).map((m) => m.value)).toEqual(['opus'])
+  expect(parseModels('null')).toEqual([])
+})
+
 test('normalize keeps only what the model takes', () => {
   expect(normalize({ effort: 'high', model: 'claude-haiku-4-5' }, models)).toEqual({
     effort: '',
