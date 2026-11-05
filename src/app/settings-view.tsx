@@ -1,9 +1,21 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+
 import { effectiveValue, type Row, SECTIONS, type SettingValue } from '../settings/schema'
 
 type Stored = Record<string, SettingValue>
+
+/** A card of rows; a second card sits 16px under the first. */
+const rowsClass = 'max-w-[820px] divide-y overflow-hidden rounded-2xl border [&+&]:mt-4'
+const rowClass = 'flex items-center justify-between gap-6 px-4 py-3'
+const rowText = 'flex min-w-0 flex-col gap-0.5'
+const rowHelp = 'text-muted-foreground text-[12.5px]'
+const rowControl = 'flex flex-none items-center gap-2.5'
+const fieldError = 'text-critical text-[12.5px] wrap-anywhere'
 
 function Control({
   onChange,
@@ -24,21 +36,25 @@ function Control({
         role="switch"
         aria-checked={value === true}
         aria-label={row.label}
-        className={value === true ? 'switch is-on' : 'switch'}
+        className="relative h-[18px] w-8 rounded-full bg-[#d4d5d8] transition-[background-color] duration-150 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-3.5 after:rounded-full after:bg-white after:shadow-[0_1px_2px_rgb(43_40_38/0.2)] after:transition-transform after:duration-150 after:ease-[cubic-bezier(0.2,0,0,1)] aria-checked:bg-foreground aria-checked:after:translate-x-3.5"
         onClick={() => onChange(value !== true)}
       />
     )
   }
   if (row.kind === 'select') {
     return (
-      <div className="segmented" role="radiogroup" aria-label={row.label}>
+      <div
+        className="bg-hover inline-flex gap-0.5 self-start rounded-[8px] p-0.5"
+        role="radiogroup"
+        aria-label={row.label}
+      >
         {row.options.map((option) => (
           <button
             type="button"
             key={option}
             role="radio"
             aria-checked={value === option}
-            className={value === option ? 'seg is-on' : 'seg'}
+            className="text-muted-foreground hover:text-foreground aria-checked:bg-background aria-checked:text-foreground h-6 rounded-md px-2.5 text-[12px] font-medium aria-checked:font-semibold aria-checked:shadow-[0_0_0_1px_var(--border),0_1px_2px_rgb(43_40_38/0.06)]"
             onClick={() => onChange(option)}
           >
             {option}
@@ -57,8 +73,11 @@ function Control({
     }
   }
   return (
-    <input
-      className={row.kind === 'number' ? 'input input-num' : 'input'}
+    <Input
+      className={cn(
+        'h-8 px-[11px]',
+        row.kind === 'number' ? 'w-[104px] tabular-nums' : 'w-[240px]'
+      )}
       aria-label={row.label}
       type={row.kind === 'number' ? 'number' : 'text'}
       {...(row.kind === 'number'
@@ -88,19 +107,20 @@ function RestartHost({
       ? 'Click again'
       : `Click again: closes ${terminals} ${terminals === 1 ? 'terminal' : 'terminals'}`
   return (
-    <div className="rows">
-      <div className="row">
-        <div className="row-text">
-          <span className="row-label">Background process</span>
-          <span className={error === null ? 'row-help' : 'field-error'}>
+    <div className={rowsClass}>
+      <div className={rowClass}>
+        <div className={rowText}>
+          <span className="flex items-center gap-2 font-medium">Background process</span>
+          <span className={error === null ? rowHelp : fieldError}>
             {error ??
               'Runs your chats and terminals, and keeps them going while the window is closed.'}
           </span>
         </div>
-        <div className="row-control" onMouseLeave={() => setArmed(false)}>
-          <button
+        <div className={rowControl} onMouseLeave={() => setArmed(false)}>
+          <Button
             type="button"
-            className={armed ? 'btn btn-danger' : 'btn btn-outline'}
+            variant={armed ? 'destructive' : 'outline'}
+            className={cn(armed && 'hover:bg-[color-mix(in_srgb,var(--critical)_88%,black)]')}
             disabled={busy}
             onClick={() => {
               if (!armed) {
@@ -116,7 +136,7 @@ function RestartHost({
             }}
           >
             {armed ? again : 'Restart background process'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -162,13 +182,21 @@ export function SettingsView({
 
   const shown = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   return (
-    <div className="page">
-      <nav className="page-nav" aria-label="Settings sections">
+    <div className="flex min-h-0 min-w-0 flex-1">
+      <nav
+        className="bg-side flex w-[200px] flex-none flex-col gap-px border-r px-1.5 py-2.5"
+        aria-label="Settings sections"
+      >
         {SECTIONS.map((s) => (
           <button
             type="button"
             key={s.id}
-            className={s.id === shown?.id ? 'nav-item is-active' : 'nav-item'}
+            className={cn(
+              'h-8 rounded-[8px] px-2.5 text-[13.5px] font-medium',
+              s.id === shown?.id
+                ? 'bg-active text-foreground'
+                : 'text-muted-foreground hover:bg-hover hover:text-foreground'
+            )}
             aria-current={s.id === shown?.id}
             onClick={() => setSection(s.id)}
           >
@@ -176,28 +204,28 @@ export function SettingsView({
           </button>
         ))}
       </nav>
-      <div className="page-body">
-        <h1 className="section-title">{shown?.label}</h1>
-        <p className="page-note">
-          Saved in <span className="mono">{path}</span>.
+      <div className="min-w-0 flex-1 overflow-auto px-9 pt-7 pb-12">
+        <h1 className="m-0 mb-1 text-[20px] font-semibold tracking-[-0.02em]">{shown?.label}</h1>
+        <p className="text-muted-foreground m-0 mb-5 max-w-[68ch] text-[12.5px] leading-normal">
+          Saved in <span className="font-mono text-[11px]">{path}</span>.
         </p>
-        {error !== null && <div className="field-error">{error}</div>}
+        {error !== null && <div className={fieldError}>{error}</div>}
         {stored && (
-          <div className="rows">
+          <div className={rowsClass}>
             {shown?.rows.map((row) => {
               const value = effectiveValue(row, stored[row.id])
               const changed = stored[row.id] !== undefined
               return (
-                <div className="row" key={row.id}>
-                  <div className="row-text">
-                    <span className="row-label">{row.label}</span>
-                    <span className="row-help">{row.help}</span>
+                <div className={rowClass} key={row.id}>
+                  <div className={rowText}>
+                    <span className="flex items-center gap-2 font-medium">{row.label}</span>
+                    <span className={rowHelp}>{row.help}</span>
                   </div>
-                  <div className="row-control">
+                  <div className={rowControl}>
                     <Control row={row} value={value} onChange={(v) => write(row.id, v)} />
                     <button
                       type="button"
-                      className="reset"
+                      className="text-faint hover:text-foreground w-10 text-[12px] disabled:invisible"
                       aria-label={`Reset ${row.label}`}
                       disabled={!changed}
                       onClick={() => write(row.id, null)}

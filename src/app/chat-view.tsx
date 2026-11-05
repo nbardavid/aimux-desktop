@@ -1,7 +1,12 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { ArrowUpIcon, MessageCircleIcon, SquareIcon } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 
 import { isAppCommand, parseCommand, rankCommands } from '../chat/commands'
 import {
@@ -12,7 +17,6 @@ import {
   toolSummary,
 } from '../chat/model'
 import { CommandHint, CommandMenu } from './command-menu'
-import { Icon } from './icons'
 
 interface Props {
   cwd: string
@@ -39,8 +43,26 @@ const MD: Components = {
       {children}
     </a>
   ),
-  img: ({ alt }) => <span className="faint">[{alt ?? 'image'}]</span>,
+  img: ({ alt }) => <span className="text-faint">[{alt ?? 'image'}]</span>,
 }
+
+// How a message or a block comes in: a short rise. (Written out whole: Tailwind only sees
+// complete class names.)
+const ENTER =
+  'animate-in fade-in slide-in-from-bottom-[6px] duration-280 ease-[cubic-bezier(0.2,0,0,1)]'
+// The same, for a <details>' body as it opens (`[open] > *`).
+const OPENING =
+  '[[open]>&]:animate-in [[open]>&]:fade-in [[open]>&]:slide-in-from-bottom-[6px] [[open]>&]:duration-200 [[open]>&]:ease-[cubic-bezier(0.2,0,0,1)]'
+// A blinking tan block after the last thing a streaming answer wrote.
+const CARET =
+  '[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:h-[1.05em] [&>:last-child]:after:w-[7px] [&>:last-child]:after:animate-[caret_1s_ease-in-out_infinite] [&>:last-child]:after:rounded-[2px] [&>:last-child]:after:bg-tan [&>:last-child]:after:align-[-0.15em]'
+// Status dots, as `.st-*` draws them.
+const SPINNER =
+  'size-[9px] flex-none animate-[spin_0.9s_linear_infinite] rounded-full border-[1.5px] border-faint border-t-transparent'
+const DOT = 'size-[7px] flex-none rounded-full'
+// A <details> header: a grey row under the pointer, no marker.
+const SUMMARY =
+  'flex h-7 cursor-pointer list-none items-center gap-2 rounded-lg px-2 text-faint hover:bg-hover hover:text-foreground [&::-webkit-details-marker]:hidden'
 
 const PLUGINS = [remarkGfm]
 
@@ -51,20 +73,33 @@ function OutputCard({ text }: { text: string }) {
   const long = text.split('\n').length > OUTPUT_LINES
   const [open, setOpen] = useState(false)
   return (
-    <div className={long && !open ? 'cmd-out is-folded' : 'cmd-out'}>
-      <div className="md">
+    <div className="relative rounded-xl border bg-chrome px-3.5 py-2.5 text-ink-soft">
+      <div
+        className={cn(
+          'md text-[13px] leading-[1.55]',
+          long &&
+            !open &&
+            'max-h-[calc(12*1.55em)] overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]'
+        )}
+      >
         <Markdown remarkPlugins={PLUGINS} components={MD}>
           {text}
         </Markdown>
       </div>
       {long && (
-        <button type="button" className="cmd-out-more" onClick={() => setOpen((o) => !o)}>
+        <button
+          type="button"
+          className="mt-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
+          onClick={() => setOpen((o) => !o)}
+        >
           {open ? 'Show less' : 'Show all'}
         </button>
       )}
     </div>
   )
 }
+
+const TOOL_OUT = `my-1 ml-2 max-h-[320px] overflow-auto rounded-[8px] border bg-chrome px-3 py-2.5 font-mono text-[12px] leading-[1.55] whitespace-pre-wrap wrap-anywhere ${OPENING}`
 
 function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
   const { input, name, result } = block
@@ -74,16 +109,16 @@ function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
     typeof input.new_string === 'string'
   ) {
     return (
-      <pre className="tool-out">
+      <pre className={TOOL_OUT}>
         {input.old_string.split('\n').map((line, i) => (
           // oxlint-disable-next-line react/no-array-index-key -- lines are positional
-          <div key={`d${i}`} className="dl-del">
+          <div key={`d${i}`} className="bg-critical/8">
             − {line}
           </div>
         ))}
         {input.new_string.split('\n').map((line, i) => (
           // oxlint-disable-next-line react/no-array-index-key -- lines are positional
-          <div key={`a${i}`} className="dl-add">
+          <div key={`a${i}`} className="bg-good/9">
             + {line}
           </div>
         ))}
@@ -93,7 +128,7 @@ function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
   const command = typeof input.command === 'string' ? input.command : ''
   const shown = name === 'Bash' ? `$ ${command}` : JSON.stringify(input, null, 2)
   return (
-    <pre className="tool-out">
+    <pre className={TOOL_OUT}>
       {shown}
       {result !== undefined && result.text !== '' && `\n\n${result.text}`}
     </pre>
@@ -103,7 +138,7 @@ function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
 function BlockView({ block, cwd, live }: { block: Block; cwd: string; live: boolean }) {
   if (block.kind === 'text') {
     return (
-      <div className={live ? 'md is-live' : 'md'}>
+      <div className={cn('md', live && CARET)}>
         <Markdown remarkPlugins={PLUGINS} components={MD}>
           {block.text}
         </Markdown>
@@ -115,20 +150,33 @@ function BlockView({ block, cwd, live }: { block: Block; cwd: string; live: bool
   if (block.kind === 'thinking') {
     if (block.text.trim() === '') return null
     return (
-      <details className="thinking">
-        <summary>Thought</summary>
-        <div className="thinking-text">{block.text}</div>
+      <details className="-ml-2">
+        <summary className={cn(SUMMARY, 'w-max italic')}>Thought</summary>
+        <div
+          className={cn(
+            'ml-2 border-l-2 pt-1 pr-2 pb-1.5 pl-4 text-[13px] leading-[1.55] whitespace-pre-wrap text-muted-foreground',
+            OPENING
+          )}
+        >
+          {block.text}
+        </div>
       </details>
     )
   }
-  let dot = 'st-working'
-  if (block.result) dot = block.result.isError ? 'st-failing' : 'st-done'
+  let dot = SPINNER
+  if (block.result) {
+    dot = block.result.isError
+      ? cn(DOT, 'bg-critical')
+      : cn(DOT, 'animate-[pop_0.3s_cubic-bezier(0.2,0,0,1)] bg-good')
+  }
   return (
-    <details className="tool">
-      <summary>
-        <span className={`st ${dot}`} />
-        <span className="tool-name">{block.name}</span>
-        <span className="tool-sum">{toolSummary(block.name, block.input, cwd)}</span>
+    <details className="-ml-2">
+      <summary className={SUMMARY}>
+        <span className={dot} />
+        <span className="flex-none font-medium text-foreground">{block.name}</span>
+        <span className="truncate font-mono text-[12px]">
+          {toolSummary(block.name, block.input, cwd)}
+        </span>
       </summary>
       <ToolBody block={block} />
     </details>
@@ -145,54 +193,65 @@ function PermissionCard({
   onAnswer: Props['onAnswer']
 }) {
   return (
-    <div className="perm" role="alertdialog" aria-label={`Allow ${permission.toolName}?`}>
-      <div className="perm-head">
+    <div
+      className={cn(
+        'flex flex-col gap-2 rounded-2xl border border-line-strong bg-background px-3.5 py-3 shadow-[0_8px_24px_-14px_rgb(43_40_38/0.25)]',
+        ENTER
+      )}
+      role="alertdialog"
+      aria-label={`Allow ${permission.toolName}?`}
+    >
+      <div className="text-[13.5px]">
         Allow <b>{permission.toolName}</b>?
       </div>
-      <code className="perm-what">
+      <code className="max-h-[120px] overflow-auto font-mono text-[12px] whitespace-pre-wrap wrap-anywhere text-muted-foreground">
         {toolSummary(permission.toolName, permission.input, cwd) || permission.description}
       </code>
-      <div className="perm-actions">
-        <button type="button" className="btn btn-soft" onClick={() => onAnswer(permission, 'deny')}>
+      <div className="flex justify-end gap-1.5">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="px-3"
+          onClick={() => onAnswer(permission, 'deny')}
+        >
           Deny
-        </button>
+        </Button>
         {permission.suggestions.length > 0 && (
-          <button
-            type="button"
-            className="btn btn-soft"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="px-3"
             onClick={() => onAnswer(permission, 'always')}
           >
             Always allow
-          </button>
+          </Button>
         )}
         {/* oxlint-disable-next-line jsx-a11y/no-autofocus -- the decision is the only thing to do */}
-        <button
-          type="button"
-          className="btn btn-ink"
-          autoFocus
-          onClick={() => onAnswer(permission, 'allow')}
-        >
+        <Button size="sm" className="px-3" autoFocus onClick={() => onAnswer(permission, 'allow')}>
           Allow
-        </button>
+        </Button>
       </div>
     </div>
   )
 }
 
+const USER = `max-w-[80%] self-end rounded-2xl bg-[#f4f1ec] px-3.5 py-[9px] text-[14px] leading-[1.5] whitespace-pre-wrap wrap-anywhere ${ENTER}`
+
 function UserTurn({ blocks }: { blocks: Block[] }) {
   const first = blocks[0]
   if (first?.kind === 'command') {
     return (
-      <div className="msg-user is-command">
-        <span className="cmd-chip-name">/{first.name}</span>
+      <div className={cn(USER, 'px-3 py-1.5 font-mono text-[12.5px] leading-[1.5] text-ink-soft')}>
+        <span className="font-semibold text-foreground">/{first.name}</span>
         {first.args !== '' && ` ${first.args}`}
       </div>
     )
   }
-  return (
-    <div className="msg-user">{blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')}</div>
-  )
+  return <div className={USER}>{blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')}</div>
 }
+
+// The ink square that sends (or stops): no hover change, grey and opaque when disabled.
+const SEND = 'rounded-[8px] hover:bg-primary disabled:bg-line-strong disabled:opacity-100'
 
 function stepOf(e: KeyboardEvent): number {
   if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) return 1
@@ -303,21 +362,23 @@ export function ChatView({
   const name = cwd.split('/').pop() ?? cwd
 
   return (
-    <div className="chat">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div
-        className="chat-scroll"
+        className="min-h-0 flex-1 overflow-auto"
         ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
         }}
       >
-        <div className="chat-col">
+        <div className="mx-auto flex max-w-[780px] flex-col gap-[18px] px-7 pt-7 pb-5 select-text">
           {state.turns.length === 0 && (
-            <div className="chat-empty">
-              <Icon name="chat" />
-              <span className="chat-empty-title">What are we doing in {name}?</span>
-              <span className="faint">
+            <div className="flex flex-col items-center gap-1.5 pt-[120px] text-center text-sm text-faint">
+              <MessageCircleIcon className="mb-1.5 size-[22px] p-0.5 text-label" />
+              <span className="text-[16px] font-semibold text-balance text-foreground">
+                What are we doing in {name}?
+              </span>
+              <span className="text-faint">
                 Claude Code, in this workspace’s folder. Enter sends, Esc stops.
               </span>
             </div>
@@ -326,7 +387,10 @@ export function ChatView({
             turn.role === 'user' ? (
               <UserTurn key={turn.id} blocks={turn.blocks} />
             ) : (
-              <div key={turn.id} className="msg-assistant">
+              <div
+                key={turn.id}
+                className="flex min-w-0 flex-col gap-2.5 *:animate-in *:fade-in *:slide-in-from-bottom-[6px] *:duration-280 *:ease-[cubic-bezier(0.2,0,0,1)]"
+              >
                 {turn.blocks.map((block, i) => (
                   // oxlint-disable-next-line react/no-array-index-key -- blocks keep their stream index
                   <BlockView
@@ -340,32 +404,40 @@ export function ChatView({
             )
           )}
           {working && !streamingText && permission === undefined && (
-            <div className="chat-working">
-              <span className="st st-working" />
+            <div className="flex w-max animate-[shimmer_2.2s_linear_infinite] items-center gap-2 bg-[linear-gradient(90deg,var(--faint)_0%,var(--faint)_40%,var(--foreground)_50%,var(--faint)_60%,var(--faint)_100%)] bg-[length:300%_100%] bg-clip-text text-transparent">
+              <span className={SPINNER} />
               {state.status === 'starting' ? 'Starting Claude…' : 'Working…'}
             </div>
           )}
           {state.lastTurn && !working && (
-            <div className="chat-meta">
+            <div className="-mt-2 font-mono text-[11px] text-label">
               {(state.lastTurn.durationMs / 1000).toFixed(1)}s · $
               {state.lastTurn.costUsd.toFixed(3)}
             </div>
           )}
-          {state.errors.length > 0 && <div className="chat-error">{state.errors.at(-1)}</div>}
+          {state.errors.length > 0 && (
+            <div className="rounded-[8px] bg-critical/7 px-3 py-2.5 text-[12.5px] whitespace-pre-wrap text-[#a2301f]">
+              {state.errors.at(-1)}
+            </div>
+          )}
         </div>
       </div>
-      <div className="chat-foot">
+      <div className="mx-auto flex w-full max-w-[812px] flex-none flex-col gap-2 px-4 pb-4">
         {permission !== undefined && (
           <PermissionCard cwd={cwd} permission={permission} onAnswer={onAnswer} />
         )}
-        <div className="composer">
+        {/* The `/` menu floats over the composer: the composer itself never moves. */}
+        <div
+          data-composer
+          className="relative flex flex-col rounded-[14px] border bg-[#f8f6f3] transition-[border-color,box-shadow] duration-150 ease-[ease] focus-within:border-[color-mix(in_srgb,var(--tan)_55%,var(--border))] focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--tan)_14%,transparent)]"
+        >
           {menu.length > 0 && (
             <CommandMenu id={menuId} items={menu} hot={at} onHover={setHot} onPick={accept} />
           )}
           {hint && <CommandHint command={hint} />}
-          <textarea
+          <Textarea
             ref={field}
-            className="composer-field"
+            className="min-h-12 rounded-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-[1.5] field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
             rows={1}
             value={draft}
             placeholder={
@@ -382,32 +454,32 @@ export function ChatView({
             onChange={(e) => edit(e.target.value)}
             onKeyDown={onKeyDown}
           />
-          <div className="composer-bar">
-            <span className="faint">{state.model ?? 'claude'}</span>
-            <span className="grow" />
+          <div className="flex items-center gap-2 pt-1.5 pr-2 pb-2 pl-4 text-[12px]">
+            <span className="text-faint">{state.model ?? 'claude'}</span>
+            <span className="min-w-0 flex-1" />
             {working ? (
-              <button
-                type="button"
-                className="send is-stop"
+              <Button
+                size="icon"
+                className={SEND}
                 aria-label="Stop (Esc)"
                 data-tip="Stop · Esc"
                 data-tip-side="top"
                 onClick={onInterrupt}
               >
-                <Icon name="stop" small />
-              </button>
+                <SquareIcon className="size-[10px] fill-current" />
+              </Button>
             ) : (
-              <button
-                type="button"
-                className="send"
+              <Button
+                size="icon"
+                className={SEND}
                 aria-label="Send (Enter)"
                 data-tip="Send · Enter"
                 data-tip-side="top"
                 disabled={draft.trim() === ''}
                 onClick={() => submit()}
               >
-                <Icon name="arrowUp" small />
-              </button>
+                <ArrowUpIcon className="size-3.5" />
+              </Button>
             )}
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { LucideProvider } from 'lucide-react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -21,7 +22,10 @@ async function start() {
   if (root) {
     createRoot(root).render(
       <StrictMode>
-        <Root />
+        {/* Every icon in the app's one stroke. */}
+        <LucideProvider strokeWidth={1.5}>
+          <Root />
+        </LucideProvider>
       </StrictMode>
     )
   }

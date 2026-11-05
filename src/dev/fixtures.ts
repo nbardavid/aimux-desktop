@@ -308,6 +308,19 @@ const NOTES = [
   LIVE,
 ]
 
+/** `?attention`: the finished chat asks again while another is on screen (the toast). */
+export const NOTES_ASK = line({
+  request: {
+    description: 'Open the pull request',
+    input: { command: 'gh pr create --fill', description: 'Open the pull request' },
+    permission_suggestions: [],
+    subtype: 'can_use_tool',
+    tool_name: 'Bash',
+  },
+  request_id: 'perm-notes',
+  type: 'control_request',
+})
+
 export const HOSTED_LINES: Record<string, string[]> = {
   'chat-menus': MENUS,
   'chat-notes': NOTES,

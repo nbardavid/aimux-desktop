@@ -5,7 +5,8 @@ import { cn } from '@/lib/utils'
 
 /**
  * The app's buttons, as `.btn-*` draws them today: flat fills, a 7px corner, no shadow,
- * a press that shrinks a hair. Focus shows only from the keyboard.
+ * a press that shrinks a hair. Focus shows only from the keyboard: the base layer's inset tan
+ * outline, like every other button.
  *
  * - `default`: the ink button, the one action that matters (Create, Allow, Open chat).
  * - `secondary`: the soft grey button (Deny, Run, Edit).
@@ -14,7 +15,7 @@ import { cn } from '@/lib/utils'
  * - `destructive`: the red fill for what cannot be undone.
  */
 const buttonVariants = cva(
-  "focus-visible:ring-ring/60 inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-[background-color,border-color,color,scale] duration-120 outline-none select-none focus-visible:ring-2 active:not-disabled:scale-[0.96] disabled:cursor-default disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-[background-color,border-color,color,scale] duration-120 select-none active:not-disabled:scale-[0.96] disabled:cursor-default disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     defaultVariants: { size: 'default', variant: 'default' },
     variants: {

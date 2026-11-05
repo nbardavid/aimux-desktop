@@ -1,12 +1,16 @@
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { ArrowUpIcon, ArrowUpRightIcon, GitBranchIcon, GitMergeIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 import type { BranchState, FileChange } from './use-git'
 
 import { prHeadline, type PullRequest } from '../git/pr'
-import { type FileActions, FileList } from './file-list'
-import { Icon } from './icons'
+import { countClass, type FileActions, FileList } from './file-list'
+import { dotClass } from './status-dot'
 
 interface Props {
   width: number
@@ -23,7 +27,20 @@ interface Props {
   setup: ReactNode
 }
 
-const CHECK_DOT = { failing: 'st-failing', passing: 'st-done', pending: 'st-working' } as const
+const CHECK_DOT = { failing: 'failing', passing: 'done', pending: 'working' } as const
+
+const TONE = {
+  blocked: 'text-[#a2301f]',
+  neutral: 'text-muted-foreground',
+  ok: 'text-[#2f6b3e]',
+} as const
+
+/** `.btn.head-btn`: the git head's compact buttons. */
+const headBtn = 'h-[26px] flex-none px-[9px] text-[12.5px]'
+/** `.btn-merge`: GitHub's green; no hover change while disabled. */
+const merge = 'bg-[#2f8a4c] text-white hover:bg-[#2f8a4c] hover:not-disabled:bg-[#287a42]'
+const icon = 'size-3.5 shrink-0'
+const quiet = 'text-faint px-3 py-8 text-center'
 
 /** The PR at the top right, as Conductor puts it: number, headline, and its one action. */
 function Head({
@@ -57,57 +74,73 @@ function Head({
   const unpublished = branch !== null && branch.branch !== null && !branch.upstream
   const pushLabel = unpublished ? 'Publish' : `Push ${ahead}`
   const push = path !== undefined && branch?.remote === true && (ahead > 0 || unpublished) && (
-    <button
+    <Button
       type="button"
-      className="btn btn-soft head-btn"
+      variant="secondary"
+      className={headBtn}
       disabled={busy !== null}
       onClick={() => void run('push', async () => invoke('git_push', { path }))}
     >
-      <Icon name="arrowUp" small />
+      <ArrowUpIcon className={icon} />
       {busy === 'push' ? 'Pushing…' : pushLabel}
-    </button>
+    </Button>
   )
 
   return (
-    <div className="git-head" data-tauri-drag-region>
+    <div
+      className="flex h-bar flex-none items-center gap-2 border-b pr-2 pl-3"
+      data-tauri-drag-region
+    >
       {pr && headline ? (
         <>
-          <button type="button" className="pr-chip" onClick={() => void openUrl(pr.url)}>
+          <button
+            type="button"
+            className="inline-flex h-6 items-center gap-1 rounded-md bg-[color-mix(in_srgb,var(--good)_12%,var(--background))] pr-[7px] pl-2 font-mono text-[12px] font-semibold text-[#2f6b3e] hover:bg-[color-mix(in_srgb,var(--good)_20%,var(--background))]"
+            onClick={() => void openUrl(pr.url)}
+          >
             #{pr.number}
-            <Icon name="external" small />
+            <ArrowUpRightIcon className={icon} />
           </button>
-          <span className={`pr-state tone-${headline.tone}`}>{headline.label}</span>
+          <span className={cn('truncate text-sm font-medium', TONE[headline.tone])}>
+            {headline.label}
+          </span>
         </>
       ) : (
-        <span className="head-branch">
-          <Icon name="branch" small />
-          <span className="head-name">{branch?.branch ?? 'detached'}</span>
-          {ahead > 0 && <span className="faint">↑{ahead}</span>}
-          {(branch?.behind ?? 0) > 0 && <span className="faint">↓{branch?.behind}</span>}
+        <span className="text-muted-foreground inline-flex min-w-0 items-center gap-1.5 font-mono text-[12px]">
+          <GitBranchIcon className={icon} />
+          <span className="truncate">{branch?.branch ?? 'detached'}</span>
+          {ahead > 0 && <span className="text-faint">↑{ahead}</span>}
+          {(branch?.behind ?? 0) > 0 && <span className="text-faint">↓{branch?.behind}</span>}
         </span>
       )}
-      <span className="grow" data-tauri-drag-region />
+      <span className="min-w-0 flex-1" data-tauri-drag-region />
       {push}
       {pr && action !== null && path !== undefined && !asking && (
-        <button
+        <Button
           type="button"
-          className={action === 'merge' ? 'btn btn-merge head-btn' : 'btn btn-soft head-btn'}
+          variant={action === 'merge' ? 'default' : 'secondary'}
+          className={cn(headBtn, action === 'merge' && merge)}
           disabled={busy !== null}
           onClick={() => setAsking(true)}
         >
-          {action === 'merge' && <Icon name="merge" small />}
+          {action === 'merge' && <GitMergeIcon className={icon} />}
           {action === 'merge' ? 'Merge' : (cleanup?.label ?? 'Clean up')}
-        </button>
+        </Button>
       )}
       {pr && asking && path !== undefined && (
-        <span className="head-ask">
+        <span className="animate-in fade-in slide-in-from-bottom-[6px] inline-flex flex-none items-center gap-1.5 text-[12.5px] font-medium duration-160 ease-[cubic-bezier(0.2,0,0,1)]">
           {action === 'merge' ? `Merge #${pr.number}?` : `${cleanup?.label}?`}
-          <button type="button" className="btn btn-soft head-btn" onClick={() => setAsking(false)}>
-            No
-          </button>
-          <button
+          <Button
             type="button"
-            className={action === 'merge' ? 'btn btn-merge head-btn' : 'btn btn-ink head-btn'}
+            variant="secondary"
+            className={headBtn}
+            onClick={() => setAsking(false)}
+          >
+            No
+          </Button>
+          <Button
+            type="button"
+            className={cn(headBtn, action === 'merge' && merge)}
             disabled={busy !== null}
             onClick={() =>
               void run(action ?? '', async () =>
@@ -116,10 +149,38 @@ function Head({
             }
           >
             {busy === null ? 'Yes' : 'Working…'}
-          </button>
+          </Button>
         </span>
       )}
     </div>
+  )
+}
+
+function Tab({
+  active,
+  count,
+  label,
+  onSelect,
+}: {
+  active: boolean
+  count: number
+  label: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={cn(
+        'flex h-7 items-center gap-1.5 rounded-[8px] px-2.5 font-medium whitespace-nowrap transition-[background-color,color] duration-120',
+        active ? 'bg-pill text-foreground' : 'text-faint hover:text-foreground'
+      )}
+      onClick={onSelect}
+    >
+      {label}
+      {count > 0 && <span className={countClass}>{count}</span>}
+    </button>
   )
 }
 
@@ -143,7 +204,7 @@ export function GitPanel(props: Props) {
   }
 
   return (
-    <aside className="git" aria-label="Git" style={{ width }}>
+    <aside className="bg-side flex min-h-0 flex-none flex-col" aria-label="Git" style={{ width }}>
       <Head
         path={path}
         pr={pr}
@@ -152,59 +213,59 @@ export function GitPanel(props: Props) {
         onChanged={props.onChanged}
         onError={props.onError}
       />
-      <div className="panel-tabs" role="tablist" aria-label="Git view">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={shown === 'changes'}
-          className={shown === 'changes' ? 'panel-tab is-active' : 'panel-tab'}
-          onClick={() => setView('changes')}
-        >
-          Changes
-          {(changes?.length ?? 0) > 0 && <span className="count">{changes?.length}</span>}
-        </button>
+      <div
+        className="flex h-bar flex-none items-center gap-0.5 px-2"
+        role="tablist"
+        aria-label="Git view"
+      >
+        <Tab
+          active={shown === 'changes'}
+          label="Changes"
+          count={changes?.length ?? 0}
+          onSelect={() => setView('changes')}
+        />
         {pr && (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={shown === 'checks'}
-            className={shown === 'checks' ? 'panel-tab is-active' : 'panel-tab'}
-            onClick={() => setView('checks')}
-          >
-            Checks
-            {pr.checks.length > 0 && <span className="count">{pr.checks.length}</span>}
-          </button>
+          <Tab
+            active={shown === 'checks'}
+            label="Checks"
+            count={pr.checks.length}
+            onSelect={() => setView('checks')}
+          />
         )}
       </div>
-      <div className="git-scroll">
+      <div className="min-h-0 flex-1 overflow-auto px-2 pt-0.5 pb-3">
         {shown === 'changes' &&
           (changes ? (
             <FileList changes={changes} onOpen={onOpenFile} actions={actions} />
           ) : (
-            <div className="quiet">{changes === null ? 'Not a git repository' : 'Reading…'}</div>
+            <div className={quiet}>{changes === null ? 'Not a git repository' : 'Reading…'}</div>
           ))}
         {shown === 'checks' && pr && (
-          <div className="gh">
-            <div className="gh-title">{pr.title}</div>
-            <div className="gh-meta">
-              <span className="add">+{pr.additions}</span>{' '}
-              <span className="del">−{pr.deletions}</span> · {pr.changedFiles} files · {pr.head} →{' '}
-              {pr.base}
+          <div className="flex flex-col gap-2.5 px-2.5 py-1.5">
+            <div className="text-[15px] leading-[1.35] font-semibold">{pr.title}</div>
+            <div className="text-muted-foreground font-mono text-[11px]">
+              <span className="text-good">+{pr.additions}</span>{' '}
+              <span className="text-critical">−{pr.deletions}</span> · {pr.changedFiles} files ·{' '}
+              {pr.head} → {pr.base}
             </div>
             {pr.checks.length > 0 ? (
-              <div className="checks">
+              <div className="flex flex-col border-y py-1">
                 {pr.checks.map((check) => (
-                  <div className="check-row" key={check.name}>
-                    <span className={`st ${CHECK_DOT[check.state]}`} />
-                    <span className="grow">{check.name}</span>
-                    <span className="faint">{check.state}</span>
+                  <div className="flex h-[26px] items-center gap-2 text-[12.5px]" key={check.name}>
+                    <span className={dotClass(CHECK_DOT[check.state])} />
+                    <span className="min-w-0 flex-1">{check.name}</span>
+                    <span className="text-faint text-[11.5px]">{check.state}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="quiet">No checks on this pull request</div>
+              <div className={quiet}>No checks on this pull request</div>
             )}
-            {pr.body !== '' && <div className="gh-body">{pr.body}</div>}
+            {pr.body !== '' && (
+              <div className="text-muted-foreground max-h-[260px] overflow-auto text-[12.5px] leading-[1.55] whitespace-pre-wrap select-text">
+                {pr.body}
+              </div>
+            )}
           </div>
         )}
       </div>

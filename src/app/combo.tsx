@@ -1,7 +1,15 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type RefObject, useRef, useState } from 'react'
 
-import { Icon } from './icons'
-import { pointerMoved } from './pointer'
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxHint,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxSearch,
+  ComboboxTrigger,
+} from '@/components/ui/combobox'
+import { cn } from '@/lib/utils'
 
 export interface ComboOption {
   value: string
@@ -18,7 +26,16 @@ interface Props {
   placeholder: string
   onPick: (value: string) => void
   footer?: ReactNode
+  /** Extra classes for the button. */
   className?: string
+  /** Which edge of the button the list lines up with. */
+  align?: 'start' | 'end'
+  /** How far the list sits in from that edge (a button with a negative margin). */
+  alignOffset?: number
+  /** Extra classes for the list's sheet. */
+  popupClassName?: string
+  /** Where focus goes once the list closes (the button by default). */
+  finalFocus?: RefObject<HTMLElement | null>
 }
 
 const GAP = 6
@@ -26,19 +43,22 @@ const MARGIN = 12
 
 /** A button that opens a searchable list, above or below it, wherever the window has room. */
 export function Combo({
+  align = 'start',
+  alignOffset,
   button,
   className,
+  finalFocus,
   footer,
   onPick,
   options,
   placeholder,
+  popupClassName,
   selected,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [hot, setHot] = useState(0)
   const [room, setRoom] = useState({ height: 360, up: true })
-  const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   const q = query.trim().toLowerCase()
   const seen = new Set<string>()
   const shown = options.filter((o) => {
@@ -48,106 +68,83 @@ export function Combo({
     return true
   })
 
-  useEffect(() => {
-    if (!open) return
-    const away = (e: MouseEvent) => {
-      if (root.current?.contains(e.target as Node) !== true) setOpen(false)
-    }
-    window.addEventListener('mousedown', away)
-    return () => window.removeEventListener('mousedown', away)
-  }, [open])
-
-  useEffect(() => setHot(0), [q])
-  useEffect(() => {
-    root.current?.querySelector('.combo-option.is-hot')?.scrollIntoView({ block: 'nearest' })
-  }, [hot, q])
-
-  const toggle = () => {
-    const box = root.current?.getBoundingClientRect()
-    if (box && !open) {
+  const onOpenChange = (next: boolean) => {
+    const box = trigger.current?.getBoundingClientRect()
+    if (box && next) {
       const above = box.top - GAP - MARGIN
       const below = window.innerHeight - box.bottom - GAP - MARGIN
       setRoom({ height: Math.min(420, Math.max(above, below)), up: above >= below })
     }
-    setOpen((o) => !o)
-  }
-
-  const pick = (value: string) => {
-    onPick(value)
-    setOpen(false)
-    setQuery('')
+    setOpen(next)
   }
 
   return (
-    <div
-      className={className === undefined ? 'combo' : `combo ${className}`}
-      ref={root}
-      onKeyDown={(e) => {
-        if (!open) return
-        if (e.key === 'Escape') {
-          e.stopPropagation()
-          setOpen(false)
-        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          e.preventDefault()
-          const step = e.key === 'ArrowDown' ? 1 : -1
-          setHot((i) => (i + step + shown.length) % Math.max(shown.length, 1))
-        } else if (e.key === 'Enter') {
-          e.preventDefault()
-          e.stopPropagation()
-          const option = shown[hot]
-          if (option) pick(option.value)
-        }
+    <Combobox
+      open={open}
+      onOpenChange={onOpenChange}
+      value={selected}
+      onValueChange={(value) => {
+        if (value === null) return
+        onPick(value)
+        setOpen(false)
+        setQuery('')
       }}
+      inputValue={query}
+      onInputValueChange={(value, details) => {
+        if (details.reason === 'input-change') setQuery(value)
+      }}
+      filter={null}
+      autoHighlight
     >
-      <button type="button" className="combo-btn" aria-expanded={open} onClick={toggle}>
+      <ComboboxTrigger
+        ref={trigger}
+        className={cn(
+          'rounded-[8px] [&>svg:last-child]:transition-transform [&>svg:last-child]:duration-150 [&>svg:last-child]:ease-[cubic-bezier(0.2,0,0,1)] data-popup-open:[&>svg:last-child]:rotate-180',
+          className
+        )}
+      >
         {button}
-        <span className={open ? 'chev is-up' : 'chev'}>
-          <Icon name="chevron" small />
-        </span>
-      </button>
-      {open && (
-        <div
-          className={room.up ? 'combo-pop is-up' : 'combo-pop is-down'}
-          style={{ maxHeight: room.height }}
-          role="dialog"
-          aria-label={placeholder}
-        >
-          <label className="combo-search">
-            <Icon name="search" small />
-            {/* oxlint-disable-next-line jsx-a11y/no-autofocus -- the list opens to be searched */}
-            <input
-              autoFocus
-              aria-label={placeholder}
-              placeholder={placeholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <div className="combo-list" role="listbox">
-            {shown.map((o, i) => (
-              <div key={`${o.section ?? ''}:${o.value}`} className="combo-item">
-                {q === '' && o.section !== undefined && o.section !== shown[i - 1]?.section && (
-                  <div className="combo-section">{o.section}</div>
-                )}
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={o.value === selected}
-                  className={i === hot ? 'combo-option is-hot' : 'combo-option'}
-                  onMouseMove={(e) => pointerMoved(e) && setHot(i)}
-                  onClick={() => pick(o.value)}
+      </ComboboxTrigger>
+      <ComboboxContent
+        side={room.up ? 'top' : 'bottom'}
+        align={align}
+        alignOffset={alignOffset}
+        aria-label={placeholder}
+        finalFocus={finalFocus}
+        style={{ maxHeight: room.height }}
+        className={cn(
+          'shadow-[0_0_0_1px_rgb(43_40_38/0.06),0_16px_40px_-14px_rgb(43_40_38/0.32)]',
+          popupClassName
+        )}
+      >
+        <ComboboxSearch aria-label={placeholder} placeholder={placeholder} />
+        <ComboboxList className="flex min-h-[60px] flex-col pt-0">
+          {shown.map((o, i) => (
+            <div key={`${o.section ?? ''}:${o.value}`}>
+              {q === '' && o.section !== undefined && o.section !== shown[i - 1]?.section && (
+                <div
+                  className={cn(
+                    'text-label px-2.5 pb-1 text-[11px] font-medium',
+                    i === 0 ? 'pt-0.5' : 'pt-2'
+                  )}
                 >
-                  <span className="combo-label">{o.label}</span>
-                  {o.hint !== undefined && <span className="combo-hint">{o.hint}</span>}
-                  {o.value === selected && <span className="combo-tick">✓</span>}
-                </button>
-              </div>
-            ))}
-            {shown.length === 0 && <div className="quiet">Nothing matches “{query}”</div>}
-          </div>
-          {footer}
-        </div>
-      )}
-    </div>
+                  {o.section}
+                </div>
+              )}
+              <ComboboxItem value={o.value} className="data-selected:pr-8 pr-2.5">
+                <span className="flex-none font-medium whitespace-nowrap">{o.label}</span>
+                {o.hint !== undefined && (
+                  <ComboboxHint className="text-[12px]">{o.hint}</ComboboxHint>
+                )}
+              </ComboboxItem>
+            </div>
+          ))}
+          {shown.length === 0 && (
+            <div className="text-faint px-3 py-8 text-center">Nothing matches “{query}”</div>
+          )}
+        </ComboboxList>
+        {footer}
+      </ComboboxContent>
+    </Combobox>
   )
 }

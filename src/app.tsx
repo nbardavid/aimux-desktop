@@ -7,14 +7,17 @@ import {
   sendNotification,
 } from '@tauri-apps/plugin-notification'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { MessageCircleIcon } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 
 import { ChatView } from './app/chat-view'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
 import { HostBar } from './app/host-bar'
-import { Icon } from './app/icons'
 import { Inbox } from './app/inbox'
 import { NewWorkspace } from './app/new-workspace'
 import { Picker, type PickerItem } from './app/picker'
@@ -25,6 +28,7 @@ import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
 import { type DiffStat, type RowMenu, Sidebar } from './app/sidebar'
 import { Splitter } from './app/splitter'
+import { dotClass } from './app/status-dot'
 import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
 import { TopBar } from './app/top-bar'
@@ -51,6 +55,21 @@ const NEW_TAB: PickerItem[] = [
 ]
 
 const CHAT_SETTINGS = 'aimux.chat'
+
+// The shell's repeated pieces: the splash, the quiet empty states, the toasts.
+const SPLASH = 'text-muted-foreground grid h-full place-items-center p-6 text-center'
+const QUIET =
+  'text-faint flex flex-1 flex-col items-center justify-center gap-3 px-3 py-8 text-center'
+const EMPTY_TITLE = 'text-foreground text-[16px] font-semibold'
+/** A key cap on the ink button. */
+const KBD_INK = 'text-inherit h-4 border-0 bg-white/16 px-1'
+// The `rise` keyframes live in styles.css.
+const TOAST =
+  'border-border bg-background absolute right-4 bottom-4 z-4 flex w-80 animate-[rise_0.18s_cubic-bezier(0.2,0,0,1)] gap-2.5 rounded-xl border px-3.5 py-3 shadow-[0_16px_40px_-16px_rgb(43_40_38/0.22)]'
+const TOAST_BODY = 'flex min-w-0 flex-1 flex-col gap-0.5'
+const TOAST_TITLE = 'flex items-center gap-2 font-semibold'
+const TOAST_TEXT = 'text-muted-foreground text-[12.5px] [overflow-wrap:anywhere]'
+const TOAST_BUTTON = 'h-[26px] px-2.5 text-[12.5px]'
 
 function readChatSettings(): ChatSettings {
   // A per-window convenience: storage may be empty or refused, the defaults then hold.
@@ -84,7 +103,7 @@ interface CommandPick {
 
 /** Just above the chat's composer, for the pickers its commands open. */
 function overComposer() {
-  const box = document.querySelector('.composer')?.getBoundingClientRect()
+  const box = document.querySelector('[data-composer]')?.getBoundingClientRect()
   return box ? { bottom: window.innerHeight - box.top + 6, left: box.left } : undefined
 }
 
@@ -320,18 +339,16 @@ export function App() {
   }
 
   if (status.kind !== 'ready') {
-    return <main className="splash">{status.kind === 'error' ? status.message : 'Opening…'}</main>
+    return <main className={SPLASH}>{status.kind === 'error' ? status.message : 'Opening…'}</main>
   }
 
   if (projects.length === 0) {
     return (
-      <main className="splash">
-        <div className="quiet fill">
-          <span className="empty-title">Open a repository to start</span>
+      <main className={SPLASH}>
+        <div className={QUIET}>
+          <span className={EMPTY_TITLE}>Open a repository to start</span>
           <span>Each piece of work then gets its own worktree, with its chats and terminals.</span>
-          <button type="button" className="btn btn-ink" onClick={() => void newProject()}>
-            Open a folder
-          </button>
+          <Button onClick={() => void newProject()}>Open a folder</Button>
         </div>
       </main>
     )
@@ -621,8 +638,8 @@ export function App() {
   }[mode]
 
   return (
-    <div className="app">
-      <div className="cols">
+    <div className="relative h-full">
+      <div className="flex h-full">
         {layout.sideOpen && (
           <>
             <Sidebar
@@ -661,13 +678,13 @@ export function App() {
             />
           </>
         )}
-        <div className="main">
+        <div className="flex min-w-0 flex-1 flex-col">
           {mode !== 'normal' && topBar(pageTitle, null)}
           {mode !== 'normal' && hostBar}
-          <div className="work">
+          <div className="flex min-h-0 flex-1">
             {mode === 'normal' && (
               <>
-                <main className="center">
+                <main className="flex min-h-0 min-w-[360px] flex-1 flex-col">
                   {topBar(
                     ws?.name,
                     ws === undefined ? null : layout.gitOpen,
@@ -713,43 +730,31 @@ export function App() {
                   )}
                   {term && <TerminalView tabId={term.id} attach={terminals.attach} />}
                   {ws === undefined && (
-                    <div className="quiet fill">
-                      <span className="empty-title">
+                    <div className={QUIET}>
+                      <span className={EMPTY_TITLE}>
                         No workspace in {project?.name ?? 'this project'} yet
                       </span>
                       <span>
                         Each workspace is a worktree on its own branch, with its chats and
                         terminals.
                       </span>
-                      <button
-                        type="button"
-                        className="btn btn-ink"
-                        onClick={() => projectId !== null && setComposeIn(projectId)}
-                      >
+                      <Button onClick={() => projectId !== null && setComposeIn(projectId)}>
                         New workspace
-                        <span className="kbd-ink">⌘N</span>
-                      </button>
+                        <Kbd className={KBD_INK}>⌘N</Kbd>
+                      </Button>
                     </div>
                   )}
                   {ws !== undefined && active === undefined && (
-                    <div className="quiet fill">
+                    <div className={QUIET}>
                       <span>No tabs in {ws.name}</span>
-                      <span className="empty-actions">
-                        <button
-                          type="button"
-                          className="btn btn-soft"
-                          onClick={() => createTab('chat')}
-                        >
-                          <Icon name="chat" small />
+                      <span className="flex flex-wrap justify-center gap-1.5">
+                        <Button variant="secondary" onClick={() => createTab('chat')}>
+                          <MessageCircleIcon className="size-3.5 p-px" />
                           New chat
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-soft"
-                          onClick={() => createTab('terminal')}
-                        >
+                        </Button>
+                        <Button variant="secondary" onClick={() => createTab('terminal')}>
                           Terminal
-                        </button>
+                        </Button>
                       </span>
                     </div>
                   )}
@@ -798,7 +803,7 @@ export function App() {
               />
             )}
             {mode === 'git' && ws === undefined && (
-              <div className="quiet fill">No workspace selected</div>
+              <div className={QUIET}>No workspace selected</div>
             )}
             {mode === 'settings' && (
               <SettingsView
@@ -811,36 +816,35 @@ export function App() {
       </div>
 
       {attention && (
-        <div className="toast" role="status">
-          <div className="toast-body">
-            <span className="toast-title">
-              <span className="st st-waiting" />
+        <div className={TOAST} role="status">
+          <div className={TOAST_BODY}>
+            <span className={TOAST_TITLE}>
+              <span className={dotClass('waiting')} />
               {attention.title} is waiting for you
             </span>
-            <span className="toast-text">{attention.where}</span>
-            <div className="toast-actions">
-              <button
-                type="button"
-                className="btn btn-ink"
+            <span className={TOAST_TEXT}>{attention.where}</span>
+            <div className="mt-2 flex gap-1.5">
+              <Button
+                className={TOAST_BUTTON}
                 onClick={() => {
                   goTo(attention.projectId, attention.workspaceId, attention.chatId)
                   setAttention(null)
                 }}
               >
                 Open chat
-              </button>
-              <button type="button" className="btn btn-outline" onClick={() => setAttention(null)}>
+              </Button>
+              <Button variant="outline" className={TOAST_BUTTON} onClick={() => setAttention(null)}>
                 Later
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
       {notice !== null && (
-        <div className="toast" role="alert">
-          <div className="toast-body">
-            <span className="toast-title">That did not work</span>
-            <span className="toast-text">{notice}</span>
+        <div className={TOAST} role="alert">
+          <div className={TOAST_BODY}>
+            <span className={TOAST_TITLE}>That did not work</span>
+            <span className={TOAST_TEXT}>{notice}</span>
           </div>
         </div>
       )}

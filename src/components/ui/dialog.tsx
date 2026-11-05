@@ -37,7 +37,7 @@ function DialogContent({
       />
       <DialogPrimitive.Popup
         className={cn(
-          'bg-popover text-popover-foreground border-border shadow-dialog data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.99] data-open:slide-in-from-bottom-1.5 data-closed:animate-out data-closed:fade-out-0 fixed top-[16vh] left-1/2 z-50 flex w-[min(520px,calc(100%-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border text-sm duration-160 outline-none',
+          'bg-popover text-popover-foreground border-border shadow-dialog data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.99] data-open:slide-in-from-bottom-[6px] data-closed:animate-out data-closed:fade-out-0 fixed top-[16vh] left-1/2 z-50 flex w-[min(520px,calc(100%-32px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border text-sm duration-160 outline-none',
           className
         )}
         data-slot="dialog-content"

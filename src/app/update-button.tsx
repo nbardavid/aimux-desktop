@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+
+import { barButtonClass } from './top-bar'
+
 const EVERY = 6 * 60 * 60 * 1000
 
 export interface Update {
@@ -41,15 +45,15 @@ export function UpdateButton({ update }: { update: Update }) {
   if (update.installing) label = 'Updating…'
   else if (update.error !== null) label = 'Update failed · Retry'
   return (
-    <button
-      type="button"
-      className="bar-btn is-on"
+    <Button
+      variant="ghost"
+      className={barButtonClass(true)}
       disabled={update.installing}
       data-tip={update.error ?? 'Restarts the window; chats and terminals keep running'}
       data-tip-align="end"
       onClick={update.install}
     >
       {label}
-    </button>
+    </Button>
   )
 }

@@ -26,7 +26,7 @@ function ComboboxTrigger({ children, className, ...props }: ComboboxPrimitive.Tr
   return (
     <ComboboxPrimitive.Trigger
       className={cn(
-        'hover:bg-foreground/6 data-popup-open:bg-foreground/6 focus-visible:ring-ring/60 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-2.5 text-sm font-medium transition-colors duration-120 outline-none focus-visible:ring-2',
+        'hover:bg-foreground/6 data-popup-open:bg-foreground/6 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-2.5 text-sm font-medium transition-colors duration-120',
         className
       )}
       data-slot="combobox-trigger"
@@ -59,7 +59,7 @@ function ComboboxSearch({ className, ...props }: ComboboxPrimitive.Input.Props) 
       <SearchIcon className="size-3.5 shrink-0" />
       <ComboboxPrimitive.Input
         className={cn(
-          'text-foreground placeholder:text-faint min-w-0 flex-1 bg-transparent text-sm outline-none select-text',
+          'text-foreground min-w-0 flex-1 bg-transparent text-sm outline-none select-text',
           className
         )}
         {...props}
@@ -83,17 +83,22 @@ function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
 
 function ComboboxContent({
   align = 'start',
+  alignOffset = 0,
   anchor,
   className,
   side = 'bottom',
   sideOffset = 6,
   ...props
 }: ComboboxPrimitive.Popup.Props &
-  Pick<ComboboxPrimitive.Positioner.Props, 'align' | 'anchor' | 'side' | 'sideOffset'>) {
+  Pick<
+    ComboboxPrimitive.Positioner.Props,
+    'align' | 'alignOffset' | 'anchor' | 'side' | 'sideOffset'
+  >) {
   return (
     <ComboboxPrimitive.Portal>
       <ComboboxPrimitive.Positioner
         align={align}
+        alignOffset={alignOffset}
         anchor={anchor}
         className="isolate z-50"
         collisionPadding={8}

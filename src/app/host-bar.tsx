@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/button'
+
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
 /**
@@ -20,13 +22,15 @@ export function HostBar({
     lose.terms > 0 && `${count(lose.terms, 'terminal')} will close`,
   ].filter(Boolean)
   return (
-    <div className="host-bar" role="alert">
-      <span className="grow">
+    <div
+      className="border-border flex flex-none items-center gap-3 border-b bg-[color-mix(in_srgb,var(--warn)_12%,var(--background))] py-1.5 pr-2 pl-4 text-[12.5px] text-[#7a5a08]"
+      role="alert"
+    >
+      <span className="min-w-0 flex-1">
         {error ?? `The background process needs a restart: ${clauses.join(', ')}.`}
       </span>
-      <button
-        type="button"
-        className="btn btn-ink"
+      <Button
+        className="h-[26px] px-2.5 text-[12.5px]"
         disabled={busy}
         onClick={() => {
           setBusy(true)
@@ -37,7 +41,7 @@ export function HostBar({
         }}
       >
         {busy ? 'Restarting…' : 'Restart'}
-      </button>
+      </Button>
     </div>
   )
 }

@@ -38,7 +38,7 @@ export function Splitter({ direction, label, max, min, onChange, value }: Props)
   }
   return (
     <div
-      className="splitter"
+      className="bg-border hover:bg-line-strong active:bg-line-strong focus-visible:bg-line-strong relative z-2 w-px flex-none cursor-col-resize transition-[background-color] duration-150 before:absolute before:inset-y-0 before:-inset-x-1 focus-visible:outline-none"
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

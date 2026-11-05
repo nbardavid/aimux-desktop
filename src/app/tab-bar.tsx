@@ -1,8 +1,12 @@
+import { MessageCircleIcon, PlusIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 
 import type { Signal } from '../model/catalog'
 
-import { Icon } from './icons'
 import { StatusDot } from './status-dot'
 
 /** A terminal tab of the daemon, or a native chat of this window. */
@@ -37,9 +41,9 @@ function RenameField({ item, onDone }: { item: TabItem; onDone: (title: string |
     field.current?.select()
   }, [])
   return (
-    <input
+    <Input
       ref={field}
-      className="tab-input"
+      className="bg-hover text-foreground mr-1 ml-1.5 h-auto flex-1 rounded-md border-0 px-1.5 py-[3px] font-medium shadow-[inset_0_0_0_1px_var(--line-strong)] focus-visible:ring-0"
       aria-label="Tab name"
       defaultValue={item.title}
       spellCheck={false}
@@ -55,14 +59,20 @@ function RenameField({ item, onDone }: { item: TabItem; onDone: (title: string |
 export function TabBar(props: Props) {
   const { activeId, armedId, items, renamingId } = props
   return (
-    <div className="tabbar" role="tablist" aria-label="Tabs">
+    <div
+      className="flex min-w-0 flex-1 items-stretch overflow-x-auto [&::-webkit-scrollbar]:hidden"
+      role="tablist"
+      aria-label="Tabs"
+    >
       {items.map((item) => {
         const active = item.id === activeId
-        const classes = ['tab', active && 'is-active', item.id === armedId && 'is-armed']
         return (
           <div
             key={item.id}
-            className={classes.filter(Boolean).join(' ')}
+            className={cn(
+              "group text-faint hover:text-foreground relative flex min-w-[88px] flex-[0_1_168px] items-center transition-[color] duration-120 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-0.5 after:scale-x-0 after:rounded-t-[2px] after:bg-tan after:transition-[scale] after:duration-220 after:ease-[cubic-bezier(0.2,0,0,1)] after:content-['']",
+              active && 'text-foreground after:scale-x-100'
+            )}
             onContextMenu={(e) => {
               e.preventDefault()
               props.onMenu(item, e.clientX, e.clientY)
@@ -75,31 +85,33 @@ export function TabBar(props: Props) {
                 type="button"
                 role="tab"
                 aria-selected={active}
-                className="tab-main"
+                className="flex h-full min-w-0 flex-1 items-center gap-[7px] pr-1 pl-2.5 font-medium"
                 onClick={() => props.onSelect(item)}
                 onDoubleClick={() => props.onRename(item)}
               >
-                {item.chat && <Icon name="chat" small />}
-                <span className="tab-title">
+                {/* `p-px`: Lucide's bubble fills more of its box than the old glyph did. */}
+                {item.chat && <MessageCircleIcon className="text-label size-3.5 shrink-0 p-px" />}
+                <span className={cn('truncate', item.id === armedId && 'text-critical')}>
                   {item.id === armedId ? 'Close? ⌘W again' : item.title}
                 </span>
                 {item.signal && <StatusDot signal={item.signal} />}
               </button>
             )}
-            <button
-              type="button"
-              className="tab-close"
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-1 size-5 rounded-[5px] opacity-0 group-hover:opacity-100"
               aria-label={`Close ${item.title}`}
               onClick={() => props.onClose(item)}
             >
-              <Icon name="close" small />
-            </button>
+              <XIcon className="size-3.5" />
+            </Button>
           </div>
         )
       })}
-      <button
-        type="button"
-        className="tab-add"
+      <Button
+        variant="ghost"
+        className="h-auto w-9 rounded-none px-0 hover:bg-transparent"
         aria-label="New tab"
         aria-haspopup="menu"
         onClick={(e) => {
@@ -107,8 +119,8 @@ export function TabBar(props: Props) {
           props.onNew({ left: box.left, top: box.bottom + 4 })
         }}
       >
-        <Icon name="plus" />
-      </button>
+        <PlusIcon className="size-4" />
+      </Button>
     </div>
   )
 }

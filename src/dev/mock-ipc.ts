@@ -1,6 +1,10 @@
 // The browser preview (`bun run web:dev` opened in a browser): Tauri's IPC answered from
 // fixtures, so every screen can be looked at and screenshotted without the app. Loaded by
-// main.tsx only in vite dev and only outside Tauri. `?empty` starts with no project.
+// main.tsx only in vite dev and only outside Tauri. Query flags reach the states fixtures
+// alone cannot: `?empty` no project, `?bare` a project without workspaces, `?restart` a host
+// from an older protocol holding work (the restart bar), `?update` a release waiting (the
+// pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
+// (the error toast: Setup › Write it with a chat).
 
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 
@@ -17,6 +21,7 @@ import {
   HOSTED_LINES,
   INIT_ANSWER,
   LIVE,
+  NOTES_ASK,
   PRS,
   quotaCache,
   reply,
@@ -34,9 +39,9 @@ interface Channel {
 
 type Args = Record<string, unknown>
 
-const store: Catalog = new URLSearchParams(location.search).has('empty')
-  ? { chats: [], projects: [], workspaces: [] }
-  : catalog()
+const flags = new URLSearchParams(location.search)
+const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
+if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
 const chats = new Map<string, Channel>()
 const terms = new Map<string, Channel>()
 const unknown = new Set<string>()
@@ -84,7 +89,7 @@ function handle(cmd: string, args: Args): unknown {
     case 'catalog':
       return structuredClone(store)
     case 'host_status':
-      return HOST_STATUS
+      return { ...HOST_STATUS, protocolOk: !flags.has('restart') }
     case 'claude_models':
       return JSON.stringify(INIT_ANSWER)
     case 'chat_history':
@@ -93,6 +98,8 @@ function handle(cmd: string, args: Args): unknown {
       const channel = args.onLine as Channel
       chats.set(str(args.id), channel)
       if (args.start === null) later(channel, HOSTED_LINES[str(args.id)] ?? [])
+      if (flags.has('attention') && args.id === 'chat-notes')
+        setTimeout(() => channel.onmessage(NOTES_ASK), 1500)
       return null
     }
     case 'chat_send':
@@ -140,13 +147,14 @@ function handle(cmd: string, args: Args): unknown {
     case 'setup_status':
       return { exists: args.projectId === 'p-aimux', path: '.aimux/setup.sh' }
     case 'ensure_setup_script':
+      if (flags.has('fail')) throw new Error('Could not write .aimux/setup.sh: permission denied')
       return `${path}/.aimux/setup.sh`
     case 'read_quota_cache':
       return quotaCache()
     case 'read_settings':
       return SETTINGS
     case 'update_check':
-      return null
+      return flags.has('update') ? '0.2.0' : null
     case 'plugin:window|is_focused':
       return true
     // Fire-and-forget writes: nothing to show for them.
