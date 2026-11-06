@@ -12,6 +12,7 @@ import {
   GitBranchIcon,
   GitMergeIcon,
   GitPullRequestIcon,
+  GlobeIcon,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
@@ -30,10 +31,12 @@ import {
   type PullRequest,
   uncommittedRefusal,
 } from '../git/pr'
+import { type Artifact, isNew } from '../model/catalog'
+import { isBrowser, type PanelView } from './browser-tabs'
 import { countClass, Empty, type FileActions, FileList } from './file-list'
 import { Dot } from './status-dot'
 
-interface Props {
+export interface GitPanelProps {
   /** Pixels once dragged, or a CSS width that follows the window. */
   width: number | string
   path: string | undefined
@@ -55,6 +58,15 @@ interface Props {
   /** No PR yet: hand "open one" to this workspace's chat (the app itself never creates one). */
   onAskPr: () => void
   setup: ReactNode
+  /** The workspace's pages (its artifacts), newest first: tabs after Changes and Checks. */
+  tabs: Artifact[]
+  /** What the panel shows (`shownView`, so always one it can). */
+  view: PanelView
+  onView: (view: PanelView) => void
+  /** Right-click on a page's tab. */
+  onTabMenu: (url: string, at: { x: number; y: number }) => void
+  /** The body while a page is the view: its address bar and the page. */
+  browser: ReactNode
 }
 
 /** The band, its hairline, the chip's border and the ink, by the PR's tone. */
@@ -118,7 +130,7 @@ function Head({
   path,
   pr,
 }: Pick<
-  Props,
+  GitPanelProps,
   'branch' | 'changes' | 'claude' | 'cleanup' | 'onAskPr' | 'onChanged' | 'onError' | 'path' | 'pr'
 >) {
   const [asking, setAsking] = useState(false)
@@ -414,6 +426,42 @@ function Tab({
   )
 }
 
+/** A page's tab: its icon and title, the "new" dot until it has been on screen. */
+function PageTab({
+  active,
+  artifact,
+  onMenu,
+  onSelect,
+}: {
+  active: boolean
+  artifact: Artifact
+  onMenu: (at: { x: number; y: number }) => void
+  onSelect: () => void
+}) {
+  const title = artifact.title || 'Artifact'
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      data-tip={`${title} · ${artifact.url.replace(/^https:\/\//, '')}`}
+      className={cn(
+        'animate-in fade-in slide-in-from-left-[4px] flex h-7 flex-none items-center gap-1.5 rounded-md px-2 text-sm whitespace-nowrap transition-colors duration-160 ease-out',
+        active ? 'bg-muted text-foreground font-medium' : 'text-faint hover:text-muted-foreground'
+      )}
+      onClick={onSelect}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      <GlobeIcon className="size-3.5 flex-none" />
+      <span className="max-w-40 truncate">{title}</span>
+      {isNew(artifact) && !active && <Dot tone="done" label="New" />}
+    </button>
+  )
+}
+
 const CHECK_WORD = {
   failing: 'failed',
   passing: 'passed',
@@ -479,10 +527,10 @@ function Checks({ pr }: { pr: PullRequest }) {
   )
 }
 
-export function GitPanel(props: Props) {
+export function GitPanel(props: GitPanelProps) {
   const { changes, onOpenFile, path, pr, setup, width } = props
-  const [view, setView] = useState<'changes' | 'checks'>('changes')
-  const shown = pr ? view : 'changes'
+  const shown = props.view
+  const setView = props.onView
 
   const write = (failed: string, command: string, args: Record<string, unknown>) => {
     if (path === undefined) return
@@ -526,7 +574,7 @@ export function GitPanel(props: Props) {
         onAskPr={props.onAskPr}
       />
       <div
-        className="flex h-10 flex-none items-center gap-0.5 px-2"
+        className="flex h-10 flex-none items-center gap-0.5 overflow-x-auto px-2 [&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label="Git view"
       >
@@ -544,8 +592,21 @@ export function GitPanel(props: Props) {
             onSelect={() => setView('checks')}
           />
         )}
+        {props.tabs.map((a) => (
+          <PageTab
+            key={a.url}
+            artifact={a}
+            active={isBrowser(shown) && shown.browser === a.url}
+            onSelect={() => setView({ browser: a.url })}
+            onMenu={(at) => props.onTabMenu(a.url, at)}
+          />
+        ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
+      {isBrowser(shown) && props.browser}
+      <div
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3"
+        hidden={isBrowser(shown)}
+      >
         {shown === 'changes' && changes && (
           <FileList changes={changes} onOpen={onOpenFile} actions={actions} />
         )}
@@ -559,7 +620,7 @@ export function GitPanel(props: Props) {
         )}
         {shown === 'checks' && pr && <Checks pr={pr} />}
       </div>
-      {setup}
+      {!isBrowser(shown) && setup}
     </aside>
   )
 }

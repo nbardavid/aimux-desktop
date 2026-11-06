@@ -8,11 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 
 import { notify, playChosenSound } from './app/attention'
+import { browserId } from './app/browser-tabs'
 import { ChatView } from './app/chat-view'
 import { cleanupOf } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { GitMode } from './app/git-mode'
-import { GitPanel } from './app/git-panel'
 import { HostBar } from './app/host-bar'
 import { Inbox } from './app/inbox'
 import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
@@ -23,6 +23,7 @@ import { PR_PROMPT, SETUP_PROMPT } from './app/prompts'
 import { Quotas } from './app/quotas'
 import { resumeTarget, type Session } from './app/resume'
 import { ResumePicker } from './app/resume-picker'
+import { RightPanel } from './app/right-panel'
 import { SettingsView } from './app/settings-view'
 import { SetupSection } from './app/setup-section'
 import { type DiffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
@@ -32,18 +33,12 @@ import { TerminalView } from './app/terminal-view'
 import { type Attention, AttentionToast, errorText, type Notice, NoticeToast } from './app/toast'
 import { TopBar } from './app/top-bar'
 import { UpdateButton, useUpdate } from './app/update-button'
+import { useArtifacts } from './app/use-artifacts'
 import { useCatalog } from './app/use-catalog'
 import { chatSignal, type ChatTab, useChats } from './app/use-chats'
 import { type FileChange, useGit } from './app/use-git'
 import { HOST_BLOCKED, useHost } from './app/use-host'
-import {
-  GIT_WIDTH,
-  gitWidthNow,
-  LIMITS,
-  SIDE_WIDTH,
-  sideWidthNow,
-  useLayout,
-} from './app/use-layout'
+import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
 import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
@@ -168,15 +163,13 @@ export function App() {
   const placeRef = useRef(placeOf)
   placeRef.current = placeOf
 
+  // Set once the panel's hook exists, below: a chat's publish reaches it.
+  const publish = useRef<ReturnType<typeof useArtifacts>['published']>(() => {})
   const chats = useChats({
     canStart: () => host.state.kind === 'ready',
     modelOf: (reported, current) => reportedModel(reported, current, models),
-    onArtifact: (chat, artifact, live) => {
-      const { record } = chat
-      void store
-        .addArtifact(record.workspaceId, artifact.url, artifact.title, record.id, live)
-        .catch(() => {})
-    },
+    onArtifact: (chat, artifact, live) =>
+      publish.current(chat.record.workspaceId, chat.record.id, artifact, live),
     onAttention: (chat: ChatTab, kind) => {
       if (watching.current === chat.record.id) return
       const { project: p, workspace: w } = placeRef.current(chat.record.workspaceId)
@@ -299,6 +292,18 @@ export function App() {
   const git = useGit(ws?.path, paths)
   const quotas = useQuotas()
   const { layout, update } = useLayout()
+  const artifacts = useArtifacts({
+    addArtifact: store.addArtifact,
+    catalog,
+    closeArtifact: store.closeArtifact,
+    hasPr: git.pr !== null,
+    onClosed: (url) => void invoke('browser_close', { id: browserId(url) }).catch(() => {}),
+    openPanel: () => update({ gitOpen: true }),
+    seeArtifact: store.seeArtifact,
+    visible: layout.gitOpen && mode === 'normal',
+    workspaceId: ws?.id,
+  })
+  publish.current = artifacts.published
   const setup = useSetup(projectId)
   const changes = ws === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
@@ -821,7 +826,6 @@ export function App() {
   }[mode]
 
   const sideWidth = layout.sideWidth === null ? SIDE_WIDTH : `${layout.sideWidth}px`
-  const gitWidth = layout.gitWidth === null ? GIT_WIDTH : `${layout.gitWidth}px`
 
   return (
     <div className="relative h-full">
@@ -986,45 +990,39 @@ export function App() {
                   {mode === 'normal' && !chat && active !== undefined && toasts}
                   {ws === undefined && toasts}
                 </main>
-                <Slide open={layout.gitOpen && ws !== undefined} width={`calc(${gitWidth} + 1px)`}>
-                  {ws !== undefined && (
-                    <>
-                      <Splitter
-                        label="Resize the git panel"
-                        value={layout.gitWidth ?? gitWidthNow()}
-                        min={LIMITS.git[0]}
-                        max={LIMITS.git[1]}
-                        direction={-1}
-                        onChange={(gitWidth) => update({ gitWidth })}
-                      />
-                      <GitPanel
-                        width={gitWidth}
-                        path={ws.path}
-                        changes={changes}
-                        pr={git.pr}
-                        branch={git.branch}
-                        cleanup={cleanup}
-                        onOpenFile={openFile}
-                        onChanged={git.refresh}
-                        onError={(title, error) => fail(title)(error)}
-                        claude={claudeHere}
-                        onAskPr={() => askForPr(ws)}
-                        setup={
-                          <SetupSection
-                            status={setup.status}
-                            workspace={ws}
-                            projectName={project?.name ?? ''}
-                            run={setupTab ? { running: setupTab.exited === undefined } : null}
-                            onShowRun={() => setupTab && selectTab(ws.id, setupTab.id)}
-                            onEdit={() => void setupAction('edit')}
-                            onRun={() => void setupAction('run')}
-                            onAgent={() => void setupAction('chat')}
-                          />
-                        }
-                      />
-                    </>
-                  )}
-                </Slide>
+                <RightPanel
+                  open={layout.gitOpen && ws !== undefined}
+                  layout={layout}
+                  update={update}
+                  artifacts={artifacts}
+                  onMenu={setCtxMenu}
+                  panel={
+                    ws && {
+                      branch: git.branch,
+                      changes,
+                      claude: claudeHere,
+                      cleanup,
+                      onAskPr: () => askForPr(ws),
+                      onChanged: git.refresh,
+                      onError: (title, error) => fail(title)(error),
+                      onOpenFile: openFile,
+                      path: ws.path,
+                      pr: git.pr,
+                      setup: (
+                        <SetupSection
+                          status={setup.status}
+                          workspace={ws}
+                          projectName={project?.name ?? ''}
+                          run={setupTab ? { running: setupTab.exited === undefined } : null}
+                          onShowRun={() => setupTab && selectTab(ws.id, setupTab.id)}
+                          onEdit={() => void setupAction('edit')}
+                          onRun={() => void setupAction('run')}
+                          onAgent={() => void setupAction('chat')}
+                        />
+                      ),
+                    }
+                  }
+                />
               </>
             )}
             {mode === 'git' && ws !== undefined && (

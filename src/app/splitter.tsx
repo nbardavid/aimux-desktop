@@ -2,6 +2,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -76,12 +77,18 @@ const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matche
  */
 export function Slide({
   children,
+  onSliding,
   open,
   width,
+  widthKey,
 }: {
   open: boolean
   /** The panel's width, its splitter's 1px included. */
   width: string
+  /** A change of key (a list ↔ a page) slides to the new width; a drag doesn't. */
+  widthKey?: string
+  /** While it slides: a native view laid over the panel waits for it to settle. */
+  onSliding?: (sliding: boolean) => void
   children: ReactNode
 }) {
   const [mounted, setMounted] = useState(open)
@@ -101,12 +108,32 @@ export function Slide({
       if (still()) setMounted(false)
     }
   }, [open, mounted, wide])
+  // The width on screen: a new key first marks the box sliding, then moves the width, so the
+  // change transitions. A width that ends up the same fires no transitionend: the timer ends it.
+  const [applied, setApplied] = useState(width)
+  const key = useRef(widthKey)
+  useLayoutEffect(() => {
+    if (key.current === widthKey || !open || !wide || still()) {
+      key.current = widthKey
+      setApplied(width)
+      return
+    }
+    key.current = widthKey
+    setSliding(true)
+    const frame = requestAnimationFrame(() => setApplied(width))
+    const done = setTimeout(() => setSliding(false), 260)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(done)
+    }
+  }, [width, widthKey, open, wide])
+  useEffect(() => onSliding?.(sliding), [sliding, onSliding])
   if (!mounted) return null
   return (
     <div
       ref={box}
       className="flex min-h-0 flex-none overflow-hidden data-sliding:transition-[width] data-sliding:duration-200 data-sliding:ease-in-out in-[.resizing]:transition-none motion-reduce:transition-none"
-      style={{ width: wide ? width : 0 }}
+      style={{ width: wide ? applied : 0 }}
       data-sliding={sliding || undefined}
       onTransitionEnd={(e) => {
         if (e.target !== e.currentTarget) return
