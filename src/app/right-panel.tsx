@@ -1,9 +1,9 @@
 // The right panel: the git panel's lists, or a page (an artifact) at its own wider width.
 import { useState } from 'react'
 
-import type { MenuState } from './context-menu'
 import type { useArtifacts } from './use-artifacts'
 
+import { isNew } from '../model/catalog'
 import { isBrowser, pageCap, withPageTitles } from './browser-tabs'
 import { BrowserView, nativePages, PageStandIn } from './browser-view'
 import { GitPanel, type GitPanelProps, spinner } from './git-panel'
@@ -20,12 +20,11 @@ import {
   sideWidthNow,
 } from './use-layout'
 
-type Owned = 'width' | 'tabs' | 'view' | 'onView' | 'onTabMenu' | 'browser'
+type Owned = 'width' | 'artifacts' | 'view' | 'onView' | 'browser'
 
 export function RightPanel({
   artifacts,
   layout,
-  onMenu,
   open,
   panel,
   update,
@@ -34,8 +33,6 @@ export function RightPanel({
   layout: Layout
   update: (patch: Partial<Layout>) => void
   artifacts: ReturnType<typeof useArtifacts>
-  /** A page tab's right-click menu. */
-  onMenu: (menu: MenuState) => void
   /** The workspace's git panel, or undefined with no workspace. */
   panel: Omit<GitPanelProps, Owned> | undefined
 }) {
@@ -91,14 +88,21 @@ export function RightPanel({
           <GitPanel
             {...panel}
             width={width}
-            tabs={tabs}
+            artifacts={{ count: tabs.length, unread: tabs.some(isNew) }}
             view={view}
             onView={artifacts.setView}
-            onTabMenu={(url, at) =>
-              onMenu({ ...at, items: [{ label: 'Close', run: () => artifacts.close(url) }] })
-            }
             browser={
-              page && <BrowserView artifact={page} placeholder={setPlaceholder} cover={cover} />
+              page && (
+                <BrowserView
+                  artifact={page}
+                  list={tabs}
+                  chatOf={artifacts.chatOf}
+                  onPick={(url) => artifacts.setView({ browser: url })}
+                  onClose={artifacts.close}
+                  placeholder={setPlaceholder}
+                  cover={cover}
+                />
+              )
             }
           />
         </>

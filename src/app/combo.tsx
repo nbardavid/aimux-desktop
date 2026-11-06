@@ -15,6 +15,8 @@ export interface ComboOption {
   value: string
   label: string
   hint?: string
+  /** Drawn before the label (an unread dot). */
+  mark?: ReactNode
   /** A heading shown above the first option of each run; dropped while searching. */
   section?: string
 }
@@ -138,7 +140,8 @@ export function Combo({
                 </div>
               )}
               <ComboboxItem value={o.value} className="data-selected:pr-8 pr-2.5">
-                <span className="flex-none font-medium whitespace-nowrap">{o.label}</span>
+                {o.mark}
+                <span className="min-w-0 truncate font-medium whitespace-nowrap">{o.label}</span>
                 {o.hint !== undefined && <ComboboxHint>{o.hint}</ComboboxHint>}
               </ComboboxItem>
             </div>

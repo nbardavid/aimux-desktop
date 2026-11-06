@@ -2,13 +2,15 @@ import type { ReactNode, Ref } from 'react'
 
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { ArrowLeftIcon, ArrowUpRightIcon, RotateCwIcon } from 'lucide-react'
+import { ArrowLeftIcon, ArrowUpRightIcon, RotateCwIcon, XIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 
-import type { Artifact } from '../model/catalog'
-
+import { type Artifact, isNew } from '../model/catalog'
 import { browserId } from './browser-tabs'
+import { Combo } from './combo'
+import { ageLabel } from './sidebar'
+import { Dot } from './status-dot'
 
 /** Outside Tauri (the browser preview) there is no native page: the placeholder says what it would show. */
 export const nativePages = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -20,14 +22,31 @@ export const nativePages = typeof window !== 'undefined' && '__TAURI_INTERNALS__
  */
 export function BrowserView({
   artifact,
+  chatOf,
   cover,
+  list,
+  onClose,
+  onPick,
   placeholder,
 }: {
   artifact: Artifact
+  /** Every artifact of the workspace, newest first: the title's menu. */
+  list: Artifact[]
+  /** The chat an artifact came from ('' when unknown). */
+  chatOf: (a: Artifact) => string
+  onPick: (url: string) => void
+  onClose: (url: string) => void
   cover: ReactNode
   placeholder: Ref<HTMLDivElement>
 }) {
   const id = browserId(artifact.url)
+  const now = Date.now()
+  const options = list.map((a) => ({
+    hint: [chatOf(a), ageLabel(a.at, now)].filter((part) => part !== '').join(' · '),
+    label: a.title || 'Artifact',
+    mark: isNew(a) && a.url !== artifact.url ? <Dot tone="done" label="New" /> : undefined,
+    value: a.url,
+  }))
   const tool = (label: string, icon: ReactNode, run: () => void) => (
     <Button
       variant="ghost"
@@ -49,12 +68,23 @@ export function BrowserView({
         {tool('Reload', <RotateCwIcon className="size-3.5" />, () => {
           void invoke('browser_reload', { id }).catch(() => {})
         })}
-        <span className="text-faint min-w-0 flex-1 truncate px-1.5 text-xs" title={artifact.url}>
-          {artifact.url.replace(/^https:\/\//, '')}
-        </span>
+        <div className="min-w-0 flex-1">
+          <Combo
+            className="hover:bg-hover flex h-7 max-w-full min-w-0 items-center gap-1 px-2 text-sm"
+            button={
+              <span className="min-w-0 truncate font-medium">{artifact.title || 'Artifact'}</span>
+            }
+            options={options}
+            selected={artifact.url}
+            placeholder="Find an artifact"
+            popupClassName="w-80"
+            onPick={onPick}
+          />
+        </div>
         {tool('Open in browser', <ArrowUpRightIcon className="size-4" />, () => {
           void openUrl(artifact.url).catch(() => {})
         })}
+        {tool('Close this artifact', <XIcon className="size-4" />, () => onClose(artifact.url))}
       </div>
       <div ref={placeholder} className="bg-chrome relative min-h-0 flex-1">
         {cover}

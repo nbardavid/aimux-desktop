@@ -1,4 +1,4 @@
-// Artifacts in the browser preview: a chat that publishes one, and `?artifacts`' two pages.
+// Artifacts in the browser preview: a chat that publishes one (`?artifacts` uses fake-artifacts.ts).
 
 const SCRATCH = '/private/tmp/claude-501/-Users-dev/session-notes/scratchpad/release-notes.html'
 const URL = 'https://claude.ai/artifact/Q7qKRZLjujn7avFRs7C3Bv'
@@ -39,21 +39,4 @@ export const PUBLISH_LINES = [
   ]),
   result('tool-page', `File created successfully at: ${SCRATCH}`),
   result('tool-publish', `Published ${SCRATCH} at ${URL} (Version 1, version id 1-9d34).`),
-]
-
-/** `?artifacts`: two pages on amber, the newer one never opened. */
-export const ARTIFACTS = [
-  {
-    at: Date.now() - 30 * 60_000,
-    chatId: 'chat-menus',
-    seenAt: Date.now() - 20 * 60_000,
-    title: 'Menus: before and after Base UI',
-    url: 'https://claude.ai/artifact/Mn8hTq2RvKx4LsYp7DdWc1',
-  },
-  {
-    at: Date.now() - 2 * 60_000,
-    chatId: 'chat-menus',
-    title: 'How the context menu keeps its row',
-    url: 'https://claude.ai/code/artifact/5f0c2a9e-41b7-4c55-9a1e-0d2b7c3e8f61',
-  },
 ]

@@ -997,7 +997,6 @@ export function App() {
                   layout={layout}
                   update={update}
                   artifacts={artifacts}
-                  onMenu={setCtxMenu}
                   panel={
                     ws && {
                       branch: git.branch,

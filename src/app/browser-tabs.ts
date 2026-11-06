@@ -1,16 +1,17 @@
-// The right panel's views: its lists (Changes, Checks) and one browser tab per artifact.
+// The right panel's views: Changes, Checks, and Artifacts (a page, or none yet).
 import type { Artifact } from '../model/catalog'
 
-export type PanelView = 'changes' | 'checks' | { browser: string }
+/** `artifacts` is the Artifacts tab with no page to show; `{ browser }` shows one. */
+export type PanelView = 'changes' | 'checks' | 'artifacts' | { browser: string }
 
 export const isBrowser = (view: PanelView): view is { browser: string } => typeof view === 'object'
 
-/** The workspace's open artifacts, newest first: its browser tabs. */
+/** The workspace's open artifacts, newest first. */
 export function browserTabs(artifacts: readonly Artifact[] | undefined): Artifact[] {
   return (artifacts ?? []).filter((a) => a.closed !== true).toSorted((a, b) => b.at - a.at)
 }
 
-/** The view after closing `closedUrl`: the next tab to the right, else the left, else Changes. */
+/** After closing `closedUrl`: the next artifact (older), else the newer one, else none. */
 export function afterClose(
   view: PanelView,
   tabs: readonly Artifact[],
@@ -19,14 +20,25 @@ export function afterClose(
   if (!isBrowser(view) || view.browser !== closedUrl) return view
   const at = tabs.findIndex((a) => a.url === closedUrl)
   const next = tabs[at + 1] ?? tabs[at - 1]
-  return next ? { browser: next.url } : 'changes'
+  return next ? { browser: next.url } : 'artifacts'
 }
 
-/** What the panel can show of `view`: Checks need a PR, a browser view needs its tab. */
-export function shownView(view: PanelView, hasPr: boolean, tabs: readonly Artifact[]): PanelView {
+/**
+ * What the panel can show of `view`: Checks need a PR; Artifacts shows the page last seen
+ * (`last`) if it is still there, else the newest, else its empty state.
+ */
+export function shownView(
+  view: PanelView,
+  hasPr: boolean,
+  tabs: readonly Artifact[],
+  last: string | null
+): PanelView {
   if (view === 'checks') return hasPr ? 'checks' : 'changes'
-  if (isBrowser(view)) return tabs.some((a) => a.url === view.browser) ? view : 'changes'
-  return view
+  if (view === 'changes') return view
+  const has = (url: string | null) => url !== null && tabs.some((a) => a.url === url)
+  if (isBrowser(view) && has(view.browser)) return view
+  if (last !== null && has(last)) return { browser: last }
+  return tabs[0] ? { browser: tabs[0].url } : 'artifacts'
 }
 
 /** A page's id for its native webview (`browser-<id>`): FNV-1a 64 of its URL, in hex. */

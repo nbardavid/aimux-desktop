@@ -17,7 +17,6 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import type { BranchState, FileChange } from './use-git'
@@ -32,7 +31,6 @@ import {
   type PullRequest,
   uncommittedRefusal,
 } from '../git/pr'
-import { type Artifact, isNew } from '../model/catalog'
 import { isBrowser, type PanelView } from './browser-tabs'
 import { countClass, Empty, type FileActions, FileList } from './file-list'
 import { Dot } from './status-dot'
@@ -59,13 +57,11 @@ export interface GitPanelProps {
   /** No PR yet: hand "open one" to this workspace's chat (the app itself never creates one). */
   onAskPr: () => void
   setup: ReactNode
-  /** The workspace's pages (its artifacts), newest first: tabs after Changes and Checks. */
-  tabs: Artifact[]
+  /** The workspace's artifacts: how many, and whether one waits unread (the tab's dot). */
+  artifacts: { count: number; unread: boolean }
   /** What the panel shows (`shownView`, so always one it can). */
   view: PanelView
   onView: (view: PanelView) => void
-  /** Right-click on a page's tab. */
-  onTabMenu: (url: string, at: { x: number; y: number }) => void
   /** The body while a page is the view: its address bar and the page. */
   browser: ReactNode
 }
@@ -402,11 +398,14 @@ function Head({
 function Tab({
   active,
   count,
+  dot = false,
   label,
   onSelect,
 }: {
   active: boolean
   count: number
+  /** Something new behind it (an unread artifact). */
+  dot?: boolean
   label: string
   onSelect: () => void
 }) {
@@ -423,56 +422,8 @@ function Tab({
     >
       {label}
       {count > 0 && <span className={countClass}>{count}</span>}
+      {dot && <Dot tone="done" label="New" />}
     </button>
-  )
-}
-
-/** A page's tab: its icon and title, the "new" dot until it has been on screen. */
-function PageTab({
-  active,
-  artifact,
-  onMenu,
-  onSelect,
-}: {
-  active: boolean
-  artifact: Artifact
-  onMenu: (at: { x: number; y: number }) => void
-  onSelect: () => void
-}) {
-  const title = artifact.title || 'Artifact'
-  // A portaled tooltip, opening upward: the tab row scrolls (it would clip a CSS one), and
-  // below it lies the page, which hides while anything floats over it.
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            role="tab"
-            aria-selected={active}
-            className={cn(
-              'animate-in fade-in slide-in-from-left-[4px] flex h-7 flex-none items-center gap-1.5 rounded-md px-2 text-sm whitespace-nowrap transition-colors duration-160 ease-out',
-              active
-                ? 'bg-muted text-foreground font-medium'
-                : 'text-faint hover:text-muted-foreground'
-            )}
-            onClick={onSelect}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              onMenu({ x: e.clientX, y: e.clientY })
-            }}
-          />
-        }
-      >
-        <GlobeIcon className="size-3.5 flex-none" />
-        <span className="max-w-40 truncate">{title}</span>
-        {isNew(artifact) && !active && <Dot tone="done" label="New" />}
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-md">
-        <span className="truncate">{title}</span>
-        <span className="text-white/60 truncate">{artifact.url.replace(/^https:\/\//, '')}</span>
-      </TooltipContent>
-    </Tooltip>
   )
 }
 
@@ -588,7 +539,7 @@ export function GitPanel(props: GitPanelProps) {
         onAskPr={props.onAskPr}
       />
       <div
-        className="flex h-10 flex-none items-center gap-0.5 overflow-x-auto px-2 [&::-webkit-scrollbar]:hidden"
+        className="flex h-10 flex-none items-center gap-0.5 px-2"
         role="tablist"
         aria-label="Git view"
       >
@@ -606,15 +557,13 @@ export function GitPanel(props: GitPanelProps) {
             onSelect={() => setView('checks')}
           />
         )}
-        {props.tabs.map((a) => (
-          <PageTab
-            key={a.url}
-            artifact={a}
-            active={isBrowser(shown) && shown.browser === a.url}
-            onSelect={() => setView({ browser: a.url })}
-            onMenu={(at) => props.onTabMenu(a.url, at)}
-          />
-        ))}
+        <Tab
+          active={shown === 'artifacts' || isBrowser(shown)}
+          label="Artifacts"
+          count={props.artifacts.count}
+          dot={props.artifacts.unread && shown !== 'artifacts' && !isBrowser(shown)}
+          onSelect={() => setView('artifacts')}
+        />
       </div>
       {isBrowser(shown) && props.browser}
       <div
@@ -633,6 +582,9 @@ export function GitPanel(props: GitPanelProps) {
           </div>
         )}
         {shown === 'checks' && pr && <Checks pr={pr} />}
+        {shown === 'artifacts' && (
+          <Empty icon={GlobeIcon} text="Artifacts Claude publishes in this workspace show here." />
+        )}
       </div>
       {!isBrowser(shown) && setup}
     </aside>
