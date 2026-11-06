@@ -17,6 +17,7 @@ import {
   replayTranscript,
   resolvePermission,
   sendTurn,
+  STOP,
   userLine,
 } from '../chat/model'
 import { HOST_BLOCKED, type HostChat } from './use-host'
@@ -269,6 +270,7 @@ export function useChats(hooks: Hooks) {
 
   const send = useCallback(
     (id: string, text: string, images: readonly Image[] = []) => {
+      const uuid = crypto.randomUUID()
       edit(id, (c) => {
         // The first real prompt names the tab; a command or an image alone does not.
         const names = c.record.title === 'New chat' && text !== '' && parseCommand(text) === null
@@ -277,21 +279,26 @@ export function useChats(hooks: Hooks) {
           activeAt: Date.now(),
           ...(names && { title: titleOf(text) }),
         }
-        const state = sendTurn(c.state, text, crypto.randomUUID(), images)
+        const state = sendTurn(c.state, text, uuid, images)
         // A prompt that starts a turn starts its clock; a queued one waits for its own.
         const started = c.state.status === 'working' ? {} : { startedAt: Date.now() }
         return { ...c, record, state: { ...state, ...started } }
       })
       // Claude Code fills in its own session id; an empty one is accepted.
-      void write(id, userLine(text, null, images))
+      void write(id, userLine(text, null, uuid, images))
     },
     [edit, write]
   )
 
   const answer = useCallback(
-    (id: string, permission: Permission, choice: 'allow' | 'always' | 'deny') => {
+    (
+      id: string,
+      permission: Permission,
+      choice: 'allow' | 'always' | 'deny',
+      answers?: Record<string, string>
+    ) => {
       edit(id, (c) => ({ ...c, state: resolvePermission(c.state, permission.requestId) }))
-      void write(id, permissionLine(permission, choice))
+      void write(id, permissionLine(permission, choice, answers))
     },
     [edit, write]
   )
@@ -302,7 +309,7 @@ export function useChats(hooks: Hooks) {
       edit(id, (c) =>
         c.state.status === 'working' ? { ...c, state: { ...c.state, stopping: true } } : c
       )
-      void write(id, interruptLine(`stop-${crypto.randomUUID()}`))
+      void write(id, interruptLine(`${STOP}${crypto.randomUUID()}`))
     },
     [edit, write]
   )

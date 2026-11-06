@@ -418,32 +418,40 @@ function UserTurn({ turn }: { turn: Turn }) {
 }
 
 /**
- * A prompt sent while Claude works on the one before: one line at the top of the composer,
- * until that turn ends and it moves into the transcript. It is already written to Claude,
- * so it cannot be taken back.
+ * Prompts sent while Claude works: one line at the top of the composer until Claude takes
+ * them. The text ones wait as one line, as Claude takes them together; a slash command
+ * waits alone. They are already written to Claude, so they cannot be taken back.
  */
-export function QueuedTurn({ turn }: { turn: Turn }) {
-  const text = turn.blocks.some((b) => b.kind === 'text' || b.kind === 'command')
-  const images = imagesIn(turn).length
-  return (
-    <div
-      className="text-muted-foreground animate-in fade-in slide-in-from-bottom-[4px] flex h-[30px] items-center gap-2 border-b px-3 text-sm duration-160 ease-out"
-      aria-label="Queued prompt"
-      data-tip={promptText(turn)}
-      data-tip-side="top"
-    >
-      <span className="bg-bubble text-faint flex-none rounded-sm px-1.5 text-2xs leading-[18px]">
-        Queued
-      </span>
-      {text && images > 0 && (
-        <span className="text-faint flex flex-none items-center gap-1 text-xs">
-          <FileImageIcon className="size-3.5" />
-          {images}
+export function QueuedPrompts({ turns }: { turns: Turn[] }) {
+  const command = (t: Turn) => t.blocks[0]?.kind === 'command'
+  const texts = turns.filter((t) => !command(t))
+  const groups = [texts, ...turns.filter(command).map((t) => [t])].filter((g) => g.length > 0)
+  return groups.map((group) => {
+    const images = group.reduce((n, t) => n + imagesIn(t).length, 0)
+    const words = group
+      .filter((t) => t.blocks.some((b) => b.kind === 'text' || b.kind === 'command'))
+      .map(promptText)
+    return (
+      <div
+        key={group[0]?.id}
+        className="text-muted-foreground animate-in fade-in slide-in-from-bottom-[4px] flex h-[30px] items-center gap-2 border-b px-3 text-sm duration-160 ease-out"
+        aria-label={group.length > 1 ? `${group.length} queued prompts` : 'Queued prompt'}
+        data-tip={group.length > 1 ? `Sent as one:\n${words.join('\n')}` : words.join('\n')}
+        data-tip-side="top"
+      >
+        <span className="bg-bubble text-faint flex-none rounded-sm px-1.5 text-2xs leading-[18px]">
+          {group.length > 1 ? `${group.length} queued` : 'Queued'}
         </span>
-      )}
-      <span className="truncate">{promptText(turn)}</span>
-    </div>
-  )
+        {images > 0 && (
+          <span className="text-faint flex flex-none items-center gap-1 text-xs">
+            <FileImageIcon className="size-3.5" />
+            {images}
+          </span>
+        )}
+        <span className="truncate">{words.join(' · ')}</span>
+      </div>
+    )
+  })
 }
 
 const CHIP =

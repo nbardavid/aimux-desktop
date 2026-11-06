@@ -416,8 +416,7 @@ export function App() {
   const newChat = (w: Workspace, prompt?: string, images: readonly Image[] = []) => {
     const id = chats.create(w.id, w.path, chatFlags(selection))
     selectTab(w.id, id)
-    if ((prompt !== undefined && prompt !== '') || images.length > 0)
-      chats.send(id, prompt ?? '', images)
+    if ((prompt ?? '') !== '' || images.length > 0) chats.send(id, prompt ?? '', images)
     return id
   }
 
@@ -927,7 +926,9 @@ export function App() {
                       commands={availableCommands(chat.state.commands, appWideCommands)}
                       onSend={(text, images) => chats.send(chat.record.id, text, images)}
                       onCommand={(name, args) => runCommand(chat, name, args)}
-                      onAnswer={(p, choice) => chats.answer(chat.record.id, p, choice)}
+                      onAnswer={(p, choice, answers) =>
+                        chats.answer(chat.record.id, p, choice, answers)
+                      }
                       onInterrupt={() => chats.interrupt(chat.record.id)}
                       onOpenFile={openChangedFile}
                       place={ws?.name}

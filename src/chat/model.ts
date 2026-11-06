@@ -71,14 +71,22 @@ export interface ChatState {
   sessionId: string | null
   model: string | null
   status: 'starting' | 'idle' | 'working' | 'exited'
-  /** Esc was pressed: the turn is being stopped, until its result arrives. */
+  /**
+   * Esc was pressed: the turn is being stopped, until its result arrives; or, when Claude
+   * was running nothing, until it acknowledges the stop.
+   */
   stopping: boolean
   turns: Turn[]
   /**
    * Prompts sent while Claude works: already written to it, shown above the composer until
-   * the turn before them ends (one per `result`), so answers stay under their prompt.
+   * Claude starts them (`command_lifecycle`). It takes every waiting prompt at once, at its
+   * next tool call or next turn, so they join into one prompt; a slash command runs alone.
    */
   queued: Turn[]
+  /** This Claude reports the prompts it starts (`command_lifecycle`; older ones do not). */
+  tracks: boolean
+  /** A prompt was started and its turn's result is not out yet. */
+  running: boolean
   pending: Permission[]
   errors: string[]
   /** The commands this chat's Claude offers, from its `initialize` answer. */
@@ -96,10 +104,12 @@ export const initialChat: ChatState = {
   model: null,
   pending: [],
   queued: [],
+  running: false,
   sessionId: null,
   startedAt: null,
   status: 'starting',
   stopping: false,
+  tracks: false,
   turns: [],
 }
 
@@ -288,8 +298,17 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       return state
     }
     case 'control_response': {
+      const response = obj(m.response)
+      // A stop Claude acknowledged with nothing running: no result will end it, this does.
+      // What was still queued is never answered: it reads as the last prompts.
+      if (str(response.request_id).startsWith(STOP) && state.stopping && state.tracks) {
+        if (state.running) return state
+        let turns = state.turns
+        for (const turn of state.queued) turns = joinPrompt(turns, turn)
+        return { ...state, pending: [], queued: [], status: 'idle', stopping: false, turns }
+      }
       // The answer to `initialize`: Claude is ready before its first turn says so.
-      const answer = obj(obj(m.response).response)
+      const answer = obj(response.response)
       const next = Array.isArray(answer.commands)
         ? { ...state, commands: parseCommands(answer.commands) }
         : state
@@ -300,6 +319,11 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
     }
     case 'assistant': {
       return onAssistant(state, obj(m.message))
+    }
+    case 'command_lifecycle': {
+      const tracked = { ...state, tracks: true }
+      if (m.state !== 'started') return tracked
+      return takePrompt({ ...tracked, running: true }, str(m.command_uuid))
     }
     case 'user': {
       return onUser(state, obj(m.message))
@@ -329,14 +353,34 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       const failed = !state.stopping && (m.subtype !== 'success' || m.is_error === true)
       const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : state.errors
       const ended = withEnd(stopTools(state), state.turns.length, end)
-      const [next, ...queued] = state.queued
-      // The next queued prompt is Claude's next turn: it moves into the transcript.
-      if (next) {
-        const turns = [...ended.turns, next]
-        const rest = { pending: [], queued, startedAt: now, status: 'working', stopping: false }
-        return { ...ended, ...rest, errors, turns } as ChatState
+      if (!state.tracks && state.queued.length > 0) {
+        // A Claude that never says when it takes them: its next turn, all together.
+        let turns = ended.turns
+        for (const turn of state.queued) turns = joinPrompt(turns, turn)
+        return {
+          ...ended,
+          errors,
+          pending: [],
+          queued: [],
+          running: false,
+          startedAt: now,
+          status: 'working',
+          stopping: false,
+          turns,
+        }
       }
-      return { ...ended, errors, pending: [], startedAt: null, status: 'idle', stopping: false }
+      // What is still queued is Claude's next turn: its start moves it into the transcript.
+      // Its clock starts now.
+      const next = state.queued.length > 0
+      return {
+        ...ended,
+        errors,
+        pending: [],
+        running: false,
+        startedAt: next ? now : null,
+        status: next ? 'working' : 'idle',
+        stopping: false,
+      }
     }
     case 'aimux_stderr': {
       return { ...state, errors: [...state.errors, str(m.text)].slice(-20) }
@@ -344,8 +388,16 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
     case 'aimux_exit': {
       // What was queued was never answered: it reads as the last prompts.
       const turns = [...state.turns, ...state.queued]
-      const gone = { pending: [], queued: [], startedAt: null, status: 'exited', stopping: false }
-      return { ...state, ...gone, turns } as ChatState
+      return {
+        ...state,
+        pending: [],
+        queued: [],
+        running: false,
+        startedAt: null,
+        status: 'exited',
+        stopping: false,
+        turns,
+      }
     }
     case 'aimux_sent': {
       // What a window wrote to Claude, replayed to the next window: its prompts and answers.
@@ -516,6 +568,28 @@ export function addUserTurn(
   }
 }
 
+const isText = (t: Turn) => t.blocks.every((b) => b.kind === 'text')
+const textOf = (t: Turn) => t.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
+
+/**
+ * Prompts Claude took together read as one: a text prompt joins the prompt just before it
+ * when nothing answered that one yet. A command stays on its own, as Claude runs it.
+ */
+export function joinPrompt(turns: Turn[], turn: Turn): Turn[] {
+  const last = turns.at(-1)
+  if (last?.role !== 'user' || last.end || !isText(last) || !isText(turn)) return [...turns, turn]
+  const text = `${textOf(last)}\n\n${textOf(turn)}`
+  return [...turns.slice(0, -1), { ...last, blocks: [{ kind: 'text', text }] }]
+}
+
+/** Claude started a queued prompt (`command_lifecycle`, by uuid): it joins the transcript. */
+function takePrompt(state: ChatState, uuid: string): ChatState {
+  const turn = state.queued.find((t) => t.id === uuid)
+  if (!turn) return state
+  const queued = state.queued.filter((t) => t !== turn)
+  return { ...state, queued, status: 'working', turns: joinPrompt(state.turns, turn) }
+}
+
 /** A prompt sent: in the transcript, or queued while Claude works on the one before. */
 export function sendTurn(
   state: ChatState,
@@ -560,6 +634,9 @@ export const initializeLine = (requestId: string) =>
     type: 'control_request',
   })
 
+/** The request ids of stops, so their acknowledgement is told from other answers. */
+export const STOP = 'stop-'
+
 export const interruptLine = (requestId: string) =>
   JSON.stringify({
     request: { subtype: 'interrupt' },
@@ -567,7 +644,13 @@ export const interruptLine = (requestId: string) =>
     type: 'control_request',
   })
 
-export const userLine = (text: string, sessionId: string | null, images: readonly Image[] = []) =>
+/** `uuid` comes back on Claude's `command_lifecycle` events as it queues and starts it. */
+export const userLine = (
+  text: string,
+  sessionId: string | null,
+  uuid?: string,
+  images: readonly Image[] = []
+) =>
   JSON.stringify({
     message: {
       content: [
@@ -582,15 +665,47 @@ export const userLine = (text: string, sessionId: string | null, images: readonl
     parent_tool_use_id: null,
     session_id: sessionId ?? '',
     type: 'user',
+    ...(uuid !== undefined && { uuid }),
   })
 
-export function permissionLine(p: Permission, answer: 'allow' | 'always' | 'deny') {
+/** One of AskUserQuestion's questions: Claude waits on the user's pick. */
+export interface Question {
+  question: string
+  header: string
+  options: { label: string; description: string }[]
+  multiSelect: boolean
+}
+
+/** The questions a permission asks, when it is AskUserQuestion's; null for any other tool. */
+export function questionsOf(p: Permission): Question[] | null {
+  if (p.toolName !== 'AskUserQuestion' || !Array.isArray(p.input.questions)) return null
+  return p.input.questions.map((raw) => {
+    const q = obj(raw)
+    const options = Array.isArray(q.options) ? q.options.map(obj) : []
+    return {
+      header: str(q.header),
+      multiSelect: q.multiSelect === true,
+      options: options.map((o) => ({ description: str(o.description), label: str(o.label) })),
+      question: str(q.question),
+    }
+  })
+}
+
+/**
+ * The answer to a permission. AskUserQuestion's picks go back in its input, as `answers`
+ * keyed by question text (several labels joined by ", "): Claude reads them from there.
+ */
+export function permissionLine(
+  p: Permission,
+  answer: 'allow' | 'always' | 'deny',
+  answers?: Record<string, string>
+) {
   const response =
     answer === 'deny'
       ? { behavior: 'deny', message: 'The user declined this action.' }
       : {
           behavior: 'allow',
-          updatedInput: p.input,
+          updatedInput: answers ? { ...p.input, answers } : p.input,
           ...(answer === 'always' ? { updatedPermissions: p.suggestions } : {}),
         }
   return JSON.stringify({
@@ -605,6 +720,7 @@ const rel = (path: string, cwd: string) =>
 
 export function toolSummary(name: string, input: Record<string, unknown>, cwd: string): string {
   const pick = {
+    AskUserQuestion: Array.isArray(input.questions) ? str(obj(input.questions[0]).question) : '',
     Bash: str(input.command),
     Edit: rel(str(input.file_path), cwd),
     Glob: str(input.pattern),
