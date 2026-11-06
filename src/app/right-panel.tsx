@@ -5,7 +5,7 @@ import type { useArtifacts } from './use-artifacts'
 
 import { isNew } from '../model/catalog'
 import { isBrowser, pageCap, withPageTitles } from './browser-tabs'
-import { BrowserView, nativePages, PageStandIn } from './browser-view'
+import { BrowserView, nativePages, PageStandIn, PausedPage } from './browser-view'
 import { GitPanel, type GitPanelProps, spinner } from './git-panel'
 import { Slide, Splitter } from './splitter'
 import { browserShown, useBrowser, useCovered, usePageTitles } from './use-browser'
@@ -65,6 +65,7 @@ export function RightPanel({
   let cover = null
   if (!nativePages && page) cover = <PageStandIn artifact={page} />
   else if (!loaded) cover = <div className="grid h-full place-items-center">{spinner}</div>
+  else if (page) cover = <PausedPage artifact={page} />
   return (
     <Slide
       open={open}

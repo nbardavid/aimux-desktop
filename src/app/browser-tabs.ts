@@ -70,3 +70,14 @@ const CHAT_MIN = 421
 export function pageCap(windowWidth: number, side: number): number {
   return Math.max(0, windowWidth - side - CHAT_MIN)
 }
+
+/** The artifacts whose title (or "Artifact" when it has none) or chat contains `query`. */
+export function matchArtifacts(
+  list: readonly Artifact[],
+  query: string,
+  chatOf: (a: Artifact) => string
+): Artifact[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return [...list]
+  return list.filter((a) => `${a.title || 'Artifact'} ${chatOf(a)}`.toLowerCase().includes(q))
+}

@@ -1,16 +1,15 @@
-import type { ReactNode, Ref } from 'react'
-
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { ArrowLeftIcon, ArrowUpRightIcon, RotateCwIcon, XIcon } from 'lucide-react'
+import { ArrowLeftIcon, ArrowUpRightIcon, ChevronDownIcon, RotateCwIcon, XIcon } from 'lucide-react'
+import { type ReactNode, type Ref, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
-import { type Artifact, isNew } from '../model/catalog'
+import type { Artifact } from '../model/catalog'
+
+import { ArtifactList } from './artifact-list'
 import { browserId } from './browser-tabs'
-import { Combo } from './combo'
-import { ageLabel } from './sidebar'
-import { Dot } from './status-dot'
 
 /** Outside Tauri (the browser preview) there is no native page: the placeholder says what it would show. */
 export const nativePages = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -30,7 +29,7 @@ export function BrowserView({
   placeholder,
 }: {
   artifact: Artifact
-  /** Every artifact of the workspace, newest first: the title's menu. */
+  /** Every artifact of the workspace, newest first: the list the title opens. */
   list: Artifact[]
   /** The chat an artifact came from ('' when unknown). */
   chatOf: (a: Artifact) => string
@@ -40,13 +39,10 @@ export function BrowserView({
   placeholder: Ref<HTMLDivElement>
 }) {
   const id = browserId(artifact.url)
-  const now = Date.now()
-  const options = list.map((a) => ({
-    hint: [chatOf(a), ageLabel(a.at, now)].filter((part) => part !== '').join(' · '),
-    label: a.title || 'Artifact',
-    mark: isNew(a) && a.url !== artifact.url ? <Dot tone="done" label="New" /> : undefined,
-    value: a.url,
-  }))
+  // Choosing another artifact: the list takes the page's place (the page hides as its
+  // placeholder goes), then the chosen page comes back.
+  const [picking, setPicking] = useState(false)
+  useEffect(() => setPicking(false), [artifact.url])
   const tool = (label: string, icon: ReactNode, run: () => void) => (
     <Button
       variant="ghost"
@@ -69,26 +65,60 @@ export function BrowserView({
           void invoke('browser_reload', { id }).catch(() => {})
         })}
         <div className="min-w-0 flex-1">
-          <Combo
-            className="hover:bg-hover flex h-7 max-w-full min-w-0 items-center gap-1 px-2 text-sm"
-            button={
-              <span className="min-w-0 truncate font-medium">{artifact.title || 'Artifact'}</span>
-            }
-            options={options}
-            selected={artifact.url}
-            placeholder="Find an artifact"
-            popupClassName="w-80"
-            onPick={onPick}
-          />
+          <button
+            type="button"
+            aria-expanded={picking}
+            aria-label={`${artifact.title || 'Artifact'}: choose another artifact`}
+            className="hover:bg-foreground/6 aria-expanded:bg-foreground/6 flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-lg pr-2 pl-2.5 text-sm transition-colors duration-120"
+            onClick={() => setPicking((p) => !p)}
+          >
+            <span className="min-w-0 truncate font-medium">{artifact.title || 'Artifact'}</span>
+            <ChevronDownIcon
+              className={cn(
+                'text-label size-3.5 flex-none transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+                picking && 'rotate-180'
+              )}
+            />
+          </button>
         </div>
         {tool('Open in browser', <ArrowUpRightIcon className="size-4" />, () => {
           void openUrl(artifact.url).catch(() => {})
         })}
         {tool('Close this artifact', <XIcon className="size-4" />, () => onClose(artifact.url))}
       </div>
-      <div ref={placeholder} className="bg-chrome relative min-h-0 flex-1">
-        {cover}
-      </div>
+      {picking ? (
+        <ArtifactList
+          list={list}
+          current={artifact.url}
+          chatOf={chatOf}
+          onCancel={() => setPicking(false)}
+          onPick={(url) => {
+            setPicking(false)
+            onPick(url)
+          }}
+        />
+      ) : (
+        <div ref={placeholder} className="bg-chrome relative min-h-0 flex-1">
+          {cover}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Under the page, seen only while it steps aside (a menu, ⌘P or a dialog over it, the panel
+ * moving): its title and address, quiet, so the pause reads as one.
+ */
+export function PausedPage({ artifact }: { artifact: Artifact }) {
+  return (
+    <div className="animate-in fade-in flex h-full flex-col items-center justify-center gap-1 px-6 text-center duration-160">
+      <span className="text-muted-foreground max-w-full truncate text-sm font-medium">
+        {artifact.title || 'Artifact'}
+      </span>
+      <span className="text-label max-w-full truncate text-xs">
+        {artifact.url.replace(/^https:\/\//, '')}
+      </span>
     </div>
   )
 }

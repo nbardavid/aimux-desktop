@@ -6,6 +6,7 @@ import {
   afterClose,
   browserId,
   browserTabs,
+  matchArtifacts,
   pageCap,
   republished,
   shownView,
@@ -85,4 +86,17 @@ test('a page never leaves the chat less than 420px', () => {
   expect(pageCap(1000, 221)).toBe(358)
   expect(pageCap(1440, 0)).toBe(1019)
   expect(pageCap(600, 300)).toBe(0)
+})
+
+test('the artifact list filters by title or chat, any case, keeping the order', () => {
+  const list = [
+    { ...art('a', 3), chatId: 'c1', title: 'Worktrees: one per workspace' },
+    { ...art('b', 2), chatId: 'c2', title: 'Quota windows' },
+    { ...art('c', 1), chatId: 'c1', title: '' },
+  ]
+  const chatOf = (a: Artifact) => (a.chatId === 'c1' ? 'Port the menus' : 'Release notes')
+  expect(matchArtifacts(list, '', chatOf).map((a) => a.url)).toEqual(['a', 'b', 'c'])
+  expect(matchArtifacts(list, 'QUOTA', chatOf).map((a) => a.url)).toEqual(['b'])
+  expect(matchArtifacts(list, 'menus', chatOf).map((a) => a.url)).toEqual(['a', 'c'])
+  expect(matchArtifacts(list, ' artifact ', chatOf).map((a) => a.url)).toEqual(['c'])
 })
