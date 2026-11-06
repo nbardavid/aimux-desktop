@@ -418,9 +418,11 @@ function handle(cmd: string, args: Args): unknown {
     case 'read_settings':
       return SETTINGS
     case 'update_check':
-      return flags.has('update') ? '0.2.0' : null
+      return flags.has('update') ? '0.3.0' : null
     case 'plugin:window|is_focused':
       return true
+    case 'plugin:app|version':
+      return '0.2.2'
     // Fire-and-forget writes: nothing to show for them.
     case 'project_open':
     case 'term_resize':

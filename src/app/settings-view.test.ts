@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 
-import { resetShown, restartWarning } from './settings-view'
+import type { Update } from './update-button'
+
+import { resetShown, restartWarning, updateStatus } from './settings-view'
 
 test('the restart confirm says what it pauses and closes', () => {
   expect(restartWarning(1, 1)).toBe('Click again: pauses 1 working chat, closes 1 terminal')
@@ -14,4 +16,32 @@ test('Reset shows while a value differs from its default, on hover when stored a
   expect(resetShown(false, true, false)).toBe('always')
   expect(resetShown(true, true, true)).toBe('hover')
   expect(resetShown('.env, .npmrc', '.env', '.env, .npmrc')).toBe('always')
+})
+
+const idle: Update = {
+  check: () => {},
+  checkedAt: null,
+  checkError: null,
+  checking: false,
+  error: null,
+  install: () => {},
+  installing: false,
+  version: null,
+}
+
+test('About says where the update stands, an offer before a failed check', () => {
+  expect(updateStatus(idle, true).text).toBe('This dev build never updates itself.')
+  expect(updateStatus({ ...idle, checking: true }, false).text).toBe('Checking for updates…')
+  expect(updateStatus({ ...idle, checkedAt: 1 }, false).text).toBe('Up to date.')
+  expect(updateStatus({ ...idle, checkError: 'offline' }, false)).toEqual({
+    failed: true,
+    text: 'offline',
+  })
+  const offer = updateStatus({ ...idle, checkError: 'offline', version: '0.3.0' }, false)
+  expect(offer.failed).toBe(false)
+  expect(offer.text).toStartWith('0.3.0 is out.')
+  expect(updateStatus({ ...idle, error: 'bad signature', version: '0.3.0' }, false)).toEqual({
+    failed: true,
+    text: 'bad signature',
+  })
 })
