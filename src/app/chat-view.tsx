@@ -18,10 +18,12 @@ import { cn } from '@/lib/utils'
 
 import { isAppCommand, parseCommand, rankCommands } from '../chat/commands'
 import {
+  agentRun,
   type ChatState,
   type Image,
   type Permission,
   questionsOf,
+  runningAgents,
   type SlashCommand,
   toolSummary,
 } from '../chat/model'
@@ -33,6 +35,7 @@ import {
   type ModelInfo,
 } from '../model/agents'
 import { ModelSelect } from './agent-select'
+import { AgentBar, RunningAgents } from './agents'
 import { CommandHint, CommandMenu } from './command-menu'
 import { ImageStrip } from './image-strip'
 import { overlayShown } from './overlay'
@@ -192,6 +195,26 @@ export function ChatView({
   const latestOpen = useRef(onOpenFile)
   latestOpen.current = onOpenFile
   const openFile = useCallback((path: string | null) => latestOpen.current?.(path), [])
+  // A sub-agent's chat open in place of the conversation (its call's id), per chat.
+  const [viewing, setViewing] = useState<{ chat: string; agent: string } | null>(null)
+  const run = viewing?.chat === id ? agentRun(state, viewing.agent) : null
+  const openAgent = useCallback((agent: string) => setViewing({ agent, chat: id }), [id])
+  const back = useCallback(() => {
+    setViewing(null)
+    field.current?.focus()
+  }, [])
+  const inAgent = run !== null
+  useEffect(() => {
+    if (!inAgent) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      back()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [inAgent, back])
   const working = state.status === 'working' || state.status === 'starting'
   const permission = state.pending[0]
   const questions = permission ? questionsOf(permission) : null
@@ -356,19 +379,31 @@ export function ChatView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={root}>
-      <Transcript
-        cwd={cwd}
-        place={place}
-        state={state}
-        blocked={blocked}
-        intro={intro}
-        onOpenFile={openFile}
-      />
+      {run ? (
+        <>
+          <AgentBar run={run} place={place ?? 'Chat'} onBack={back} />
+          <Transcript key={run.call.id} cwd={cwd} state={run.chat} blocked={false} watch />
+          <div className="text-label mx-auto w-full max-w-[752px] flex-none border-t border-dashed px-4 py-3 text-center text-xs">
+            Read only: a sub-agent takes no messages
+          </div>
+        </>
+      ) : (
+        <Transcript
+          cwd={cwd}
+          place={place}
+          state={state}
+          blocked={blocked}
+          intro={intro}
+          onOpenAgent={openAgent}
+          onOpenFile={openFile}
+        />
+      )}
       {/* Toasts float at the pane's right, above the question and the composer. */}
-      <div className="relative flex-none">
+      <div className={cn('relative flex-none', run && 'hidden')}>
         {above}
         {/* The column's 720px and 16px either side: 752px of composer. */}
         <div className="relative mx-auto flex w-full max-w-[784px] flex-col gap-2 px-4 pb-4">
+          <RunningAgents runs={runningAgents(state)} onOpen={openAgent} />
           {permission !== undefined && questions !== null && (
             <QuestionCard
               key={permission.requestId}

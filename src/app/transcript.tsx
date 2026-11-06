@@ -17,6 +17,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 import {
+  agentRun,
+  type AgentRun,
   type Block,
   type ChangedFile,
   changedFiles,
@@ -26,6 +28,7 @@ import {
   exitCode,
   formatDuration,
   groupSummary,
+  isAgentCall,
   type Item,
   type Keyed,
   liveStep,
@@ -34,6 +37,7 @@ import {
   type Turn,
   type TurnEnd,
 } from '../chat/model'
+import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
@@ -534,12 +538,16 @@ function TurnFooter({
 }
 
 function ExchangeView({
+  agentOf,
   cwd,
   exchange,
+  onOpenAgent,
   onOpenFile,
 }: {
   exchange: Exchange
   cwd: string
+  agentOf: (id: string) => AgentRun | null
+  onOpenAgent?: (id: string) => void
   onOpenFile?: (path: string | null) => void
 }) {
   const { answer, blocks, end, items, live, user } = exchange
@@ -549,8 +557,15 @@ function ExchangeView({
   const lastBlock = blocks.at(-1)
   const worked = items.some((i) => i.kind === 'group' || i.block.kind === 'text')
   const footer = !live && end !== null && (items.length > 0 || end.stopped)
-  const item = (it: Item) =>
-    it.kind === 'group' ? (
+  const item = (it: Item) => {
+    const run = it.kind === 'block' && isAgentCall(it.block) ? agentOf(it.block.id) : null
+    if (run && onOpenAgent)
+      return (
+        <div key={it.key} className={ENTER}>
+          <AgentCard run={run} cwd={cwd} onOpen={onOpenAgent} />
+        </div>
+      )
+    return it.kind === 'group' ? (
       <div key={it.key} className={ENTER}>
         <ToolGroup blocks={it.blocks} cwd={cwd} shown={it.shown} />
       </div>
@@ -559,6 +574,7 @@ function ExchangeView({
         <BlockView block={it.block} live={live && it.block === lastBlock} collapsed={collapsed} />
       </div>
     )
+  }
   return (
     <>
       {user && <UserTurn turn={user} />}
@@ -596,11 +612,11 @@ const SHIMMER =
   'animate-[shimmer_2.2s_linear_infinite] bg-[linear-gradient(90deg,var(--faint)_0%,var(--faint)_40%,var(--foreground)_50%,var(--faint)_60%,var(--faint)_100%)] bg-[length:300%_100%] bg-clip-text text-transparent'
 
 /** Under the last exchange while Claude works: what it does now, for how long, how to stop. */
-function LiveLine({ cwd, state }: { cwd: string; state: ChatState }) {
+function LiveLine({ cwd, state, watch }: { cwd: string; state: ChatState; watch: boolean }) {
   const { target, verb } = liveStep(state, cwd)
   const elapsed = useElapsed(state.startedAt)
   const loaders = useLoaderChoice()
-  const stoppable = state.status === 'working' && !state.stopping
+  const stoppable = !watch && state.status === 'working' && !state.stopping
   return (
     <div className="flex h-7 min-w-0 items-center gap-2.5 text-base">
       <BrailleSpinner
@@ -637,6 +653,10 @@ interface Props {
   place?: string
   /** A footer's file chip: git mode on that file (relative path), or on all (`null`). */
   onOpenFile?: (path: string | null) => void
+  /** A sub-agent's chat, watched: nothing here can be stopped. */
+  watch?: boolean
+  /** A sub-agent's card: its own chat. Without it, agent calls show as plain tool rows. */
+  onOpenAgent?: (id: string) => void
 }
 
 /**
@@ -686,9 +706,11 @@ export const Transcript = memo(function Transcript({
   blocked,
   cwd,
   intro,
+  onOpenAgent,
   onOpenFile,
   place,
   state,
+  watch = false,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
@@ -771,12 +793,14 @@ export const Transcript = memo(function Transcript({
                 key={exchange.key}
                 exchange={exchange}
                 cwd={cwd}
+                agentOf={(id) => agentRun(state, id)}
+                onOpenAgent={onOpenAgent}
                 onOpenFile={onOpenFile}
               />
             )
           )}
           {((working && !streamingText && permission === undefined) || state.stopping) && (
-            <LiveLine cwd={cwd} state={state} />
+            <LiveLine cwd={cwd} state={state} watch={watch} />
           )}
           {state.errors.length > 0 && (
             <div className="bg-critical-wash text-critical-ink rounded-lg px-3 py-2.5 text-sm leading-5 whitespace-pre-wrap">

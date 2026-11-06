@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   addNote,
   addUserTurn,
+  agentRun,
   type Block,
   changedFiles,
   type ChatState,
@@ -14,6 +15,7 @@ import {
   liveStep,
   reduceLine,
   replayTranscript,
+  runningAgents,
   sendTurn,
   type Turn,
 } from './model'
@@ -61,6 +63,40 @@ describe('the collapse rule', () => {
       false
     )
     expect(shape(ex?.items ?? [])).toEqual(['text', 'G2'])
+  })
+
+  test('an agent call stands apart as its own card, finished or live', () => {
+    const turns = [user('u'), said('a', [tool('Read'), tool('Agent'), tool('Grep'), text('Ok')])]
+    expect(shape(exchanges(turns, false)[0]?.items ?? [])).toEqual(['G1', 'tool', 'G1', 'text'])
+    const running: Block = { id: 'r', input: {}, json: '', kind: 'tool', name: 'Task' }
+    const live = [user('u'), said('a', [tool('Read'), running], false)]
+    expect(shape(exchanges(live, true)[0]?.items ?? [])).toEqual(['G1', 'tool'])
+  })
+
+  test("an agent's run: its prompt first, then its work; running until its call has a result", () => {
+    const call: Block = {
+      id: 'c1',
+      input: { description: 'Find auth', prompt: 'Look for auth', subagent_type: 'Explore' },
+      json: '',
+      kind: 'tool',
+      name: 'Agent',
+    }
+    const state: ChatState = {
+      ...initialChat,
+      agents: { c1: [said('x', [tool('Read')], false)] },
+      turns: [user('u'), said('a', [call], false)],
+    }
+    const run = agentRun(state, 'c1')
+    expect(run).toMatchObject({ kind: 'Explore', running: true, title: 'Find auth' })
+    expect(run?.chat.turns.map((t) => t.role)).toEqual(['user', 'assistant'])
+    expect(run?.chat.status).toBe('working')
+    expect(runningAgents(state).map((a) => a.call.id)).toEqual(['c1'])
+    const done = {
+      ...state,
+      turns: [user('u'), said('a', [{ ...call, result: { isError: false, text: 'ok' } }])],
+    }
+    expect(runningAgents(done)).toEqual([])
+    expect(agentRun(state, 'nope')).toBeNull()
   })
 
   test('tools only: everything folds into one row', () => {

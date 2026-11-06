@@ -5,7 +5,7 @@ import type { FileChange } from '../app/use-git'
 import type { Catalog } from '../model/catalog'
 
 import { claudeSnapshot, type QuotaCache } from '../model/quota'
-import { PUBLISH_LINES } from './artifacts'
+import { AGENT_RUNNING_LINES, NOTES_WORK } from './agents'
 import INIT from './claude-init.json'
 
 const MIN = 60_000
@@ -308,6 +308,7 @@ const MENUS = [
   assistant('m-menus-3', [{ text: CONTEXT_OUTPUT, type: 'text' }], '<synthetic>'),
   result(0, 120),
   sent('u-menus-3', 'Now run the tests and fix what fails.'),
+  ...AGENT_RUNNING_LINES,
   assistant('m-menus-4', [
     { text: 'Running the unit tests first.', type: 'text' },
     {
@@ -383,8 +384,7 @@ const NOTES = [
   initAnswer('chat-notes'),
   systemInit('session-notes', 'claude-sonnet-5-5'),
   sent('u-notes-1', 'Draft the release notes for 0.2 from the merged PRs.'),
-  // An artifact published on the way: the right panel lists it.
-  ...PUBLISH_LINES,
+  ...NOTES_WORK,
   assistant('m-notes-1', [
     {
       text: '## aimux 0.2\n\n- Slash commands with a `/` menu and command cards\n- `/resume` across the whole project\n- Self-updating releases\n\nWant me to open a PR with these in `CHANGELOG.md`?',

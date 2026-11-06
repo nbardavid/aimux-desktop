@@ -96,9 +96,15 @@ export interface ChatState {
    * did not see it start (a chat reattached mid-turn).
    */
   startedAt: number | null
+  /**
+   * What each sub-agent said and did, by the id of the Agent (or Task) call that started it.
+   * Kept from full messages only: a sub-agent's text arrives whole, never streamed.
+   */
+  agents: Record<string, Turn[]>
 }
 
 export const initialChat: ChatState = {
+  agents: {},
   commands: [],
   errors: [],
   model: null,
@@ -273,6 +279,26 @@ function onUser(state: ChatState, message: Json): ChatState {
   return next
 }
 
+/** A sub-agent's transcript line: one per content block, like the session's, joined back. */
+function replayAgentLine(state: ChatState, parent: string, m: Json): ChatState {
+  if (m.type !== 'assistant') return onAgentLine(state, parent, m)
+  const message = obj(m.message)
+  const content = Array.isArray(message.content) ? message.content : []
+  const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
+  const own: ChatState = { ...initialChat, turns: state.agents[parent] ?? [] }
+  const next = withTurn(own, str(message.id), (t) => ({ ...t, blocks: [...t.blocks, ...blocks] }))
+  return { ...state, agents: { ...state.agents, [parent]: next.turns } }
+}
+
+function onAgentLine(state: ChatState, parent: string, m: Json): ChatState {
+  if (m.type !== 'assistant' && m.type !== 'user') return state
+  const own: ChatState = { ...initialChat, turns: state.agents[parent] ?? [] }
+  const message = obj(m.message)
+  const next = m.type === 'assistant' ? onAssistant(own, message) : onUser(own, message)
+  if (next.turns === own.turns) return state
+  return { ...state, agents: { ...state.agents, [parent]: next.turns } }
+}
+
 /** Folds one line of Claude Code's stdout (or the host's `aimux_*` lines) into the chat. */
 export function reduceLine(state: ChatState, line: string, now = Date.now()): ChatState {
   let m: Json
@@ -281,8 +307,8 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
   } catch {
     return state
   }
-  // A sub-agent's traffic belongs to its Task tool row, not to the conversation.
-  if (m.parent_tool_use_id !== undefined && m.parent_tool_use_id !== null) return state
+  // A sub-agent's traffic goes to its own chat, under the call that started it.
+  if (typeof m.parent_tool_use_id === 'string') return onAgentLine(state, m.parent_tool_use_id, m)
   switch (m.type) {
     case 'system': {
       if (m.subtype === 'init') {
@@ -514,6 +540,10 @@ export function replayTranscript(lines: readonly string[]): ChatState {
     } catch {
       continue
     }
+    if (typeof m.aimuxAgent === 'string') {
+      state = replayAgentLine(state, m.aimuxAgent, m)
+      continue
+    }
     if (m.isSidechain === true || m.isMeta === true) continue
     const message = obj(m.message)
     const uuid = str(m.uuid) || `u${state.turns.length}`
@@ -546,6 +576,10 @@ export function replayTranscript(lines: readonly string[]): ChatState {
   }
   // The process that wrote it is gone: what it left running was stopped.
   state = close(stopTools(state), state.turns.length)
+  const agents = Object.fromEntries(
+    Object.entries(state.agents).map(([id, turns]) => [id, stopTools({ ...state, turns }).turns])
+  )
+  state = { ...state, agents }
   return { ...state, sessionId: null, status: 'starting' }
 }
 
@@ -791,6 +825,53 @@ export interface Exchange {
 const shownBlock = (b: Block) =>
   b.kind !== 'command' && (b.kind !== 'thinking' || b.text.trim() !== '')
 
+/** A call that starts a sub-agent: shown as its own card, never folded into a group. */
+export const isAgentCall = (b: Block): b is Block & { kind: 'tool' } =>
+  b.kind === 'tool' && (b.name === 'Agent' || b.name === 'Task')
+
+/** A sub-agent, as its card and its own chat show it. */
+export interface AgentRun {
+  call: Block & { kind: 'tool' }
+  /** What it was asked to do, in a few words (its call's `description`). */
+  title: string
+  /** Its kind (`subagent_type`), `Agent` when not given. */
+  kind: string
+  running: boolean
+  /** Its own chat: the prompt it was given, then what it did. */
+  chat: ChatState
+}
+
+/** The sub-agent started by call `id`, or null when there is no such call. */
+export function agentRun(state: ChatState, id: string): AgentRun | null {
+  const call = state.turns
+    .flatMap((t) => t.blocks)
+    .find((b): b is Block & { kind: 'tool' } => isAgentCall(b) && b.id === id)
+  if (!call) return null
+  const running = call.result === undefined && call.stopped !== true
+  const prompt: Turn = {
+    blocks: [{ kind: 'text', text: str(call.input.prompt) }],
+    id: `${id}:prompt`,
+    role: 'user',
+  }
+  const turns = [prompt, ...(state.agents[id] ?? [])]
+  return {
+    call,
+    chat: { ...initialChat, startedAt: null, status: running ? 'working' : 'idle', turns },
+    kind: str(call.input.subagent_type) || 'Agent',
+    running,
+    title: str(call.input.description) || 'Sub-agent',
+  }
+}
+
+/** The sub-agents still at work, in the order they started. */
+export function runningAgents(state: ChatState): AgentRun[] {
+  return state.turns
+    .flatMap((t) => t.blocks)
+    .filter(isAgentCall)
+    .map((b) => agentRun(state, b.id))
+    .filter((a): a is AgentRun => a?.running === true)
+}
+
 /** Folds an exchange's blocks: runs of work become groups; `apart` blocks stay out. */
 function fold(blocks: Keyed[], apart: (k: Keyed, i: number) => boolean): Item[] {
   const items: Item[] = []
@@ -801,7 +882,12 @@ function fold(blocks: Keyed[], apart: (k: Keyed, i: number) => boolean): Item[] 
     run = []
   }
   for (const [i, k] of blocks.entries()) {
-    if (apart(k, i) || k.block.kind === 'output' || k.block.kind === 'note') {
+    if (
+      apart(k, i) ||
+      isAgentCall(k.block) ||
+      k.block.kind === 'output' ||
+      k.block.kind === 'note'
+    ) {
       flush()
       items.push({ kind: 'block', ...k })
     } else run.push(k)
@@ -825,7 +911,8 @@ function itemsOf(blocks: Keyed[], live: boolean, asked: ReadonlySet<string>): It
   const newest = blocks[tool]
   const tail = blocks.slice(tool + 1).filter((k) => k.block.kind === 'text')
   const items = fold(blocks.slice(0, Math.max(tool, 0)), () => false)
-  if (newest) {
+  if (newest && isAgentCall(newest.block)) items.push({ kind: 'block', ...newest })
+  else if (newest) {
     // The live line says what it does; a question about it shows it, to answer it.
     const shown = newest.block.kind === 'tool' && asked.has(newest.block.id) ? 1 : 0
     const group = items.at(-1)

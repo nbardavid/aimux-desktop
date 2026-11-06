@@ -28,7 +28,11 @@ function feed(lines: unknown[], from: ChatState = initialChat) {
   return state
 }
 
-const ev = (event: unknown) => ({ event, parent_tool_use_id: null, type: 'stream_event' })
+const ev = (event: unknown, parent: string | null = null) => ({
+  event,
+  parent_tool_use_id: parent,
+  type: 'stream_event',
+})
 
 describe('reduceLine', () => {
   test('init names the session and the model', () => {
@@ -112,15 +116,26 @@ describe('reduceLine', () => {
     expect(s.turns[0]?.blocks).toEqual([{ kind: 'text', text: 'Hi' }])
   })
 
-  test('sub-agent traffic stays out of the conversation', () => {
+  test("a sub-agent's messages go to its own chat, under the call that started it", () => {
     const s = feed([
       {
-        message: { content: [{ text: 'x', type: 'text' }], id: 'm2' },
+        message: {
+          content: [{ id: 'u1', input: { file_path: '/w/a.ts' }, name: 'Read', type: 'tool_use' }],
+          id: 'm2',
+        },
         parent_tool_use_id: 't1',
         type: 'assistant',
       },
+      {
+        message: { content: [{ content: 'ok', tool_use_id: 'u1', type: 'tool_result' }] },
+        parent_tool_use_id: 't1',
+        type: 'user',
+      },
+      ev({ delta: { text: 'x', type: 'text_delta' }, index: 0, type: 'content_block_delta' }, 't1'),
     ])
     expect(s.turns).toEqual([])
+    const read = s.agents.t1?.[0]?.blocks[0]
+    expect(read).toMatchObject({ kind: 'tool', name: 'Read', result: { text: 'ok' } })
   })
 
   test('a permission request waits, the result clears it and ends the turn', () => {
@@ -185,6 +200,22 @@ describe('reduceLine', () => {
     state = reduceLine(state, JSON.stringify({ message: JSON.parse(answer), type: 'aimux_sent' }))
     expect(state.pending).toHaveLength(0)
   })
+})
+
+test("a replayed chat keeps each sub-agent's work, its unfinished tools stopped", () => {
+  const s = replayTranscript([
+    JSON.stringify({
+      aimuxAgent: 't1',
+      isSidechain: true,
+      message: {
+        content: [{ id: 'u1', input: { command: 'ls' }, name: 'Bash', type: 'tool_use' }],
+        id: 'm1',
+      },
+      type: 'assistant',
+    }),
+  ])
+  expect(s.turns).toEqual([])
+  expect(s.agents.t1?.[0]?.blocks[0]).toMatchObject({ name: 'Bash', stopped: true })
 })
 
 describe('permissionLine', () => {
