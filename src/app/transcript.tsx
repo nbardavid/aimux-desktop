@@ -42,6 +42,7 @@ import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
 import { Dot } from './status-dot'
+import { useWindow } from './use-window'
 
 /** Copies on click and shows a check for 1.2s. `text` is read at the click. */
 function CopyButton({
@@ -245,7 +246,13 @@ function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
   )
 }
 
-function ToolRow({ block, cwd }: { block: Block & { kind: 'tool' }; cwd: string }) {
+const ToolRow = memo(function ToolRow({
+  block,
+  cwd,
+}: {
+  block: Block & { kind: 'tool' }
+  cwd: string
+}) {
   let dot = <Dot tone="working" />
   if (block.result) {
     const done = block.result.isError
@@ -254,8 +261,10 @@ function ToolRow({ block, cwd }: { block: Block & { kind: 'tool' }; cwd: string 
     dot = <span className={done} />
   } else if (block.stopped === true)
     dot = <span className={cn(DOT, 'border-faint border-[1.5px]')} />
+  // Its body (a whole file, a long output) is drawn once it is first opened, never before.
+  const [seen, setSeen] = useState(false)
   return (
-    <details>
+    <details onToggle={(e) => e.currentTarget.open && setSeen(true)}>
       <summary className={SUMMARY}>
         {dot}
         <span className="text-foreground flex-none font-medium">{block.name}</span>
@@ -263,10 +272,10 @@ function ToolRow({ block, cwd }: { block: Block & { kind: 'tool' }; cwd: string 
           {toolSummary(block.name, block.input, cwd)}
         </span>
       </summary>
-      <ToolBody block={block} />
+      {seen && <ToolBody block={block} />}
     </details>
   )
-}
+})
 
 function Thought({ text }: { text: string }) {
   return (
@@ -285,7 +294,7 @@ function Thought({ text }: { text: string }) {
 }
 
 /** A block outside any group: Claude's answer (or what it is writing), a card, a note. */
-function BlockView({
+const BlockView = memo(function BlockView({
   block,
   collapsed,
   live,
@@ -306,10 +315,10 @@ function BlockView({
   if (block.kind === 'output') return <OutputCard text={block.text} collapsed={collapsed} />
   if (block.kind === 'note') return <div className="text-faint mt-1 text-xs">{block.text}</div>
   return null
-}
+})
 
 /** A block folded into a group: a tool row, a thought, or an intermediate message. */
-function FoldedBlock({ block, cwd }: { block: Block; cwd: string }) {
+const FoldedBlock = memo(function FoldedBlock({ block, cwd }: { block: Block; cwd: string }) {
   if (block.kind === 'tool') return <ToolRow block={block} cwd={cwd} />
   if (block.kind === 'thinking') return <Thought text={block.text} />
   if (block.kind === 'text') {
@@ -322,7 +331,7 @@ function FoldedBlock({ block, cwd }: { block: Block; cwd: string }) {
     )
   }
   return null
-}
+})
 
 /** Height and fade, 180ms, no jump (DESIGN.md expand/collapse). Closed, it is inert. */
 function Collapse({ children, open }: { open: boolean; children: ReactNode }) {
@@ -342,6 +351,8 @@ function Collapse({ children, open }: { open: boolean; children: ReactNode }) {
 /** One grey row for a run of work; open, the run under it. Its last `shown` rows stay out. */
 function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown: number }) {
   const [open, setOpen] = useState(false)
+  // Its rows are drawn from the first opening on (a long chat folds thousands of them).
+  const [opened, setOpened] = useState(false)
   const { failed, label } = groupSummary(blocks.map((k) => k.block))
   return (
     <div className="flex flex-col">
@@ -349,7 +360,10 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
         type="button"
         className="group/row text-faint hover:text-muted-foreground flex h-7 w-max max-w-full items-center gap-1.5 rounded-md text-base transition-colors duration-120"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setOpened(true)
+          setOpen((o) => !o)
+        }}
       >
         <ChevronRightIcon
           className={cn(
@@ -363,13 +377,18 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
         </span>
       </button>
       <div className="flex flex-col pl-3">
-        {blocks.map((k, i) => (
-          <Collapse key={k.key} open={open || i >= blocks.length - shown}>
-            <div className="py-px">
-              <FoldedBlock block={k.block} cwd={cwd} />
-            </div>
-          </Collapse>
-        ))}
+        {blocks.map((k, i) => {
+          const out = i >= blocks.length - shown
+          return (
+            <Collapse key={k.key} open={open || out}>
+              {(opened || out) && (
+                <div className="py-px">
+                  <FoldedBlock block={k.block} cwd={cwd} />
+                </div>
+              )}
+            </Collapse>
+          )
+        })}
       </div>
     </div>
   )
@@ -746,6 +765,8 @@ export const Transcript = memo(function Transcript({
   const streamingText = last?.role === 'assistant' && last.blocks.at(-1)?.kind === 'text'
   const name = place ?? cwd.split('/').pop() ?? cwd
   const empty = state.turns.length === 0 && !blocked
+  const all = exchanges(state.turns, working, new Set(state.pending.map((p) => p.toolUseId)))
+  const { first, sentinel } = useWindow(scroller, all.length)
 
   const toLatest = () => {
     const el = scroller.current
@@ -787,18 +808,23 @@ export const Transcript = memo(function Transcript({
               <span className="flex-[7_7_0]" />
             </div>
           )}
-          {exchanges(state.turns, working, new Set(state.pending.map((p) => p.toolUseId))).map(
-            (exchange) => (
+          {first > 0 && <div ref={sentinel} className="h-px flex-none" aria-hidden />}
+          {all.slice(first).map((exchange) => (
+            // Off screen, an exchange is neither laid out nor painted: a long chat scrolls
+            // as lightly as a short one. Its last measured height holds its place.
+            <div
+              key={exchange.key}
+              className="flex flex-col gap-6 [contain-intrinsic-size:auto_480px] [content-visibility:auto]"
+            >
               <ExchangeView
-                key={exchange.key}
                 exchange={exchange}
                 cwd={cwd}
                 agentOf={(id) => agentRun(state, id)}
                 onOpenAgent={onOpenAgent}
                 onOpenFile={onOpenFile}
               />
-            )
-          )}
+            </div>
+          ))}
           {((working && !streamingText && permission === undefined) || state.stopping) && (
             <LiveLine cwd={cwd} state={state} watch={watch} />
           )}

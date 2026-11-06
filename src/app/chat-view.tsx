@@ -390,6 +390,8 @@ export function ChatView({
         </>
       ) : (
         <Transcript
+          // Each chat opens on its own last page.
+          key={id}
           cwd={cwd}
           place={place}
           state={state}
