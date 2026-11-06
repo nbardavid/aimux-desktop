@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import type { Workspace } from '../model/catalog'
 import type { SetupStatus } from './use-setup'
 
-import { dotClass } from './status-dot'
+import { Dot } from './status-dot'
 
 interface Props {
   status: SetupStatus | null
@@ -42,7 +42,7 @@ export function SetupSection(props: Props) {
   const run = lastRun(workspace.setup, props.run?.running === true)
   const said = (
     <>
-      <span className={dotClass(run.dot)} />
+      <Dot tone={run.dot} />
       {run.text}
     </>
   )

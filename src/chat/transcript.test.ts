@@ -5,11 +5,13 @@ import {
   addUserTurn,
   type Block,
   changedFiles,
+  type ChatState,
   exchanges,
   formatDuration,
   groupSummary,
   initialChat,
   type Item,
+  liveStep,
   reduceLine,
   replayTranscript,
   sendTurn,
@@ -67,15 +69,15 @@ describe('the collapse rule', () => {
     expect(ex?.answer).toBe('')
   })
 
-  test('live: everything folds but the newest tool and the message after it', () => {
+  test('live: everything folds (the live line names the newest tool) but the message after it', () => {
     const running: Block = { id: 'r', input: {}, json: '', kind: 'tool', name: 'Bash' }
     const turns = [user('u'), said('a', [tool('Read'), text('hm'), running], false)]
     const [ex] = exchanges(turns, true)
     expect(ex?.live).toBe(true)
-    expect(shape(ex?.items ?? [])).toEqual(['G3+1'])
+    expect(shape(ex?.items ?? [])).toEqual(['G3'])
     const writing = [...turns.slice(0, 1), said('a', [tool('Read'), running, text('So')], false)]
     const [now] = exchanges(writing, true)
-    expect(shape(now?.items ?? [])).toEqual(['G2+1', 'text'])
+    expect(shape(now?.items ?? [])).toEqual(['G2', 'text'])
     // The group keeps its key once finished, so its open state stays.
     const ran: Block = { ...running, result: { isError: false, text: '' } }
     const [done] = exchanges([user('u'), said('a', [tool('Read'), ran, text('So')], false)], false)
@@ -83,7 +85,7 @@ describe('the collapse rule', () => {
     expect(shape(done?.items ?? [])).toEqual(['G2', 'text'])
   })
 
-  test('a tool still waiting keeps its exchange live, its row open, after a note', () => {
+  test('a tool still waiting keeps its exchange live after a note; asked about, its row shows', () => {
     const running: Block = { id: 'r', input: {}, json: '', kind: 'tool', name: 'Bash' }
     const turns = [
       user('u'),
@@ -92,7 +94,7 @@ describe('the collapse rule', () => {
     ] satisfies Turn[]
     const [ex, note] = exchanges(turns, false)
     expect(ex?.live).toBe(true)
-    expect(shape(ex?.items ?? [])).toEqual(['G3+1'])
+    expect(shape(ex?.items ?? [])).toEqual(['G3'])
     expect(note?.live).toBe(false)
     // Waiting on a permission: live too, even with a result already in (a replayed answer).
     const asked: Block = { ...running, result: { isError: false, text: '' } }
@@ -131,30 +133,31 @@ describe('the collapse rule', () => {
   })
 })
 
-test('group labels pluralise, count failures, and list up to 4 kinds in order', () => {
-  expect(groupSummary([tool('Read')]).label).toBe('1 tool call')
-  expect(groupSummary([tool('Read'), tool('Bash'), text('a')]).label).toBe(
-    '2 tool calls, 1 message'
-  )
+test('group labels say what was done, in the order it was first done', () => {
+  expect(groupSummary([tool('Read', { file_path: '/a' })]).label).toBe('Read 1 file')
+  // Two reads of one file are one file read; Grep searches; messages alone still count.
+  const work = [
+    tool('Bash'),
+    tool('Read', { file_path: '/a' }),
+    tool('Read', { file_path: '/a' }),
+    tool('Grep'),
+    text('a'),
+  ]
+  expect(groupSummary(work).label).toBe('Ran 1 command, read 1 file, searched the code')
   expect(groupSummary([text('a'), text('b')]).label).toBe('2 messages')
-  expect(groupSummary([thinking('x')])).toEqual({
-    failed: 0,
-    kinds: ['thinking'],
-    label: 'Thought',
-  })
+  expect(groupSummary([thinking('x')])).toEqual({ failed: 0, label: 'Thought' })
   const mixed = [
     tool('Bash', {}, true),
-    tool('Read'),
-    tool('Grep'),
+    tool('Edit', { file_path: '/a' }),
+    tool('Write', { file_path: '/b' }),
     thinking('x'),
     tool('mcp__x__y'),
     tool('WebFetch'),
     tool('Task'),
   ]
-  expect(groupSummary(mixed)).toMatchObject({
+  expect(groupSummary(mixed)).toEqual({
     failed: 1,
-    kinds: ['bash', 'read', 'thinking', 'web'],
-    label: '6 tool calls',
+    label: 'Ran 1 command, edited 2 files, used 1 other tool, searched the web, ran 1 agent',
   })
 })
 
@@ -338,5 +341,44 @@ describe('a prompt sent while Claude works', () => {
     s = reduceLine(s, JSON.stringify({ type: 'aimux_exit' }))
     expect(s.turns.map((t) => t.id)).toEqual(['u1', 'u2'])
     expect(s.queued).toEqual([])
+  })
+})
+
+describe('the live line', () => {
+  const working = (blocks: Block[]): ChatState => ({
+    ...initialChat,
+    status: 'working',
+    turns: [user('u'), said('a', blocks, false)],
+  })
+  const running = (name: string, input: Record<string, unknown>): Block => ({
+    id: 'r',
+    input,
+    json: '',
+    kind: 'tool',
+    name,
+  })
+
+  test('names the running tool and what it acts on', () => {
+    const write = working([running('Write', { file_path: '/w/src/a.ts' })])
+    expect(liveStep(write, '/w')).toEqual({ target: 'src/a.ts', verb: 'Writing' })
+    // A command's first line only.
+    const bash = working([running('Bash', { command: 'bun test\n&& bun lint' })])
+    expect(liveStep(bash, '/w')).toEqual({ target: 'bun test', verb: 'Running' })
+    expect(liveStep(working([running('TodoWrite', {})]), '/w').verb).toBe('Using TodoWrite')
+  })
+
+  test('says Thinking, Working, Stopping or Starting otherwise', () => {
+    expect(liveStep(working([thinking('hm')]), '/w').verb).toBe('Thinking')
+    expect(liveStep(working([tool('Read')]), '/w').verb).toBe('Working')
+    expect(liveStep({ ...working([]), stopping: true }, '/w').verb).toBe('Stopping')
+    expect(liveStep(initialChat, '/w').verb).toBe('Starting Claude')
+  })
+
+  test('its clock starts again when a queued prompt takes over', () => {
+    let s = sendTurn({ ...initialChat, startedAt: 1, status: 'working' }, 'next', 'q')
+    s = reduceLine(s, JSON.stringify({ subtype: 'success', type: 'result' }), 5000)
+    expect(s.startedAt).toBe(5000)
+    s = reduceLine(s, JSON.stringify({ subtype: 'success', type: 'result' }), 9000)
+    expect(s.startedAt).toBeNull()
   })
 })

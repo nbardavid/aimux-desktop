@@ -7,6 +7,7 @@ import { parseCommand } from '../chat/commands'
 import {
   addNote,
   type ChatState,
+  type Image,
   initialChat,
   initializeLine,
   interruptLine,
@@ -268,20 +269,23 @@ export function useChats(hooks: Hooks) {
   )
 
   const send = useCallback(
-    (id: string, text: string) => {
+    (id: string, text: string, images: readonly Image[] = []) => {
       const uuid = crypto.randomUUID()
       edit(id, (c) => {
-        // The first real prompt names the tab; a command does not.
-        const names = c.record.title === 'New chat' && parseCommand(text) === null
+        // The first real prompt names the tab; a command or an image alone does not.
+        const names = c.record.title === 'New chat' && text !== '' && parseCommand(text) === null
         const record = {
           ...c.record,
           activeAt: Date.now(),
           ...(names && { title: titleOf(text) }),
         }
-        return { ...c, record, state: sendTurn(c.state, text, uuid) }
+        const state = sendTurn(c.state, text, uuid, images)
+        // A prompt that starts a turn starts its clock; a queued one waits for its own.
+        const started = c.state.status === 'working' ? {} : { startedAt: Date.now() }
+        return { ...c, record, state: { ...state, ...started } }
       })
       // Claude Code fills in its own session id; an empty one is accepted.
-      void write(id, userLine(text, null, uuid))
+      void write(id, userLine(text, null, uuid, images))
     },
     [edit, write]
   )

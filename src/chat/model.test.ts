@@ -519,3 +519,41 @@ test('a failed command keeps its output and gives its exit code apart', () => {
   expect(exitCode('Error: Exit code 1\nboom')).toEqual({ body: 'boom', code: 1 })
   expect(exitCode('all good')).toEqual({ body: 'all good', code: null })
 })
+
+describe('pasted images', () => {
+  const png = { data: 'iVBORw0KGgo=', mediaType: 'image/png' }
+
+  test('go to Claude before the words, as base64 image blocks', () => {
+    expect(JSON.parse(userLine('what is this?', null, undefined, [png])).message.content).toEqual([
+      { source: { data: png.data, media_type: 'image/png', type: 'base64' }, type: 'image' },
+      { text: 'what is this?', type: 'text' },
+    ])
+    // Images alone: no empty text block.
+    expect(JSON.parse(userLine('', null, undefined, [png])).message.content).toHaveLength(1)
+  })
+
+  test('show over the prompt; images alone make a prompt too', () => {
+    const turn = addUserTurn(initialChat, 'look', 'u1', [png]).turns[0]
+    expect(turn?.blocks).toEqual([
+      { kind: 'image', ...png },
+      { kind: 'text', text: 'look' },
+    ])
+    expect(addUserTurn(initialChat, '', 'u2', [png]).turns[0]?.blocks).toEqual([
+      { kind: 'image', ...png },
+    ])
+  })
+
+  test('a slash with an image is a prompt, not a command', () => {
+    const blocks = addUserTurn(initialChat, '/context', 'u1', [png]).turns[0]?.blocks
+    expect(blocks?.at(-1)).toEqual({ kind: 'text', text: '/context' })
+  })
+
+  test('come back in another window and from the transcript', () => {
+    const sent = JSON.parse(userLine('', null, undefined, [png]))
+    const live = reduceLine(initialChat, JSON.stringify({ message: sent, type: 'aimux_sent' }))
+    expect(live.turns[0]?.blocks).toEqual([{ kind: 'image', ...png }])
+
+    const line = JSON.stringify({ message: sent.message, type: 'user', uuid: 'a' })
+    expect(replayTranscript([line]).turns[0]?.blocks).toEqual([{ kind: 'image', ...png }])
+  })
+})

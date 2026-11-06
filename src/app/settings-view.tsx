@@ -8,7 +8,10 @@ import { cn } from '@/lib/utils'
 
 import { effectiveValue, type Row, SECTIONS, type SettingValue } from '../settings/schema'
 import { playSettingsSound } from './attention'
+import { BrailleSpinner } from './braille-spinner'
 import { previewCleanup } from './cleanup-effect'
+import { noteLoaderSetting } from './loader-choice'
+import { isLoader, LOADER_LABELS } from './loaders'
 import { devBuild, type Update } from './update-button'
 
 type Stored = Record<string, SettingValue>
@@ -44,6 +47,25 @@ function Control({
         className="relative h-[18px] w-8 rounded-full bg-line-strong transition-[background-color] duration-150 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-3.5 after:rounded-full after:bg-white after:shadow-[0_1px_2px_rgb(43_40_38/0.2)] after:transition-transform after:duration-150 after:ease-[cubic-bezier(0.2,0,0,1)] aria-checked:bg-foreground aria-checked:after:translate-x-3.5"
         onClick={() => onChange(value !== true)}
       />
+    )
+  }
+  if (row.kind === 'select' && row.preview === 'loader') {
+    return (
+      <div className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label={row.label}>
+        {row.options.filter(isLoader).map((loader) => (
+          <button
+            type="button"
+            key={loader}
+            role="radio"
+            aria-checked={value === loader}
+            className="bg-chrome text-muted-foreground hover:text-foreground aria-checked:border-line-strong aria-checked:bg-background aria-checked:text-foreground flex h-14 flex-col items-center justify-center gap-1.5 rounded-md border border-transparent transition-[color,background-color,border-color] duration-120 ease-out hover:bg-hover"
+            onClick={() => onChange(loader)}
+          >
+            <BrailleSpinner loader={loader} className="text-[15px]" />
+            <span className="text-2xs">{LOADER_LABELS[loader]}</span>
+          </button>
+        ))}
+      </div>
     )
   }
   if (row.kind === 'select') {
@@ -276,14 +298,15 @@ export function SettingsView({
 
   const write = (id: string, value: SettingValue | null) => {
     invoke('write_setting', { id, value })
-      .then(() =>
+      .then(() => {
+        noteLoaderSetting(id, value)
         setStored((state) => {
           const next = { ...state }
           if (value === null) delete next[id]
           else next[id] = value
           return next
         })
-      )
+      })
       .catch((error_: unknown) => setError(String(error_)))
   }
 
@@ -299,8 +322,25 @@ export function SettingsView({
                 {section.rows.map((row) => {
                   const value = effectiveValue(row, stored[row.id])
                   const reset = resetShown(stored[row.id], row.fallback, value)
+                  const control = (
+                    <Control
+                      row={row}
+                      value={value}
+                      onChange={(v) => {
+                        write(row.id, v)
+                        // Picking an effect (again) shows it, over this page.
+                        if (row.id === 'ui.cleanupEffect')
+                          void previewCleanup(String(v), page.current)
+                        // Picking a sound or a volume plays it.
+                        if (row.id.startsWith('notifications.'))
+                          playSettingsSound({ ...stored, [row.id]: v })
+                      }}
+                    />
+                  )
+                  // A grid of choices takes the row's width, under its label.
+                  const wide = row.kind === 'select' && row.preview === 'loader'
                   return (
-                    <div className={rowClass} key={row.id}>
+                    <div className={cn(rowClass, wide && 'flex-wrap gap-y-3')} key={row.id}>
                       <div className={rowText}>
                         <span className="flex items-center gap-2 font-medium">{row.label}</span>
                         <span className={rowHelp}>{row.help}</span>
@@ -320,20 +360,9 @@ export function SettingsView({
                         >
                           Reset
                         </button>
-                        <Control
-                          row={row}
-                          value={value}
-                          onChange={(v) => {
-                            write(row.id, v)
-                            // Picking an effect (again) shows it, over this page.
-                            if (row.id === 'ui.cleanupEffect')
-                              void previewCleanup(String(v), page.current)
-                            // Picking a sound or a volume plays it.
-                            if (row.id.startsWith('notifications.'))
-                              playSettingsSound({ ...stored, [row.id]: v })
-                          }}
-                        />
+                        {!wide && control}
                       </div>
+                      {wide && <div className="basis-full">{control}</div>}
                     </div>
                   )
                 })}

@@ -1,5 +1,7 @@
 // The app's settings, kept in settings.json next to its catalog. Only what the app reads.
 
+import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS } from '../app/loaders'
+
 export type SettingValue = boolean | number | string
 
 export type Row =
@@ -22,7 +24,16 @@ export type Row =
       fallback: string
       placeholder?: string
     }
-  | { kind: 'select'; id: string; label: string; help: string; fallback: string; options: string[] }
+  | {
+      kind: 'select'
+      id: string
+      label: string
+      help: string
+      fallback: string
+      options: string[]
+      /** `loader`: each option plays, in a grid under the label. */
+      preview?: 'loader'
+    }
 
 export interface Section {
   id: string
@@ -42,6 +53,24 @@ export const SECTIONS: Section[] = [
         kind: 'select',
         label: 'Clean up effect',
         options: ['Dust', 'Brush', 'Glint', 'None'],
+      },
+      {
+        fallback: DEFAULT_LOADERS.working,
+        help: 'What plays under the chat while Claude works.',
+        id: LOADER_SETTINGS.working,
+        kind: 'select',
+        label: 'Working loader',
+        options: LOADER_NAMES,
+        preview: 'loader',
+      },
+      {
+        fallback: DEFAULT_LOADERS.thinking,
+        help: 'What plays while Claude thinks.',
+        id: LOADER_SETTINGS.thinking,
+        kind: 'select',
+        label: 'Thinking loader',
+        options: LOADER_NAMES,
+        preview: 'loader',
       },
     ],
   },

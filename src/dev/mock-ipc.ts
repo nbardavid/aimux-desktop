@@ -232,7 +232,7 @@ function chatSend(args: Args) {
     uuid?: string
     request_id?: string
     request?: { subtype?: string }
-    message?: { content?: { text?: string }[] }
+    message?: { content?: { type?: string; text?: string }[] }
     response?: {
       request_id?: string
       response?: { behavior?: string; updatedInput?: { answers?: Record<string, string> } }
@@ -265,7 +265,10 @@ function chatSend(args: Args) {
       turnEnd(0.0031, 4200),
     ])
   } else if (message.type === 'user') {
-    const text = message.message?.content?.[0]?.text ?? ''
+    // Pasted images come before the words.
+    const text =
+      message.message?.content?.find((part) => part.type === 'text')?.text ??
+      'What is in this image?'
     answerPrompt(id, [{ text, uuid: message.uuid ?? crypto.randomUUID() }])
   }
 }

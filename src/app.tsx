@@ -49,7 +49,7 @@ import { useQuotas } from './app/use-quotas'
 import { useSetup } from './app/use-setup'
 import { useTerminals } from './app/use-terminals'
 import { availableCommands } from './chat/commands'
-import { type ChatState, initialChat, toolSummary } from './chat/model'
+import { type ChatState, type Image, initialChat, toolSummary } from './chat/model'
 import { uncommittedRefusal } from './git/pr'
 import {
   chatFlags,
@@ -405,10 +405,10 @@ export function App() {
     }
   }
 
-  const newChat = (w: Workspace, prompt?: string) => {
+  const newChat = (w: Workspace, prompt?: string, images: readonly Image[] = []) => {
     const id = chats.create(w.id, w.path, chatFlags(selection))
     selectTab(w.id, id)
-    if (prompt !== undefined && prompt !== '') chats.send(id, prompt)
+    if ((prompt ?? '') !== '' || images.length > 0) chats.send(id, prompt ?? '', images)
     return id
   }
 
@@ -916,7 +916,7 @@ export function App() {
                       onAgent={(next, typed) => setAgent(chat, next, typed)}
                       blocked={host.state.kind === 'blocked'}
                       commands={availableCommands(chat.state.commands, appWideCommands)}
-                      onSend={(text) => chats.send(chat.record.id, text)}
+                      onSend={(text, images) => chats.send(chat.record.id, text, images)}
                       onCommand={(name, args) => runCommand(chat, name, args)}
                       onAnswer={(p, choice, answers) =>
                         chats.answer(chat.record.id, p, choice, answers)
@@ -955,8 +955,8 @@ export function App() {
                       onAgent={(next) => setSelection(next)}
                       blocked={host.state.kind === 'blocked'}
                       commands={appWideCommands}
-                      onSend={(text) => {
-                        if (host.state.kind === 'ready') newChat(ws, text)
+                      onSend={(text, images) => {
+                        if (host.state.kind === 'ready') newChat(ws, text, images)
                         else setNotice({ text: HOST_BLOCKED, title: "Couldn't start a chat" })
                       }}
                       onCommand={() => createTab('chat')}

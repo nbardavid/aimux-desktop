@@ -1,23 +1,18 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import {
-  BotIcon,
-  BrainIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CopyIcon,
   FileCodeIcon,
   FileImageIcon,
-  FilePenIcon,
   FileTextIcon,
-  GlobeIcon,
-  type LucideIcon,
-  SquareTerminalIcon,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -33,13 +28,17 @@ import {
   groupSummary,
   type Item,
   type Keyed,
+  liveStep,
   numberedLines,
-  type ToolKind,
   toolSummary,
   type Turn,
   type TurnEnd,
 } from '../chat/model'
+import { BrailleSpinner } from './braille-spinner'
+import { ImageStrip } from './image-strip'
+import { useLoaderChoice } from './loader-choice'
 import { Minimap, type Prompt } from './minimap'
+import { Dot } from './status-dot'
 
 /** Copies on click and shows a check for 1.2s. `text` is read at the click. */
 function CopyButton({
@@ -131,9 +130,7 @@ const OPENING =
 // A blinking tan block after the last thing a streaming answer wrote.
 const CARET =
   '[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:h-[1.05em] [&>:last-child]:after:w-[7px] [&>:last-child]:after:animate-[caret_1s_ease-in-out_infinite] [&>:last-child]:after:rounded-[2px] [&>:last-child]:after:bg-tan [&>:last-child]:after:align-[-0.15em]'
-// Status dots, as `.st-*` draws them.
-const SPINNER =
-  'size-[9px] flex-none animate-[spin_0.9s_linear_infinite] rounded-full border-[1.5px] border-faint border-t-transparent'
+// Status dots, as status-dot.tsx draws them.
 const DOT = 'size-[7px] flex-none rounded-full'
 // A <details> header inside a group: a grey row under the pointer, no marker.
 const SUMMARY =
@@ -246,16 +243,18 @@ function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
 }
 
 function ToolRow({ block, cwd }: { block: Block & { kind: 'tool' }; cwd: string }) {
-  let dot = SPINNER
+  let dot = <Dot tone="working" />
   if (block.result) {
-    dot = block.result.isError
+    const done = block.result.isError
       ? cn(DOT, 'bg-critical')
       : cn(DOT, 'animate-[pop_0.3s_cubic-bezier(0.2,0,0,1)] bg-good')
-  } else if (block.stopped === true) dot = cn(DOT, 'border-faint border-[1.5px]')
+    dot = <span className={done} />
+  } else if (block.stopped === true)
+    dot = <span className={cn(DOT, 'border-faint border-[1.5px]')} />
   return (
     <details>
       <summary className={SUMMARY}>
-        <span className={dot} />
+        {dot}
         <span className="text-foreground flex-none font-medium">{block.name}</span>
         <span className="truncate font-mono text-xs">
           {toolSummary(block.name, block.input, cwd)}
@@ -337,19 +336,10 @@ function Collapse({ children, open }: { open: boolean; children: ReactNode }) {
   )
 }
 
-const KIND_ICONS: Record<ToolKind, LucideIcon> = {
-  agent: BotIcon,
-  bash: SquareTerminalIcon,
-  edit: FilePenIcon,
-  read: FileTextIcon,
-  thinking: BrainIcon,
-  web: GlobeIcon,
-}
-
 /** One grey row for a run of work; open, the run under it. Its last `shown` rows stay out. */
 function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown: number }) {
   const [open, setOpen] = useState(false)
-  const { failed, kinds, label } = groupSummary(blocks.map((k) => k.block))
+  const { failed, label } = groupSummary(blocks.map((k) => k.block))
   return (
     <div className="flex flex-col">
       <button
@@ -368,14 +358,6 @@ function ToolGroup({ blocks, cwd, shown }: { blocks: Keyed[]; cwd: string; shown
           {label}
           {failed > 0 && <span className="text-critical-ink"> · {failed} failed</span>}
         </span>
-        {kinds.length > 0 && (
-          <span className="text-label ml-0.5 flex flex-none items-center gap-1">
-            {kinds.map((kind) => {
-              const Icon = KIND_ICONS[kind]
-              return <Icon key={kind} className="size-3.5" />
-            })}
-          </span>
-        )}
       </button>
       <div className="flex flex-col pl-3">
         {blocks.map((k, i) => (
@@ -396,8 +378,19 @@ const USER = `max-w-[80%] self-end rounded-lg bg-bubble px-3.5 py-[11px] text-ba
 export function promptText(turn: Turn): string {
   const first = turn.blocks[0]
   if (first?.kind === 'command') return `/${first.name}${first.args === '' ? '' : ` ${first.args}`}`
-  return turn.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
+  const text = turn.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
+  const images = imagesIn(turn).length
+  if (text !== '' || images === 0) return text
+  return images === 1 ? 'An image' : `${images} images`
 }
+
+const imagesIn = (turn: Turn) =>
+  turn.blocks.flatMap((b) => (b.kind === 'image' ? [{ data: b.data, mediaType: b.mediaType }] : []))
+
+/** A prompt's images, over its bubble, at the bubble's right edge. */
+const PromptImages = ({ turn }: { turn: Turn }) => (
+  <ImageStrip images={imagesIn(turn)} className={cn('max-w-[80%] self-end justify-end', ENTER)} />
+)
 
 function UserTurn({ turn }: { turn: Turn }) {
   const first = turn.blocks[0]
@@ -409,44 +402,56 @@ function UserTurn({ turn }: { turn: Turn }) {
       </div>
     )
   }
+  if (!turn.blocks.some((b) => b.kind === 'image'))
+    return (
+      <div data-prompt={turn.id} className={USER}>
+        {promptText(turn)}
+      </div>
+    )
+  // The ruler marks the images and the words as one prompt.
   return (
-    <div data-prompt={turn.id} className={USER}>
-      {promptText(turn)}
+    <div data-prompt={turn.id} className="flex flex-col gap-2">
+      <PromptImages turn={turn} />
+      {turn.blocks.some((b) => b.kind === 'text') && <div className={USER}>{promptText(turn)}</div>}
     </div>
   )
 }
 
 /**
- * Prompts sent while Claude works: pinned above the composer, faded, until Claude takes them.
- * The text ones wait as one bubble, as Claude takes them; a slash command waits alone.
+ * Prompts sent while Claude works: one line at the top of the composer until Claude takes
+ * them. The text ones wait as one line, as Claude takes them together; a slash command
+ * waits alone. They are already written to Claude, so they cannot be taken back.
  */
 export function QueuedPrompts({ turns }: { turns: Turn[] }) {
-  // Claude takes every text prompt first, as one; each command after, on its own.
   const command = (t: Turn) => t.blocks[0]?.kind === 'command'
   const texts = turns.filter((t) => !command(t))
   const groups = [texts, ...turns.filter(command).map((t) => [t])].filter((g) => g.length > 0)
-  return groups.map((group) => (
-    // The transcript's column, not the composer's (16px wider, 8px less inset): its right
-    // edge on the transcript's bubbles at any width.
-    <div
-      key={group[0]?.id}
-      className="-mx-4 flex justify-center"
-      aria-label={group.length > 1 ? `${group.length} queued prompts` : 'Queued prompt'}
-    >
-      <div className="flex w-full max-w-[768px] flex-col items-end gap-1 px-6">
-        <span className="text-faint text-xs">
-          {group.length > 1 ? `${group.length} queued, sent as one` : 'Queued'}
+  return groups.map((group) => {
+    const images = group.reduce((n, t) => n + imagesIn(t).length, 0)
+    const words = group
+      .filter((t) => t.blocks.some((b) => b.kind === 'text' || b.kind === 'command'))
+      .map(promptText)
+    return (
+      <div
+        key={group[0]?.id}
+        className="text-muted-foreground animate-in fade-in slide-in-from-bottom-[4px] flex h-[30px] items-center gap-2 border-b px-3 text-sm duration-160 ease-out"
+        aria-label={group.length > 1 ? `${group.length} queued prompts` : 'Queued prompt'}
+        data-tip={group.length > 1 ? `Sent as one:\n${words.join('\n')}` : words.join('\n')}
+        data-tip-side="top"
+      >
+        <span className="bg-bubble text-faint flex-none rounded-sm px-1.5 text-2xs leading-[18px]">
+          {group.length > 1 ? `${group.length} queued` : 'Queued'}
         </span>
-        <div className={cn(USER, 'flex flex-col gap-2 opacity-60')}>
-          {group.map((t) => (
-            <p key={t.id} className="line-clamp-3">
-              {promptText(t)}
-            </p>
-          ))}
-        </div>
+        {images > 0 && (
+          <span className="text-faint flex flex-none items-center gap-1 text-xs">
+            <FileImageIcon className="size-3.5" />
+            {images}
+          </span>
+        )}
+        <span className="truncate">{words.join(' · ')}</span>
       </div>
-    </div>
-  ))
+    )
+  })
 }
 
 const CHIP =
@@ -580,10 +585,47 @@ function ExchangeView({
   )
 }
 
-function status(state: ChatState): string {
-  if (state.stopping) return 'Stopping…'
-  if (state.status === 'starting') return 'Starting Claude…'
-  return state.turns.at(-1)?.blocks.at(-1)?.kind === 'thinking' ? 'Thinking…' : 'Working…'
+/** How long the turn has run, ticking each second; null when it is not known. */
+function useElapsed(since: number | null): string | null {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (since === null) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [since])
+  return since === null ? null : formatDuration(Math.max(0, now - since))
+}
+
+const SHIMMER =
+  'animate-[shimmer_2.2s_linear_infinite] bg-[linear-gradient(90deg,var(--faint)_0%,var(--faint)_40%,var(--foreground)_50%,var(--faint)_60%,var(--faint)_100%)] bg-[length:300%_100%] bg-clip-text text-transparent'
+
+/** Under the last exchange while Claude works: what it does now, for how long, how to stop. */
+function LiveLine({ cwd, state }: { cwd: string; state: ChatState }) {
+  const { target, verb } = liveStep(state, cwd)
+  const elapsed = useElapsed(state.startedAt)
+  const loaders = useLoaderChoice()
+  const stoppable = state.status === 'working' && !state.stopping
+  return (
+    <div className="flex h-7 min-w-0 items-center gap-2.5 text-base">
+      <BrailleSpinner
+        loader={verb === 'Thinking' ? loaders.thinking : loaders.working}
+        className="text-faint text-[15px]"
+      />
+      <span className={cn('flex min-w-0 items-baseline gap-1.5', SHIMMER)}>
+        <span className="flex-none">{target === '' ? `${verb}…` : verb}</span>
+        {target !== '' && <span className="truncate font-mono text-[12.5px]">{target}</span>}
+      </span>
+      {elapsed !== null && (
+        <span className="text-label flex-none text-xs tabular-nums">{elapsed}</span>
+      )}
+      {stoppable && (
+        <span className="text-label flex-none text-xs">
+          <Kbd className="text-label">esc</Kbd> to stop
+        </span>
+      )}
+    </div>
+  )
 }
 
 const smooth = (): ScrollBehavior =>
@@ -731,10 +773,7 @@ export function Transcript({ blocked, cwd, intro, onOpenFile, place, state }: Pr
             )
           )}
           {((working && !streamingText && permission === undefined) || state.stopping) && (
-            <div className="flex w-max animate-[shimmer_2.2s_linear_infinite] items-center gap-2 bg-[linear-gradient(90deg,var(--faint)_0%,var(--faint)_40%,var(--foreground)_50%,var(--faint)_60%,var(--faint)_100%)] bg-[length:300%_100%] bg-clip-text text-base text-transparent">
-              <span className={SPINNER} />
-              {status(state)}
-            </div>
+            <LiveLine cwd={cwd} state={state} />
           )}
           {state.errors.length > 0 && (
             <div className="bg-critical-wash text-critical-ink rounded-lg px-3 py-2.5 text-sm leading-5 whitespace-pre-wrap">

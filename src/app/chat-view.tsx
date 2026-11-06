@@ -1,5 +1,6 @@
 import { ArrowUpIcon, SquareIcon } from 'lucide-react'
 import {
+  type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
   useEffect,
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { isAppCommand, parseCommand, rankCommands } from '../chat/commands'
 import {
   type ChatState,
+  type Image,
   type Permission,
   questionsOf,
   type SlashCommand,
@@ -31,7 +33,9 @@ import {
 } from '../model/agents'
 import { ModelSelect } from './agent-select'
 import { CommandHint, CommandMenu } from './command-menu'
+import { ImageStrip } from './image-strip'
 import { overlayShown } from './overlay'
+import { clipboardImages, readImage } from './pasted-images'
 import { QuestionCard } from './question-card'
 import { QueuedPrompts, Transcript } from './transcript'
 
@@ -49,7 +53,8 @@ interface Props {
   blocked: boolean
   /** What the `/` menu offers: the app's commands and this chat's Claude's. */
   commands: SlashCommand[]
-  onSend: (text: string) => void
+  /** A prompt, with the images pasted into it (`text` is empty for images alone). */
+  onSend: (text: string, images: Image[]) => void
   /** One of the app's own commands (`/resume`, `/clear`…), typed or picked. */
   onCommand: (name: string, args: string) => void
   /** `answers`: AskUserQuestion's picks, keyed by question. */
@@ -172,6 +177,8 @@ export function ChatView({
   state,
 }: Props) {
   const [draft, setDraft] = useState('')
+  // Pasted images, shown over the prompt until it is sent.
+  const [images, setImages] = useState<Image[]>([])
   // The `/` menu: its highlighted row, and the draft Esc closed it on (it stays shut until
   // the draft changes).
   const [hot, setHot] = useState(0)
@@ -274,7 +281,8 @@ export function ChatView({
 
   const submit = (line = draft) => {
     const text = line.trim()
-    if (text === '' || off) return
+    if ((text === '' && images.length === 0) || off) return
+    // A command runs on its own: the images wait for the next prompt.
     const command = parseCommand(text)
     if (command?.name === 'model' || command?.name === 'effort') {
       // A name it knows applies at once; anything else opens the picker.
@@ -282,8 +290,21 @@ export function ChatView({
       if (next) onAgent(next, true)
       else setAgentOpen(true)
     } else if (command && isAppCommand(command.name)) onCommand(command.name, command.args)
-    else onSend(text)
+    else {
+      onSend(text, images)
+      setImages([])
+    }
     edit('')
+  }
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = clipboardImages(e.clipboardData)
+    if (files.length === 0) return
+    e.preventDefault()
+    void Promise.allSettled(files.map(readImage)).then((read) => {
+      const ok = read.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+      setImages((prev) => [...prev, ...ok])
+    })
   }
 
   /** A command with arguments waits for them; one without runs. */
@@ -312,6 +333,12 @@ export function ChatView({
     const answering = e.metaKey && permission !== undefined
     if (answering) return
     if (menu.length > 0 && onMenuKey(e)) return
+    // ⌫ in an empty prompt takes back the last image pasted.
+    if (e.key === 'Backspace' && draft === '' && images.length > 0) {
+      e.preventDefault()
+      setImages(images.slice(0, -1))
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
@@ -354,15 +381,20 @@ export function ChatView({
               onAnswer={onAnswer}
             />
           )}
-          <QueuedPrompts turns={state.queued} />
           {/* The `/` menu floats over the composer: the composer itself never moves. */}
           <div
             data-composer
             className={cn(
-              'shadow-composer focus-within:border-line-strong relative flex flex-col rounded-lg border transition-[border-color,background-color] duration-120 ease-out',
-              off ? 'bg-background' : 'bg-chrome'
+              'group/composer shadow-composer focus-within:border-line-strong relative flex flex-col rounded-lg border transition-[border-color,background-color] duration-120 ease-out',
+              off ? 'bg-chrome' : 'bg-background'
             )}
           >
+            {/* Prompts sent while Claude works: one line each, at the top of the box. */}
+            {state.queued.length > 0 && (
+              <div className="flex flex-col overflow-hidden rounded-t-lg">
+                <QueuedPrompts turns={state.queued} />
+              </div>
+            )}
             {menu.length > 0 && (
               <CommandMenu
                 id={menuId}
@@ -374,10 +406,18 @@ export function ChatView({
               />
             )}
             {hint && <CommandHint command={hint} />}
+            <ImageStrip
+              images={images}
+              className="px-4 pt-3.5"
+              onRemove={(i) => {
+                setImages(images.filter((_, j) => j !== i))
+                field.current?.focus()
+              }}
+            />
             <Textarea
               ref={field}
-              // Three lines' worth empty: the box is 116px with its toolbar.
-              className="peer min-h-[74px] rounded-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
+              // One line empty (74px with its toolbar); it grows as the prompt does.
+              className="min-h-0 rounded-none border-0 bg-transparent px-4 pt-2.5 pb-0 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
               rows={1}
               value={draft}
               placeholder={placeholder}
@@ -389,13 +429,9 @@ export function ChatView({
               aria-activedescendant={menu.length > 0 ? `${menuId}-${at}` : undefined}
               onChange={(e) => edit(e.target.value)}
               onKeyDown={onKeyDown}
+              onPaste={onPaste}
             />
-            {!off && draft === '' && (
-              <span className="text-faint pointer-events-none absolute top-3.5 right-4 text-xs leading-[22px] transition-opacity duration-120 ease-out select-none peer-focus:opacity-0">
-                ⌘L to focus
-              </span>
-            )}
-            <div className="flex h-10 flex-none items-end gap-1 px-2 pb-2">
+            <div className="flex h-10 flex-none items-center gap-1 px-2">
               {state.status === 'exited' ? (
                 <span className="text-faint flex h-7 items-center pl-2">
                   {agentLabel(agent, models)}
@@ -412,6 +448,12 @@ export function ChatView({
                 />
               )}
               <span className="min-w-0 flex-1" />
+              {/* Where the keys go from anywhere; gone once they are here. */}
+              {!off && (
+                <Kbd className="text-label mr-1.5 transition-opacity duration-120 ease-out group-focus-within/composer:opacity-0">
+                  ⌘L
+                </Kbd>
+              )}
               {working ? (
                 <Button
                   size="icon"
@@ -431,7 +473,7 @@ export function ChatView({
                   aria-label="Send (Enter)"
                   data-tip="Send · Enter"
                   data-tip-side="top"
-                  disabled={off || draft.trim() === ''}
+                  disabled={off || (draft.trim() === '' && images.length === 0)}
                   onClick={() => submit()}
                 >
                   <ArrowUpIcon className="size-4" />
