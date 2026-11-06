@@ -176,13 +176,9 @@ export function claudeSnapshot(raw: RawClaudeUsage, now = Date.now()): UsageSnap
   }
 }
 
-/** The window closest to its limit, across every tool: what the sidebar's chip shows. */
-export function tightest(cache: QuotaCache): UsageWindow | null {
-  let best: UsageWindow | null = null
-  for (const entry of Object.values(cache)) {
-    for (const w of entry?.snapshot.windows ?? []) {
-      if (w.percent !== null && (best === null || w.percent > (best.percent ?? 0))) best = w
-    }
-  }
-  return best
+/** What the sidebar's chip shows: the 5-hour session, unless a weekly window is about to block. */
+export function headline(cache: QuotaCache): UsageWindow | null {
+  const windows = Object.values(cache).flatMap((e) => e?.snapshot.windows ?? [])
+  const blocking = windows.find((w) => w.kind !== 'session' && (w.percent ?? 0) >= 90)
+  return blocking ?? windows.find((w) => w.kind === 'session') ?? windows[0] ?? null
 }

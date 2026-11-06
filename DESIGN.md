@@ -35,9 +35,11 @@ never in the way. Every state change that would otherwise "pop" gets a transitio
 | Panels (sidebar ⌘B, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way       |
 | Status changes (dots, badges, counts)           | 160ms     | ease-out    | cross-fade; working dots breathe                   |
 | Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift         |
+| Clean up (a merged workspace leaves)            | 340–760ms | per style   | Dust, Brush or Glint (Settings › Appearance)       |
 
 - Animate `opacity` and `transform`; animate size only where the layout must move.
-- Nothing above 300ms. Nothing that delays an action the user already took.
+- Nothing above 300ms, except Clean up's send-off, which plays once the worktree is gone and
+  blocks nothing. Nothing that delays an action the user already took.
 - Respect `prefers-reduced-motion`: keep fades, drop movement.
 - Use tw-animate (`animate-in`, `fade-in`, `slide-in-from-*-[Npx]`, `zoom-in-[0.98]`) and
   Tailwind transitions; tw-animate only accepts whole steps or bracketed values.

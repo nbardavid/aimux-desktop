@@ -419,6 +419,7 @@ function WorkspaceRow(
                 type="button"
                 className={row}
                 aria-current={active}
+                data-workspace={ws.id}
                 onClick={() => props.onSelect(project.id, ws.id)}
                 onDoubleClick={() => props.onRename(ws)}
               />

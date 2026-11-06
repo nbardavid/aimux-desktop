@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { claudeSnapshot, formatRemaining, paceOf, tightest } from './quota'
+import { claudeSnapshot, formatRemaining, headline, paceOf } from './quota'
 
 const NOW = Date.parse('2026-11-05T12:00:00Z')
 const inHours = (h: number) => new Date(NOW + h * 3600_000).toISOString()
@@ -31,17 +31,20 @@ test('pace: running out before the reset is never on pace', () => {
   expect(pace?.rightText).toBe('Runs out in 3d 8h')
 })
 
-test('the chip shows the window closest to its limit', () => {
-  const snap = claudeSnapshot(
-    {
-      five_hour: { resets_at: inHours(2), utilization: 42 },
-      seven_day: { resets_at: inHours(51), utilization: 71 },
-      seven_day_opus: { resets_at: inHours(51), utilization: 88 },
-    },
+test('the chip shows the session unless a weekly window is about to block', () => {
+  const raw = {
+    five_hour: { resets_at: inHours(2), utilization: 42 },
+    seven_day: { resets_at: inHours(51), utilization: 71 },
+    seven_day_opus: { resets_at: inHours(51), utilization: 88 },
+  }
+  const snap = claudeSnapshot(raw, NOW)
+  expect(headline({ claude: { fetchedAt: NOW, snapshot: snap } })?.label).toBe('Session')
+  const blocked = claudeSnapshot(
+    { ...raw, seven_day_opus: { resets_at: inHours(51), utilization: 93 } },
     NOW
   )
-  expect(tightest({ claude: { fetchedAt: NOW, snapshot: snap } })?.label).toBe('Opus')
-  expect(tightest({})).toBeNull()
+  expect(headline({ claude: { fetchedAt: NOW, snapshot: blocked } })?.label).toBe('Opus')
+  expect(headline({})).toBeNull()
 })
 
 test('snapshot takes session first and adds scoped weekly limits', () => {

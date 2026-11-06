@@ -32,6 +32,20 @@ export interface Section {
 
 export const SECTIONS: Section[] = [
   {
+    id: 'ui',
+    label: 'Appearance',
+    rows: [
+      {
+        fallback: 'Dust',
+        help: 'How a workspace leaves when you clean it up after its PR merged. Pick one to see it.',
+        id: 'ui.cleanupEffect',
+        kind: 'select',
+        label: 'Clean up effect',
+        options: ['Dust', 'Brush', 'Glint', 'None'],
+      },
+    ],
+  },
+  {
     id: 'git',
     label: 'Workspaces',
     rows: [

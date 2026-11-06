@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 
 import { ChatView } from './app/chat-view'
+import { cleanupOf } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { GitMode } from './app/git-mode'
 import { GitPanel } from './app/git-panel'
@@ -586,10 +587,7 @@ export function App() {
   }
 
   // After a merge, the worktree that carried the branch is dead weight.
-  const cleanup =
-    ws === undefined
-      ? null
-      : { label: 'Delete workspace', run: async (force: boolean) => removeWorkspace(ws, force) }
+  const cleanup = cleanupOf(ws, removeWorkspace)
 
   const inbox = inboxOf(
     chats.chats.map((c) => ({

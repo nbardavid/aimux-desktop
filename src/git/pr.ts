@@ -181,7 +181,7 @@ export type HeadAsk =
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
 /**
- * The confirm names its action on its button ("Merge", "Delete"): its text is the warnings
+ * The confirm names its action on its button ("Merge", "Clean up"): its text is the warnings
  * (`warn`), `long` from 340px of panel, `short` below, and `title` the whole question. A
  * merge with nothing to warn about says where it goes instead.
  */
@@ -201,7 +201,7 @@ export function confirmWords(
       said.push('Checks are failing.')
     }
   } else if (ask.action === 'cleanup') {
-    question = 'Delete this workspace? Its worktree folder is removed; the branch stays.'
+    question = 'Clean up this workspace? Its worktree folder is removed; the branch stays.'
     if (ask.uncommitted > 0) {
       long.push(plural(ask.uncommitted, 'uncommitted change'))
       short.push(`${ask.uncommitted} uncommitted`)

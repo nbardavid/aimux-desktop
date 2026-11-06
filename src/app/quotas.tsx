@@ -1,7 +1,7 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
-import { type QuotaCache, tightest, type UsageWindow } from '../model/quota'
+import { headline, type QuotaCache, type UsageWindow } from '../model/quota'
 
 function barTone(percent: number) {
   if (percent >= 85) return 'bg-critical'
@@ -71,9 +71,9 @@ function QuotaWindows({ cache }: { cache: QuotaCache }) {
   )
 }
 
-/** The window closest to its limit, for the sidebar's foot; a click shows every window. */
+/** The 5-hour session (or a weekly window about to block), for the sidebar's foot; a click shows every window. */
 export function Quotas({ cache, error }: { cache: QuotaCache; error: string | null }) {
-  const tight = tightest(cache)
+  const tight = headline(cache)
   if (cache.claude === undefined && error === null) return null
   return (
     <div className="flex min-w-0 flex-[0_1_auto]">
@@ -88,6 +88,7 @@ export function Quotas({ cache, error }: { cache: QuotaCache; error: string | nu
               <span className="text-muted-foreground font-medium tabular-nums">
                 {Math.round(tight.percent ?? 0)}%
               </span>
+              {tight.timeRemaining !== null && <span>· {tight.timeRemaining}</span>}
             </>
           ) : (
             <span className="text-faint">Quotas unavailable</span>

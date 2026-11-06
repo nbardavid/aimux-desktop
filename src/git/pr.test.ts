@@ -144,7 +144,7 @@ test('a confirm says only its warnings; its button says the action', () => {
     long: '3 uncommitted changes · Claude is waiting',
     short: '3 uncommitted · Claude waiting',
     title:
-      'Delete this workspace? Its worktree folder is removed; the branch stays. It has 3 uncommitted changes. Claude is waiting.',
+      'Clean up this workspace? Its worktree folder is removed; the branch stays. It has 3 uncommitted changes. Claude is waiting.',
     warn: true,
   })
   expect(confirmWords({ action: 'cleanup', uncommitted: 1 }, null).long).toBe(

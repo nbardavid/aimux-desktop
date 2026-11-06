@@ -176,7 +176,7 @@ function Head({
   if (refused) ask = { action: 'cleanup-anyway' }
   if (action === 'merge') ask = { action, base: pr?.base ?? '', failing, number: pr?.number ?? 0 }
   const words = confirmWords(ask, claude)
-  let yesLabel = action === 'merge' ? 'Merge' : 'Delete'
+  let yesLabel = action === 'merge' ? 'Merge' : 'Clean up'
   if (refused) yesLabel = 'Delete anyway'
   if (busy !== null) yesLabel = 'Working…'
   // Below 380px of panel (24vw at 1440 included), the arrow and the count say it: the PR's

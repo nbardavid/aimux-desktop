@@ -5,10 +5,11 @@
 // from an older protocol holding work (the restart bar), `?update` a release waiting (the
 // pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
 // (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
-// (truncation), `?empty-inbox` nothing waiting or done. Replies stream in over about two
+// (truncation), `?empty-inbox` nothing waiting or done, `?merged` amber's PR merged (Clean up
+// with a full transcript to crumble). Replies stream in over about two
 // seconds; every other one asks to run a tool first. Stage, discard, push and merge change
 // what the panel shows. A setup run takes about eight seconds; deleting a workspace with
-// changes (stat tiles' Delete workspace, teal's menu) is refused, so "Delete anyway" shows.
+// changes (stat tiles' Clean up, teal's menu) is refused, so "Delete anyway" shows.
 // basil has no PR and two commits to push.
 
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
@@ -57,6 +58,8 @@ type Args = Record<string, unknown>
 
 const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
+if (flags.has('merged'))
+  for (const pr of Object.values(PRS)) if (pr.number === 128) pr.state = 'MERGED'
 if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
 // When each chat's last turn moved (store.rs `active_at`): the sidebar's ages differ.
 const ACTIVE_AGO: Record<string, number> = {
@@ -383,7 +386,13 @@ function handle(cmd: string, args: Args): unknown {
     case 'term_resize':
     case 'term_kill':
     case 'chat_stop':
-    case 'write_setting':
+    case 'write_setting': {
+      const { id, value } = args as { id: string; value: unknown }
+      const settings: Record<string, unknown> = SETTINGS.settings
+      if (value === null) delete settings[id]
+      else settings[id] = value
+      return null
+    }
     case 'write_quota_cache':
     case 'host_restart':
       return null

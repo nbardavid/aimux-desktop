@@ -1,11 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 import { effectiveValue, type Row, SECTIONS, type SettingValue } from '../settings/schema'
+import { previewCleanup } from './cleanup-effect'
 
 type Stored = Record<string, SettingValue>
 
@@ -191,6 +192,7 @@ export function SettingsView({
   const [stored, setStored] = useState<Stored | null>(null)
   const [path, setPath] = useState('settings.json')
   const [error, setError] = useState<string | null>(null)
+  const page = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     void invoke<{ path: string; settings: Stored }>('read_settings').then(
@@ -217,7 +219,7 @@ export function SettingsView({
 
   // One column of headed groups: a section nav waits until there are a few to move between.
   return (
-    <div className="min-w-0 flex-1 overflow-auto px-9 pt-7 pb-12">
+    <div ref={page} className="min-w-0 flex-1 overflow-auto px-9 pt-7 pb-12">
       <div className="mx-auto flex max-w-[720px] flex-col">
         {SECTIONS.map((section) => (
           <section key={section.id} className="not-first:mt-7">
@@ -248,7 +250,16 @@ export function SettingsView({
                         >
                           Reset
                         </button>
-                        <Control row={row} value={value} onChange={(v) => write(row.id, v)} />
+                        <Control
+                          row={row}
+                          value={value}
+                          onChange={(v) => {
+                            write(row.id, v)
+                            // Picking an effect (again) shows it, over this page.
+                            if (row.id === 'ui.cleanupEffect')
+                              void previewCleanup(String(v), page.current)
+                          }}
+                        />
                       </div>
                     </div>
                   )
