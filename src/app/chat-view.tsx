@@ -3,6 +3,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -187,6 +188,10 @@ export function ChatView({
   const [agentOpen, setAgentOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
+  // A stable handler, so typing (which redraws this view) leaves the transcript alone.
+  const latestOpen = useRef(onOpenFile)
+  latestOpen.current = onOpenFile
+  const openFile = useCallback((path: string | null) => latestOpen.current?.(path), [])
   const working = state.status === 'working' || state.status === 'starting'
   const permission = state.pending[0]
   const questions = permission ? questionsOf(permission) : null
@@ -357,7 +362,7 @@ export function ChatView({
         state={state}
         blocked={blocked}
         intro={intro}
-        onOpenFile={onOpenFile}
+        onOpenFile={openFile}
       />
       {/* Toasts float at the pane's right, above the question and the composer. */}
       <div className="relative flex-none">

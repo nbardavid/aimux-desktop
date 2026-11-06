@@ -8,7 +8,7 @@ import {
   FileImageIcon,
   FileTextIcon,
 } from 'lucide-react'
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -37,7 +37,6 @@ import {
 import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
-import { Minimap, type Prompt } from './minimap'
 import { Dot } from './status-dot'
 
 /** Copies on click and shows a check for 1.2s. `text` is read at the click. */
@@ -396,21 +395,17 @@ function UserTurn({ turn }: { turn: Turn }) {
   const first = turn.blocks[0]
   if (first?.kind === 'command') {
     return (
-      <div data-prompt={turn.id} className={cn(USER, 'font-mono text-sm leading-[22px]')}>
+      <div className={cn(USER, 'font-mono text-sm leading-[22px]')}>
         <span className="text-foreground font-semibold">/{first.name}</span>
         {first.args !== '' && ` ${first.args}`}
       </div>
     )
   }
   if (!turn.blocks.some((b) => b.kind === 'image'))
-    return (
-      <div data-prompt={turn.id} className={USER}>
-        {promptText(turn)}
-      </div>
-    )
+    return <div className={USER}>{promptText(turn)}</div>
   // The ruler marks the images and the words as one prompt.
   return (
-    <div data-prompt={turn.id} className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <PromptImages turn={turn} />
       {turn.blocks.some((b) => b.kind === 'text') && <div className={USER}>{promptText(turn)}</div>}
     </div>
@@ -683,8 +678,18 @@ export function pinnedAfterScroll(
   return el.scrollHeight - el.scrollTop - el.clientHeight < 48
 }
 
-/** The chat's scrolling column: the exchanges, what is running, the last error. */
-export function Transcript({ blocked, cwd, intro, onOpenFile, place, state }: Props) {
+/**
+ * The chat's scrolling column: the exchanges, what is running, the last error. Memoized: a
+ * long chat must not redraw on every key typed in the composer.
+ */
+export const Transcript = memo(function Transcript({
+  blocked,
+  cwd,
+  intro,
+  onOpenFile,
+  place,
+  state,
+}: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   // Follow the conversation unless the user scrolled up to read (the ref, for the layout
@@ -697,13 +702,11 @@ export function Transcript({ blocked, cwd, intro, onOpenFile, place, state }: Pr
   const permission = state.pending[0]
 
   // Sending follows the conversation again.
-  const prompts: Prompt[] = state.turns
-    .filter((t) => t.role === 'user')
-    .map((t) => ({ id: t.id, text: promptText(t) }))
+  const sent = state.turns.filter((t) => t.role === 'user').length
   useLayoutEffect(() => {
     pinned.current = true
     setFollowing(true)
-  }, [prompts.length])
+  }, [sent])
 
   // "Stopping…" and the error count too: they appear below the last exchange; a question or a
   // queued prompt over the composer shrinks the column.
@@ -782,7 +785,6 @@ export function Transcript({ blocked, cwd, intro, onOpenFile, place, state }: Pr
           )}
         </div>
       </div>
-      <Minimap scroller={scroller} prompts={prompts} />
       {/* Scrolled up, the text fades out under the ↓ instead of running into it. */}
       <div
         className={cn(
@@ -811,4 +813,4 @@ export function Transcript({ blocked, cwd, intro, onOpenFile, place, state }: Pr
       </div>
     </div>
   )
-}
+})

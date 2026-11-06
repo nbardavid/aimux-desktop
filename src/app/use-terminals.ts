@@ -118,7 +118,7 @@ export function useTerminals() {
       term.loadAddon(fit)
       term.loadAddon(new WebLinksAddon((_e, uri) => void openUrl(uri)))
       const host = document.createElement('div')
-      host.className = 'xterm-host'
+      host.className = 'xterm-host h-full w-full'
 
       const onData = new Channel<string>()
       onData.onmessage = (data) => term.write(data)
