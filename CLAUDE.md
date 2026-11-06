@@ -90,8 +90,8 @@ branding.
 - Build (signs the update archive): `TAURI_SIGNING_PRIVATE_KEY=~/.tauri/aimux-desktop.key bun run build`.
   Launch for a trial:
   `open --env AIMUX_PROFILE=gui-dev src-tauri/target/release/bundle/macos/aimux.app`.
-- Release: `bun bump patch|minor|major` (semver; commits, tags, pushes; Actions builds and
-  publishes).
+- Release: `bun bump patch|minor|major` (semver; builds and signs locally, then commits, tags,
+  pushes and publishes the GitHub release with `gh`; no CI).
   Needs the owner's go-ahead like any push.
 - **UI is tested in the browser.** `bun run web:dev` (http://localhost:1420) serves the app
   with Tauri IPC mocked by fixture data (`src/dev/`, dev only, never in a build). Check every
