@@ -37,8 +37,11 @@ branding.
   - No commit message box: nobody commits by hand anymore. No "create PR": without a PR,
     "Ask for PR" sends the workspace's chat a prompt and Claude opens it with gh.
 - **Sidebar rows** lead with the workspace's task (its first chat's title, or the name the
-  user gave it) behind the agent's state (working spinner, waiting, done, idle dot), the
-  colour word and age at the right. No colour bars.
+  user gave it) behind the agent's state (working loader, waiting, done; nothing when idle),
+  the colour word and age at the right. A row that finishes or waits flashes once in green or
+  amber and keeps a faint wash from its left edge, as in the aimux TUI. No colour bars.
+- **The working loader** is braille drawn as ink dots (only the lit ones), the same one
+  everywhere something works; Settings › Appearance picks it among the square loaders.
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. The composer is the one dialog.
 - **Closing the window loses nothing**: chats and terminals keep running in the host.

@@ -34,12 +34,13 @@ never in the way. Every state change that would otherwise "pop" gets a transitio
 | Tabs: open, close, reorder                      | 160ms     | ease-out    | width and position slide; neighbours make room     |
 | Panels (sidebar ⌘B, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way       |
 | Status changes (dots, badges, counts)           | 160ms     | ease-out    | cross-fade; working dots breathe                   |
+| Sidebar row finishes / waits (tint)             | 700ms     | ease-out    | opacity only: swell, hold, settle to a faint wash  |
 | Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift         |
 | Clean up (a merged workspace leaves)            | 340–760ms | per style   | Dust, Brush or Glint (Settings › Appearance)       |
 
 - Animate `opacity` and `transform`; animate size only where the layout must move.
 - Nothing above 300ms, except Clean up's send-off, which plays once the worktree is gone and
-  blocks nothing. Nothing that delays an action the user already took.
+  blocks nothing, and a sidebar row's tint, a notification that moves nothing. Nothing that delays an action the user already took.
 - Respect `prefers-reduced-motion`: keep fades, drop movement.
 - Use tw-animate (`animate-in`, `fade-in`, `slide-in-from-*-[Npx]`, `zoom-in-[0.98]`) and
   Tailwind transitions; tw-animate only accepts whole steps or bracketed values.
@@ -109,7 +110,7 @@ never for file names.
 | `warn` / `warn-ink`                                          | `#c99a1e` / `#7a5a08`             | waiting, modified; amber text                                                                 |
 | `critical`, `destructive` / `critical-ink` / `critical-wash` | `#b8473a` / `#9e3324` / `#fbf3f2` | failing, deleted, destructive fills; red text; PR head band (blocked, failing), the error box |
 | `merge` / `merge-hover`                                      | `#2f8a4c` / `#287a42`             | the Merge button                                                                              |
-| `neutral`                                                    | `#b4b8bf`                         | an idle dot                                                                                   |
+| `neutral`                                                    | `#b4b8bf`                         | a setup script never run                                                                      |
 
 Text on a wash uses the ink, never the plain status colour.
 

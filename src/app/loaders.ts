@@ -1,5 +1,6 @@
 // Braille loaders, after gunnargray-dev/unicode-animations (MIT). Each braille glyph is a
-// 2×4 grid of dots; a frame is a row of them. Settings › Appearance picks the chat's.
+// 2×4 grid of dots; a frame is a row of them. Settings › Appearance picks the chat's, and
+// the one every working status (sidebar, tabs, tool rows) draws as dots.
 
 /** Dot `[row, column]`'s bit in its glyph (rows 0–3, columns 0–1 within the glyph). */
 const BIT = [
@@ -20,6 +21,18 @@ export function braille(columns: number, lit: Iterable<Dot>): string {
     if (codes[glyph] !== undefined && bit !== undefined) codes[glyph] |= bit
   }
   return String.fromCodePoint(...codes)
+}
+
+/** The dots a frame lights, as `[row, column]`, the inverse of `braille`. */
+export function litDots(frame: string): Dot[] {
+  const lit: Dot[] = []
+  // Braille sits in the BMP: one UTF-16 unit per glyph.
+  for (let g = 0; g < frame.length; g++) {
+    const code = frame.charCodeAt(g) - 0x2800
+    for (const [row, bits] of BIT.entries())
+      for (const [col, bit] of bits.entries()) if (code & bit) lit.push([row, g * 2 + col])
+  }
+  return lit
 }
 
 /** A `columns`×4 frame with the dots `on` says are lit. */
@@ -316,24 +329,55 @@ export const LOADER_LABELS: Record<Loader, string> = {
   waverows: 'Wave',
 }
 
-/** The two loaders the chat's live line plays, as Settings › Appearance keeps them. */
+/** The loaders small enough for a status: at most two glyphs, a square of dots. */
+export const STATUS_LOADERS: Loader[] = [
+  'diagswipe',
+  'fillsweep',
+  'snake',
+  'orbit',
+  'breathe',
+  'braille',
+]
+
+/**
+ * The loaders Settings › Appearance keeps: the two the chat's live line plays, and the
+ * status one, drawn wherever something works (sidebar, tabs, tool rows, PR, setup).
+ */
 export interface LoaderChoice {
   working: Loader
   thinking: Loader
+  status: Loader
 }
 
 export const LOADER_SETTINGS = {
+  status: 'ui.statusLoader',
   thinking: 'ui.thinkingLoader',
   working: 'ui.workingLoader',
 } as const satisfies Record<keyof LoaderChoice, string>
 
-export const DEFAULT_LOADERS: LoaderChoice = { thinking: 'rain', working: 'helix' }
+export const DEFAULT_LOADERS: LoaderChoice = {
+  status: 'diagswipe',
+  thinking: 'rain',
+  working: 'helix',
+}
 
 export const isLoader = (name: unknown): name is Loader =>
   typeof name === 'string' && Object.hasOwn(LOADERS, name)
+
+/** Whether `name` may fill the `key` setting: the status one takes only the square loaders. */
+export const fitsSetting = (key: keyof LoaderChoice, name: unknown): name is Loader =>
+  isLoader(name) && (key !== 'status' || STATUS_LOADERS.includes(name))
 
 /** The frame a loader shows at `now`: every loader of a kind runs in step with the others. */
 export function frameAt(loader: Loader, now: number): string {
   const { frames, interval } = LOADERS[loader]
   return frames[Math.floor(now / interval) % frames.length] ?? ''
+}
+
+/** The frame a still loader holds (reduced motion): the one that lights the most dots. */
+export function stillFrame(loader: Loader): string {
+  let fullest = ''
+  for (const frame of LOADERS[loader].frames)
+    if (litDots(frame).length > litDots(fullest).length) fullest = frame
+  return fullest
 }

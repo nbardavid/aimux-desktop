@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 
 import { effectiveValue, type Row, SECTIONS, type SettingValue } from '../settings/schema'
 import { playSettingsSound } from './attention'
-import { BrailleSpinner } from './braille-spinner'
+import { BrailleDots, BrailleSpinner } from './braille-spinner'
 import { previewCleanup } from './cleanup-effect'
 import { noteLoaderSetting } from './loader-choice'
 import { isLoader, LOADER_LABELS } from './loaders'
@@ -49,7 +49,7 @@ function Control({
       />
     )
   }
-  if (row.kind === 'select' && row.preview === 'loader') {
+  if (row.kind === 'select' && row.preview !== undefined) {
     return (
       <div className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label={row.label}>
         {row.options.filter(isLoader).map((loader) => (
@@ -61,7 +61,11 @@ function Control({
             className="bg-chrome text-muted-foreground hover:text-foreground aria-checked:border-line-strong aria-checked:bg-background aria-checked:text-foreground flex h-14 flex-col items-center justify-center gap-1.5 rounded-md border border-transparent transition-[color,background-color,border-color] duration-120 ease-out hover:bg-hover"
             onClick={() => onChange(loader)}
           >
-            <BrailleSpinner loader={loader} className="text-[15px]" />
+            {row.preview === 'dots' ? (
+              <BrailleDots loader={loader} />
+            ) : (
+              <BrailleSpinner loader={loader} className="text-[15px]" />
+            )}
             <span className="text-2xs">{LOADER_LABELS[loader]}</span>
           </button>
         ))}
@@ -338,7 +342,7 @@ export function SettingsView({
                     />
                   )
                   // A grid of choices takes the row's width, under its label.
-                  const wide = row.kind === 'select' && row.preview === 'loader'
+                  const wide = row.kind === 'select' && row.preview !== undefined
                   return (
                     <div className={cn(rowClass, wide && 'flex-wrap gap-y-3')} key={row.id}>
                       <div className={rowText}>

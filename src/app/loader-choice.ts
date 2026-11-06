@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useSyncExternalStore } from 'react'
 
-import { DEFAULT_LOADERS, isLoader, LOADER_SETTINGS, type LoaderChoice } from './loaders'
+import { DEFAULT_LOADERS, fitsSetting, LOADER_SETTINGS, type LoaderChoice } from './loaders'
 
 let chosen = DEFAULT_LOADERS
 let loaded = false
@@ -11,9 +11,9 @@ const listeners = new Set<() => void>()
 export function loadersFrom(settings: Record<string, unknown>): LoaderChoice {
   const pick = (key: keyof LoaderChoice) => {
     const v = settings[LOADER_SETTINGS[key]]
-    return isLoader(v) ? v : DEFAULT_LOADERS[key]
+    return fitsSetting(key, v) ? v : DEFAULT_LOADERS[key]
   }
-  return { thinking: pick('thinking'), working: pick('working') }
+  return { status: pick('status'), thinking: pick('thinking'), working: pick('working') }
 }
 
 function set(next: LoaderChoice) {
@@ -26,7 +26,7 @@ export function noteLoaderSetting(id: string, value: unknown) {
   const key = (Object.keys(LOADER_SETTINGS) as (keyof LoaderChoice)[]).find(
     (k) => LOADER_SETTINGS[k] === id
   )
-  if (key) set({ ...chosen, [key]: isLoader(value) ? value : DEFAULT_LOADERS[key] })
+  if (key) set({ ...chosen, [key]: fitsSetting(key, value) ? value : DEFAULT_LOADERS[key] })
 }
 
 function subscribe(listener: () => void) {
@@ -42,5 +42,5 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener)
 }
 
-/** The loaders the chat plays now; read from Settings once, then kept in step with it. */
+/** The loaders the chat and the statuses play now; read from Settings once, then kept in step with it. */
 export const useLoaderChoice = () => useSyncExternalStore(subscribe, () => chosen)
