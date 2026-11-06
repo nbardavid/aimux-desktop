@@ -108,6 +108,19 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    id: 'chat',
+    label: 'Chats',
+    rows: [
+      {
+        fallback: true,
+        help: 'Claude can publish visual explanations to your claude.ai account; they open beside the chat. Needs a Team or Enterprise plan.',
+        id: 'chat.artifacts',
+        kind: 'toggle',
+        label: 'Artifacts',
+      },
+    ],
+  },
+  {
     id: 'git',
     label: 'Workspaces',
     rows: [

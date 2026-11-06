@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { effectiveValue, type Row, SECTIONS } from './schema'
+import { effectiveValue, type Row, rowById, SECTIONS } from './schema'
 
 const number: Row = {
   fallback: 5,
@@ -33,4 +33,10 @@ test('every row id is unique and every fallback is valid', () => {
   const rows = SECTIONS.flatMap((s) => s.rows)
   expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length)
   for (const row of rows) expect(effectiveValue(row, undefined)).toBe(row.fallback)
+})
+
+test('artifacts are a toggle, on unless turned off', () => {
+  const row = rowById('chat.artifacts')
+  expect(row.kind).toBe('toggle')
+  expect(row.fallback).toBe(true)
 })

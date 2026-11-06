@@ -36,6 +36,20 @@ pub fn claude_args(resume: Option<&str>, model: Option<&str>, effort: Option<&st
 }
 
 /// `claude` in `cwd` with every stdio piped.
+/// Claude Code's `Artifact` tool, on unless Settings › Chats › Artifacts is off. Claude Code
+/// would also open each new artifact in the default browser: the app's panel shows it instead.
+pub fn artifact_env(
+    settings: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<(&'static str, &'static str)> {
+    if settings.get("chat.artifacts") == Some(&serde_json::Value::Bool(false)) {
+        return Vec::new();
+    }
+    vec![
+        ("CLAUDE_CODE_ARTIFACT", "1"),
+        ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0"),
+    ]
+}
+
 pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
     let mut cmd = Command::new("claude");
     cmd.args(args)
@@ -50,6 +64,7 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
             cmd.env_remove(key);
         }
     }
+    cmd.envs(artifact_env(&crate::store::read_settings_map()));
     cmd.spawn().map_err(|e| format!("claude: {e}"))
 }
 
@@ -116,6 +131,34 @@ pub fn chat_history(session_id: String) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn settings(json: &str) -> serde_json::Map<String, serde_json::Value> {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn artifact_env_on_by_default() {
+        assert_eq!(
+            artifact_env(&settings("{}")),
+            [
+                ("CLAUDE_CODE_ARTIFACT", "1"),
+                ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0")
+            ]
+        );
+    }
+
+    #[test]
+    fn artifact_env_off_when_disabled() {
+        assert!(artifact_env(&settings(r#"{"chat.artifacts": false}"#)).is_empty());
+    }
+
+    #[test]
+    fn artifact_env_ignores_non_bool() {
+        assert_eq!(
+            artifact_env(&settings(r#"{"chat.artifacts": "no"}"#)).len(),
+            2
+        );
+    }
 
     #[test]
     fn resume_only_with_an_id() {

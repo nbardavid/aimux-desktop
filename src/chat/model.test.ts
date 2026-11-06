@@ -3,14 +3,18 @@ import { describe, expect, test } from 'bun:test'
 import {
   addNote,
   addUserTurn,
+  artifactUrl,
+  type Block,
   type ChatState,
   exitCode,
   initialChat,
   modelSet,
+  newPublishes,
   numberedLines,
   parseCommands,
   type Permission,
   permissionLine,
+  publishedArtifacts,
   questionsOf,
   reduceLine,
   replayTranscript,
@@ -556,4 +560,59 @@ describe('pasted images', () => {
     const line = JSON.stringify({ message: sent.message, type: 'user', uuid: 'a' })
     expect(replayTranscript([line]).turns[0]?.blocks).toEqual([{ kind: 'image', ...png }])
   })
+})
+
+const URL_A = 'https://claude.ai/artifact/Q7qKRZLjujn7avFRs7C3Bv'
+const publish = (
+  id: string,
+  input: Record<string, unknown>,
+  result?: { text: string; isError: boolean }
+): Block => ({ id, input, json: '', kind: 'tool', name: 'Artifact', result })
+const done = (text: string) => ({ isError: false, text })
+
+test('a claude.ai artifact link is found in a publish result, either shape', () => {
+  expect(artifactUrl(`Published /tmp/x.html at ${URL_A} (Version 1, version id 1-2)`)).toBe(URL_A)
+  expect(artifactUrl('at https://claude.ai/code/artifact/0b9e-77aa.')).toBe(
+    'https://claude.ai/code/artifact/0b9e-77aa'
+  )
+  expect(artifactUrl('Quickstart. Make a plain page.')).toBeNull()
+})
+
+test('a publish with a link gives its url and title', () => {
+  const blocks = [publish('t1', { file_path: '/tmp/p.html', title: 'Flow' }, done(`at ${URL_A}`))]
+  expect(publishedArtifacts(blocks)).toEqual([{ title: 'Flow', toolId: 't1', url: URL_A }])
+})
+
+test('ignores calls without a published URL', () => {
+  const blocks = [
+    publish('q', { action: 'quickstart', intent: 'other' }, done('Quickstart. See …')),
+    publish('l', { action: 'list' }, done(`1 artifact: ${URL_A}`)),
+    publish('e', { file_path: '/tmp/p.html' }, { isError: true, text: `failed for ${URL_A}` }),
+    publish('r', { file_path: '/tmp/p.html' }),
+  ]
+  expect(publishedArtifacts(blocks)).toEqual([])
+})
+
+test('an open call counts, and a missing title is empty', () => {
+  const blocks = [publish('o', { action: 'open', url: URL_A }, done(`Opened ${URL_A}`))]
+  expect(publishedArtifacts(blocks)).toEqual([{ title: '', toolId: 'o', url: URL_A }])
+})
+
+test('republish yields the same url once, with the last title', () => {
+  const blocks = [
+    publish('a', { file_path: '/tmp/p.html', title: 'v1' }, done(`at ${URL_A}`)),
+    publish('b', { file_path: '/tmp/p.html', title: 'v2' }, done(`at ${URL_A}`)),
+  ]
+  expect(publishedArtifacts(blocks)).toEqual([{ title: 'v2', toolId: 'b', url: URL_A }])
+})
+
+test('only publishes that completed since the last state are new', () => {
+  const pending = publish('a', { file_path: '/tmp/p.html', title: 'Flow' })
+  const finished = publish('a', { file_path: '/tmp/p.html', title: 'Flow' }, done(`at ${URL_A}`))
+  expect(newPublishes([pending], [finished])).toEqual([{ title: 'Flow', toolId: 'a', url: URL_A }])
+  expect(newPublishes([finished], [finished])).toEqual([])
+  const again = publish('b', { file_path: '/tmp/p.html' }, done(`at ${URL_A}`))
+  expect(newPublishes([finished], [finished, again])).toEqual([
+    { title: '', toolId: 'b', url: URL_A },
+  ])
 })

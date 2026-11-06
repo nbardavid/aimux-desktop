@@ -22,6 +22,7 @@ name = "aimux-desktop"
 version = "0.1.0"
 dependencies = [
  "glob",
+ "objc2",
  "portable-pty",
  "serde",
  "serde_json",

@@ -6,13 +6,17 @@ import type { ChatRecord, Signal } from '../model/catalog'
 import { parseCommand } from '../chat/commands'
 import {
   addNote,
+  blocksOf,
   type ChatState,
   type Image,
   initialChat,
   initializeLine,
   interruptLine,
+  newPublishes,
   type Permission,
   permissionLine,
+  type Published,
+  publishedArtifacts,
   reduceLine,
   replayTranscript,
   resolvePermission,
@@ -35,6 +39,11 @@ interface Hooks {
   onRecord: (record: ChatRecord) => void
   /** A chat asks for permission, or finished a turn. */
   onAttention: (chat: ChatTab, kind: 'waiting' | 'done') => void
+  /**
+   * The chat published an artifact: `live` as it happens, or not (found in a replay or the
+   * transcript, which must not pull it to the front).
+   */
+  onArtifact: (chat: ChatTab, artifact: Published, live: boolean) => void
   /** False while an old background host holds the chats: a second Claude would corrupt one. */
   canStart: () => boolean
   /** The record's model for the one Claude Code says it runs (see `reportedModel`). */
@@ -131,6 +140,9 @@ export function useChats(hooks: Hooks) {
         if ((asked || finished) && !replaying) {
           queueMicrotask(() => latest.current.hooks.onAttention(next, asked ? 'waiting' : 'done'))
         }
+        for (const artifact of newPublishes(blocksOf(c.state), blocksOf(state))) {
+          queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
+        }
         return next
       })
     },
@@ -160,11 +172,18 @@ export function useChats(hooks: Hooks) {
         const replayed = replayTranscript(lines)
         const { model } = followModel(chat, replayed, latest.current.hooks)
         if (sessionId !== null) {
-          edit(id, (c) => ({
-            ...c,
-            record: followModel(c, replayed, latest.current.hooks),
-            state: replayed,
-          }))
+          edit(id, (c) => {
+            const next = {
+              ...c,
+              record: followModel(c, replayed, latest.current.hooks),
+              state: replayed,
+            }
+            // What it published before this window was here: listed, never brought forward.
+            for (const artifact of publishedArtifacts(blocksOf(replayed))) {
+              queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, false))
+            }
+            return next
+          })
         }
         // Read-only until then: the transcript shows, nothing runs.
         if (!latest.current.hooks.canStart()) throw new Error(HOST_BLOCKED)

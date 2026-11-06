@@ -12,6 +12,7 @@ import {
   GitBranchIcon,
   GitMergeIcon,
   GitPullRequestIcon,
+  GlobeIcon,
 } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
@@ -30,10 +31,11 @@ import {
   type PullRequest,
   uncommittedRefusal,
 } from '../git/pr'
+import { isBrowser, type PanelView } from './browser-tabs'
 import { countClass, Empty, type FileActions, FileList } from './file-list'
 import { Dot } from './status-dot'
 
-interface Props {
+export interface GitPanelProps {
   /** Pixels once dragged, or a CSS width that follows the window. */
   width: number | string
   path: string | undefined
@@ -55,6 +57,13 @@ interface Props {
   /** No PR yet: hand "open one" to this workspace's chat (the app itself never creates one). */
   onAskPr: () => void
   setup: ReactNode
+  /** The workspace's artifacts: how many, and whether one waits unread (the tab's dot). */
+  artifacts: { count: number; unread: boolean }
+  /** What the panel shows (`shownView`, so always one it can). */
+  view: PanelView
+  onView: (view: PanelView) => void
+  /** The body while a page is the view: its address bar and the page. */
+  browser: ReactNode
 }
 
 /** The band, its hairline, the chip's border and the ink, by the PR's tone. */
@@ -77,7 +86,7 @@ const TONE = {
 } as const
 
 /** The working status loader, centred in a 14px icon's box. */
-const spinner = (
+export const spinner = (
   <span className="grid size-3.5 flex-none place-items-center">
     <Dot tone="working" />
   </span>
@@ -118,7 +127,7 @@ function Head({
   path,
   pr,
 }: Pick<
-  Props,
+  GitPanelProps,
   'branch' | 'changes' | 'claude' | 'cleanup' | 'onAskPr' | 'onChanged' | 'onError' | 'path' | 'pr'
 >) {
   const [asking, setAsking] = useState(false)
@@ -389,11 +398,14 @@ function Head({
 function Tab({
   active,
   count,
+  dot = false,
   label,
   onSelect,
 }: {
   active: boolean
   count: number
+  /** Something new behind it (an unread artifact). */
+  dot?: boolean
   label: string
   onSelect: () => void
 }) {
@@ -410,6 +422,7 @@ function Tab({
     >
       {label}
       {count > 0 && <span className={countClass}>{count}</span>}
+      {dot && <Dot tone="done" label="New" />}
     </button>
   )
 }
@@ -479,10 +492,10 @@ function Checks({ pr }: { pr: PullRequest }) {
   )
 }
 
-export function GitPanel(props: Props) {
+export function GitPanel(props: GitPanelProps) {
   const { changes, onOpenFile, path, pr, setup, width } = props
-  const [view, setView] = useState<'changes' | 'checks'>('changes')
-  const shown = pr ? view : 'changes'
+  const shown = props.view
+  const setView = props.onView
 
   const write = (failed: string, command: string, args: Record<string, unknown>) => {
     if (path === undefined) return
@@ -544,8 +557,19 @@ export function GitPanel(props: Props) {
             onSelect={() => setView('checks')}
           />
         )}
+        <Tab
+          active={shown === 'artifacts' || isBrowser(shown)}
+          label="Artifacts"
+          count={props.artifacts.count}
+          dot={props.artifacts.unread && shown !== 'artifacts' && !isBrowser(shown)}
+          onSelect={() => setView('artifacts')}
+        />
       </div>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
+      {isBrowser(shown) && props.browser}
+      <div
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3"
+        hidden={isBrowser(shown)}
+      >
         {shown === 'changes' && changes && (
           <FileList changes={changes} onOpen={onOpenFile} actions={actions} />
         )}
@@ -558,8 +582,11 @@ export function GitPanel(props: Props) {
           </div>
         )}
         {shown === 'checks' && pr && <Checks pr={pr} />}
+        {shown === 'artifacts' && (
+          <Empty icon={GlobeIcon} text="Artifacts Claude publishes in this workspace show here." />
+        )}
       </div>
-      {setup}
+      {!isBrowser(shown) && setup}
     </aside>
   )
 }

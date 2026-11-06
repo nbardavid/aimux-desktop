@@ -6,7 +6,7 @@
 // pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
 // (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
 // (truncation), `?empty-inbox` nothing waiting or done, `?merged` amber's PR merged (Clean up
-// with a full transcript to crumble). Replies stream in over about two
+// with a full transcript to crumble), `?artifacts` ten pages on amber (two new). Replies stream in over about two
 // seconds; every other one asks to run a tool first. Stage, discard, push and merge change
 // what the panel shows. A setup run takes about eight seconds; deleting a workspace with
 // changes (stat tiles' Clean up, teal's menu) is refused, so "Delete anyway" shows.
@@ -17,6 +17,7 @@ import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import type { FileChange } from '../app/use-git'
 import type { Catalog, Workspace } from '../model/catalog'
 
+import { fakeArtifacts } from './fake-artifacts'
 import {
   asTranscript,
   BRANCHES,
@@ -61,6 +62,10 @@ const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
 if (flags.has('merged'))
   for (const pr of Object.values(PRS)) if (pr.number === 128) pr.state = 'MERGED'
+if (flags.has('artifacts')) {
+  const first = store.workspaces.find((w) => w.id === 'ws-amber')
+  if (first) first.artifacts = fakeArtifacts(10, Date.now())
+}
 if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
 // When each chat's last turn moved (store.rs `active_at`): the sidebar's ages differ.
 const ACTIVE_AGO: Record<string, number> = {
@@ -326,6 +331,30 @@ function handle(cmd: string, args: Args): unknown {
     case 'chat_forget':
       store.chats = store.chats.filter((c) => c.id !== args.id)
       return null
+    case 'artifact_add': {
+      const w = store.workspaces.find((x) => x.id === args.workspaceId)
+      if (!w) throw new Error('unknown workspace')
+      const list = (w.artifacts ??= [])
+      const known = list.find((x) => x.url === args.url)
+      const title = str(args.title)
+      if (!known) list.push({ at: Date.now(), chatId: str(args.chatId), title, url: str(args.url) })
+      else {
+        if (title) known.title = title
+        if (args.live === true) Object.assign(known, { at: Date.now(), closed: false })
+      }
+      return null
+    }
+    case 'artifact_close':
+    case 'artifact_seen': {
+      const w = store.workspaces.find((x) => x.id === args.workspaceId)
+      if (!w) throw new Error('unknown workspace')
+      for (const x of w.artifacts ?? []) {
+        if (x.url !== args.url) continue
+        if (cmd === 'artifact_close') x.closed = true
+        else x.seenAt = Date.now()
+      }
+      return null
+    }
     case 'term_open': {
       const channel = args.onData as Channel
       terms.set(str(args.id), channel)
@@ -440,6 +469,15 @@ function handle(cmd: string, args: Args): unknown {
     }
     case 'write_quota_cache':
     case 'host_restart':
+    // Native pages: the preview draws a stand-in instead.
+    case 'browser_show':
+    case 'browser_bounds':
+    case 'browser_hide':
+    case 'browser_hide_all':
+    case 'browser_back':
+    case 'browser_reload':
+    case 'browser_close':
+    case 'browser_close_many':
       return null
     default:
       if (!unknown.has(cmd)) {

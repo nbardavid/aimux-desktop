@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod chat;
 pub mod git;
 pub mod git_write;
@@ -69,6 +70,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(host_client::Presence::default())
         .manage(store::Store::default())
+        .manage(browser::Browsers::default())
         .invoke_handler(tauri::generate_handler![
             host_client::host_status,
             host_client::host_restart,
@@ -90,6 +92,9 @@ pub fn run() {
             store::workspace_remove,
             store::workspace_rename,
             store::chat_save,
+            store::artifact_add,
+            store::artifact_close,
+            store::artifact_seen,
             store::chat_forget,
             store::read_settings,
             store::write_setting,
@@ -111,6 +116,14 @@ pub fn run() {
             git_write::git_branch,
             git_write::git_checkout,
             git_write::pr_merge,
+            browser::browser_show,
+            browser::browser_bounds,
+            browser::browser_hide,
+            browser::browser_hide_all,
+            browser::browser_back,
+            browser::browser_reload,
+            browser::browser_close,
+            browser::browser_close_many,
             update::update_check,
             update::update_install,
         ])
