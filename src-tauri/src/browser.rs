@@ -73,6 +73,20 @@ pub fn opens_as_popup(url: &Url) -> bool {
     }
 }
 
+/// Whether the pointer (`cursor`, desktop physical pixels) is over a page laid at `page`
+/// (x, y, width, height in the window content's logical pixels), the content starting at
+/// `origin` (desktop physical pixels) at `scale`.
+pub fn pointer_in_page(
+    cursor: (f64, f64),
+    origin: (f64, f64),
+    scale: f64,
+    page: (f64, f64, f64, f64),
+) -> bool {
+    let x = (cursor.0 - origin.0) / scale;
+    let y = (cursor.1 - origin.1) / scale;
+    x >= page.0 && x < page.0 + page.2 && y >= page.1 && y < page.1 + page.3
+}
+
 /// A panel page's webview (not a sign-in popup's).
 pub fn is_page(label: &str) -> bool {
     label.starts_with("browser-") && !label.starts_with("browser-popup-")
@@ -112,7 +126,83 @@ impl Bounds {
 pub struct Browsers {
     live: Mutex<Vec<(String, String)>>,
     order: Mutex<()>,
+    /// The page on screen, if any: the pointer watch looks at that one.
+    shown: Mutex<Option<String>>,
 }
+
+fn set_shown(browsers: &Browsers, label: Option<String>) {
+    *browsers.shown.lock().unwrap_or_else(|e| e.into_inner()) = label;
+}
+
+/// Where the pointer is, against the page on screen. None when there is no page to be over.
+fn over_page(app: &AppHandle) -> Option<bool> {
+    let label = app
+        .state::<Browsers>()
+        .shown
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()?;
+    let page = app.get_webview(&label)?;
+    let window = app.get_window("main")?;
+    let scale = window.scale_factor().ok()?;
+    let origin = window.inner_position().ok()?;
+    let cursor = window.cursor_position().ok()?;
+    let bounds = page.bounds().ok()?;
+    let at = bounds.position.to_logical::<f64>(scale);
+    let size = bounds.size.to_logical::<f64>(scale);
+    Some(pointer_in_page(
+        (cursor.x, cursor.y),
+        (f64::from(origin.x), f64::from(origin.y)),
+        scale,
+        (at.x, at.y, size.width, size.height),
+    ))
+}
+
+/// Tells the app's own webview to ignore mouse moves (WebKit's `_setIgnoresMouseMoveEvents:`,
+/// guarded). Under a page it still gets them and sets its own cursor, so the two webviews
+/// fight over it and the cursor flickers (wry#1763; WebKit fixed it upstream in 2026).
+#[cfg(target_os = "macos")]
+fn ignore_mouse_moves(app: &AppHandle, on: bool) {
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::{msg_send, sel};
+    let Some(main) = app.get_webview("main") else {
+        return;
+    };
+    let _ = main.with_webview(move |platform| {
+        let view = platform.inner().cast::<AnyObject>();
+        if view.is_null() {
+            return;
+        }
+        // SAFETY: `inner` is the main window's live WKWebView, used on the main thread.
+        unsafe {
+            let view = &*view;
+            let known: Bool =
+                msg_send![view, respondsToSelector: sel!(_setIgnoresMouseMoveEvents:)];
+            if known.as_bool() {
+                let _: () = msg_send![view, _setIgnoresMouseMoveEvents: Bool::new(on)];
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ignore_mouse_moves(_app: &AppHandle, _on: bool) {}
+
+/// Every 50ms while the app runs: the app's webview ignores mouse moves exactly while the
+/// pointer is over the page on screen.
+fn watch_pointer(app: AppHandle) {
+    let mut ignoring = false;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let over = over_page(&app).unwrap_or(false);
+        if over != ignoring {
+            ignore_mouse_moves(&app, over);
+            ignoring = over;
+        }
+    }
+}
+
+static WATCH: std::sync::Once = std::sync::Once::new();
 
 #[derive(Clone, Serialize)]
 struct Title {
@@ -241,6 +331,11 @@ pub fn browser_show(
         }
         _ => create(&app, &label, parsed, bounds)?,
     }
+    set_shown(&browsers, Some(label.clone()));
+    let watcher = app.clone();
+    WATCH.call_once(move || {
+        std::thread::spawn(move || watch_pointer(watcher));
+    });
     let evicted: Vec<String> = {
         let mut list = live(&browsers);
         list.retain(|(l, _)| *l != label);
@@ -265,8 +360,18 @@ pub fn browser_bounds(app: AppHandle, id: String, bounds: Bounds) -> Result<(), 
 }
 
 #[tauri::command(async)]
-pub fn browser_hide(app: AppHandle, id: String) -> Result<(), String> {
-    match app.get_webview(&label_for(&id).ok_or("bad page id")?) {
+pub fn browser_hide(
+    app: AppHandle,
+    browsers: State<'_, Browsers>,
+    id: String,
+) -> Result<(), String> {
+    let label = label_for(&id).ok_or("bad page id")?;
+    let mut shown = browsers.shown.lock().unwrap_or_else(|e| e.into_inner());
+    if shown.as_deref() == Some(label.as_str()) {
+        *shown = None;
+    }
+    drop(shown);
+    match app.get_webview(&label) {
         Some(webview) => webview.hide().map_err(|e| e.to_string()),
         None => Ok(()),
     }
@@ -276,6 +381,7 @@ pub fn browser_hide(app: AppHandle, id: String) -> Result<(), String> {
 #[tauri::command(async)]
 pub fn browser_hide_all(app: AppHandle, browsers: State<'_, Browsers>) -> Result<(), String> {
     let _order = browsers.order.lock().unwrap_or_else(|e| e.into_inner());
+    set_shown(&browsers, None);
     for (label, webview) in app.webviews() {
         if is_page(&label) {
             webview.hide().map_err(|e| e.to_string())?;
@@ -318,6 +424,11 @@ pub fn browser_close_many(
 ) -> Result<(), String> {
     let labels: Vec<String> = ids.iter().filter_map(|id| label_for(id)).collect();
     live(&browsers).retain(|(l, _)| !labels.contains(l));
+    let mut shown = browsers.shown.lock().unwrap_or_else(|e| e.into_inner());
+    if shown.as_ref().is_some_and(|l| labels.contains(l)) {
+        *shown = None;
+    }
+    drop(shown);
     for label in labels {
         if let Some(webview) = app.get_webview(&label) {
             let _ = webview.close();
@@ -384,6 +495,18 @@ mod tests {
         ] {
             assert_eq!(opens_as_popup(&url.parse().unwrap()), popup, "{url}");
         }
+    }
+
+    #[test]
+    fn the_pointer_is_over_the_page_inside_its_bounds_only() {
+        // A page at (800, 120), 600 by 780, in a window at (100, 50) on a 2x screen.
+        let page = (800.0, 120.0, 600.0, 780.0);
+        let at = |x: f64, y: f64| pointer_in_page((x, y), (100.0, 50.0), 2.0, page);
+        assert!(at(100.0 + 2.0 * 900.0, 50.0 + 2.0 * 500.0));
+        assert!(!at(100.0 + 2.0 * 700.0, 50.0 + 2.0 * 500.0));
+        assert!(!at(100.0 + 2.0 * 900.0, 50.0 + 2.0 * 100.0));
+        // The page's right and bottom edges are outside it.
+        assert!(!at(100.0 + 2.0 * 1400.0, 50.0 + 2.0 * 500.0));
     }
 
     #[test]
