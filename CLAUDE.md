@@ -39,6 +39,9 @@ branding.
 - **Sidebar rows** lead with the workspace's task (its first chat's title, or the name the
   user gave it) behind the agent's state (working spinner, waiting, done, idle dot), the
   colour word and age at the right. No colour bars.
+- **Artifacts** Claude publishes (Claude Code's own `Artifact` tool, Settings › Chats) open
+  in the right panel's browser, one tab each, logged in to claude.ai once; they never take
+  the keyboard.
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. The composer is the one dialog.
 - **Closing the window loses nothing**: chats and terminals keep running in the host.
