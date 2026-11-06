@@ -11,7 +11,7 @@ import type { Artifact } from '../model/catalog'
 import { browserId } from './browser-tabs'
 
 /** Outside Tauri (the browser preview) there is no native page: the placeholder says what it would show. */
-export const nativePages = '__TAURI_INTERNALS__' in window
+export const nativePages = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 /**
  * A page of the right panel: its address bar, then the placeholder the native webview is laid
@@ -29,7 +29,14 @@ export function BrowserView({
 }) {
   const id = browserId(artifact.url)
   const tool = (label: string, icon: ReactNode, run: () => void) => (
-    <Button variant="ghost" size="icon-sm" aria-label={label} data-tip={label} onClick={run}>
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      data-tip={label}
+      data-tip-side="top"
+      onClick={run}
+    >
       {icon}
     </Button>
   )

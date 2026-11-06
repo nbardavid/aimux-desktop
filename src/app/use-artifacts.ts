@@ -82,5 +82,14 @@ export function useArtifacts(o: Options) {
     [o, tabs]
   )
 
-  return { close, published, setView, tabs, view }
+  /** A page Claude gave no title loaded one: its tab keeps it. */
+  const retitle = useCallback(
+    (url: string, title: string) => {
+      const id = o.workspaceId
+      if (id !== undefined) void o.addArtifact(id, url, title, '', false).catch(() => {})
+    },
+    [o]
+  )
+
+  return { close, published, retitle, setView, tabs, view }
 }

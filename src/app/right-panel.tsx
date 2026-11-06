@@ -1,13 +1,14 @@
 // The right panel: the git panel's lists, or a page (an artifact) at its own wider width.
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 
 import type { MenuState } from './context-menu'
 import type { useArtifacts } from './use-artifacts'
 
-import { isBrowser } from './browser-tabs'
+import { browserId, isBrowser } from './browser-tabs'
 import { BrowserView, nativePages, PageStandIn } from './browser-view'
-import { GitPanel, type GitPanelProps } from './git-panel'
+import { GitPanel, type GitPanelProps, spinner } from './git-panel'
 import { Slide, Splitter } from './splitter'
+import { browserShown, useBrowser, useCovered, usePageTitles } from './use-browser'
 import {
   BROWSER_WIDTH,
   browserWidthNow,
@@ -43,8 +44,26 @@ export function RightPanel({
   const fallback = page ? BROWSER_WIDTH : GIT_WIDTH
   const width = dragged === null ? fallback : `${dragged}px`
   const [min, max] = page ? LIMITS.browser : LIMITS.git
+
+  const [sliding, setSliding] = useState(false)
+  const covered = useCovered(placeholder)
+  const shown = browserShown({ covered, mode: 'normal', panelOpen: open, sliding, view })
+  const loaded = useBrowser(page?.url, placeholder, shown && page !== undefined)
+  const { retitle, tabs } = artifacts
+  usePageTitles((id, title) => {
+    const tab = tabs.find((a) => browserId(a.url) === id)
+    if (tab && tab.title === '' && title !== '') retitle(tab.url, title)
+  })
+  let cover = null
+  if (!nativePages && page) cover = <PageStandIn artifact={page} />
+  else if (!loaded) cover = <div className="grid h-full place-items-center">{spinner}</div>
   return (
-    <Slide open={open} width={`calc(${width} + 1px)`} widthKey={page ? 'page' : 'list'}>
+    <Slide
+      open={open}
+      width={`calc(${width} + 1px)`}
+      widthKey={page ? 'page' : 'list'}
+      onSliding={setSliding}
+    >
       {panel && (
         <>
           <Splitter
@@ -67,13 +86,7 @@ export function RightPanel({
               onMenu({ ...at, items: [{ label: 'Close', run: () => artifacts.close(url) }] })
             }
             browser={
-              page && (
-                <BrowserView
-                  artifact={page}
-                  placeholder={placeholder}
-                  cover={nativePages ? null : <PageStandIn artifact={page} />}
-                />
-              )
+              page && <BrowserView artifact={page} placeholder={placeholder} cover={cover} />
             }
           />
         </>

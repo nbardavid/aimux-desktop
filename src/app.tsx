@@ -469,6 +469,8 @@ export function App() {
   const removeWorkspace = async (w: Workspace, force: boolean) => {
     await store.removeWorkspace(w.id, force)
     terminals.closeWorkspace(w.id)
+    const pages = (w.artifacts ?? []).map((a) => browserId(a.url))
+    void invoke('browser_close_many', { ids: pages }).catch(() => {})
     for (const c of chats.chats) if (c.record.workspaceId === w.id) chats.close(c.record.id)
   }
 

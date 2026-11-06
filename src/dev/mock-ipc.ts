@@ -469,6 +469,15 @@ function handle(cmd: string, args: Args): unknown {
     }
     case 'write_quota_cache':
     case 'host_restart':
+    // Native pages: the preview draws a stand-in instead.
+    case 'browser_show':
+    case 'browser_bounds':
+    case 'browser_hide':
+    case 'browser_hide_all':
+    case 'browser_back':
+    case 'browser_reload':
+    case 'browser_close':
+    case 'browser_close_many':
       return null
     default:
       if (!unknown.has(cmd)) {

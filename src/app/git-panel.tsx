@@ -89,7 +89,7 @@ const TONE = {
 } as const
 
 /** The braille working orbit, centred in a 14px icon's box. */
-const spinner = (
+export const spinner = (
   <span className="grid size-3.5 flex-none place-items-center">
     <Dot tone="working" />
   </span>
