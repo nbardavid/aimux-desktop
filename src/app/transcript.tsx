@@ -417,20 +417,36 @@ function UserTurn({ turn }: { turn: Turn }) {
 }
 
 /**
- * A prompt sent while Claude works on the one before: pinned above the composer, faded,
- * until that turn ends and it moves into the transcript.
+ * Prompts sent while Claude works: pinned above the composer, faded, until Claude takes them.
+ * The text ones wait as one bubble, as Claude takes them; a slash command waits alone.
  */
-export function QueuedTurn({ turn }: { turn: Turn }) {
-  return (
+export function QueuedPrompts({ turns }: { turns: Turn[] }) {
+  // Claude takes every text prompt first, as one; each command after, on its own.
+  const command = (t: Turn) => t.blocks[0]?.kind === 'command'
+  const texts = turns.filter((t) => !command(t))
+  const groups = [texts, ...turns.filter(command).map((t) => [t])].filter((g) => g.length > 0)
+  return groups.map((group) => (
     // The transcript's column, not the composer's (16px wider, 8px less inset): its right
     // edge on the transcript's bubbles at any width.
-    <div className="-mx-4 flex justify-center" aria-label="Queued prompt">
+    <div
+      key={group[0]?.id}
+      className="-mx-4 flex justify-center"
+      aria-label={group.length > 1 ? `${group.length} queued prompts` : 'Queued prompt'}
+    >
       <div className="flex w-full max-w-[768px] flex-col items-end gap-1 px-6">
-        <span className="text-faint text-xs">Queued</span>
-        <div className={cn(USER, 'line-clamp-3 opacity-60')}>{promptText(turn)}</div>
+        <span className="text-faint text-xs">
+          {group.length > 1 ? `${group.length} queued, sent as one` : 'Queued'}
+        </span>
+        <div className={cn(USER, 'flex flex-col gap-2 opacity-60')}>
+          {group.map((t) => (
+            <p key={t.id} className="line-clamp-3">
+              {promptText(t)}
+            </p>
+          ))}
+        </div>
       </div>
     </div>
-  )
+  ))
 }
 
 const CHIP =

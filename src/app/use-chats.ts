@@ -16,6 +16,7 @@ import {
   replayTranscript,
   resolvePermission,
   sendTurn,
+  STOP,
   userLine,
 } from '../chat/model'
 import { HOST_BLOCKED, type HostChat } from './use-host'
@@ -268,6 +269,7 @@ export function useChats(hooks: Hooks) {
 
   const send = useCallback(
     (id: string, text: string) => {
+      const uuid = crypto.randomUUID()
       edit(id, (c) => {
         // The first real prompt names the tab; a command does not.
         const names = c.record.title === 'New chat' && parseCommand(text) === null
@@ -276,18 +278,23 @@ export function useChats(hooks: Hooks) {
           activeAt: Date.now(),
           ...(names && { title: titleOf(text) }),
         }
-        return { ...c, record, state: sendTurn(c.state, text, crypto.randomUUID()) }
+        return { ...c, record, state: sendTurn(c.state, text, uuid) }
       })
       // Claude Code fills in its own session id; an empty one is accepted.
-      void write(id, userLine(text, null))
+      void write(id, userLine(text, null, uuid))
     },
     [edit, write]
   )
 
   const answer = useCallback(
-    (id: string, permission: Permission, choice: 'allow' | 'always' | 'deny') => {
+    (
+      id: string,
+      permission: Permission,
+      choice: 'allow' | 'always' | 'deny',
+      answers?: Record<string, string>
+    ) => {
       edit(id, (c) => ({ ...c, state: resolvePermission(c.state, permission.requestId) }))
-      void write(id, permissionLine(permission, choice))
+      void write(id, permissionLine(permission, choice, answers))
     },
     [edit, write]
   )
@@ -298,7 +305,7 @@ export function useChats(hooks: Hooks) {
       edit(id, (c) =>
         c.state.status === 'working' ? { ...c, state: { ...c.state, stopping: true } } : c
       )
-      void write(id, interruptLine(`stop-${crypto.randomUUID()}`))
+      void write(id, interruptLine(`${STOP}${crypto.randomUUID()}`))
     },
     [edit, write]
   )

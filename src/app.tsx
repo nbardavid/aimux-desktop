@@ -926,7 +926,9 @@ export function App() {
                       commands={availableCommands(chat.state.commands, appWideCommands)}
                       onSend={(text) => chats.send(chat.record.id, text)}
                       onCommand={(name, args) => runCommand(chat, name, args)}
-                      onAnswer={(p, choice) => chats.answer(chat.record.id, p, choice)}
+                      onAnswer={(p, choice, answers) =>
+                        chats.answer(chat.record.id, p, choice, answers)
+                      }
                       onInterrupt={() => chats.interrupt(chat.record.id)}
                       onOpenFile={openChangedFile}
                       place={ws?.name}

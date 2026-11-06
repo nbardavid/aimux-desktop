@@ -11,6 +11,7 @@ import {
   parseCommands,
   type Permission,
   permissionLine,
+  questionsOf,
   reduceLine,
   replayTranscript,
   toolSummary,
@@ -206,6 +207,49 @@ describe('permissionLine', () => {
     const line = JSON.parse(permissionLine(p, 'deny'))
     expect(line.response.request_id).toBe('r1')
     expect(line.response.response.behavior).toBe('deny')
+  })
+})
+
+describe('AskUserQuestion', () => {
+  const ask = {
+    description: null,
+    input: {
+      questions: [
+        {
+          header: 'Fruit',
+          multiSelect: false,
+          options: [{ description: 'Red', label: 'Apple' }, { label: 'Pear' }],
+          question: 'Which fruit?',
+        },
+      ],
+    },
+    requestId: 'r2',
+    suggestions: [],
+    toolName: 'AskUserQuestion',
+    toolUseId: 't2',
+  }
+
+  test('reads its questions; any other tool has none', () => {
+    expect(questionsOf(ask)).toEqual([
+      {
+        header: 'Fruit',
+        multiSelect: false,
+        options: [
+          { description: 'Red', label: 'Apple' },
+          { description: '', label: 'Pear' },
+        ],
+        question: 'Which fruit?',
+      },
+    ])
+    expect(questionsOf({ ...ask, toolName: 'Bash' })).toBeNull()
+  })
+
+  test('the picks go back in its input, keyed by question', () => {
+    const line = JSON.parse(permissionLine(ask, 'allow', { 'Which fruit?': 'Pear' }))
+    expect(line.response.response).toEqual({
+      behavior: 'allow',
+      updatedInput: { ...ask.input, answers: { 'Which fruit?': 'Pear' } },
+    })
   })
 })
 

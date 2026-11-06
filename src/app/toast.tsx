@@ -108,7 +108,10 @@ export function AttentionToast({
             <span className={dotClass('waiting')} />
             <span className="truncate">{attention.title}</span>
           </span>
-          {attention.asks && (
+          {attention.asks?.tool === 'AskUserQuestion' && (
+            <span className={cn(TEXT, 'text-foreground')}>Asks: {attention.asks.what}</span>
+          )}
+          {attention.asks && attention.asks.tool !== 'AskUserQuestion' && (
             <span className={cn(TEXT, 'text-foreground')}>
               Wants to run {attention.asks.tool}
               {attention.asks.what !== '' && (
