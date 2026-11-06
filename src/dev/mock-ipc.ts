@@ -204,7 +204,7 @@ function chatSend(args: Args) {
     type?: string
     request_id?: string
     request?: { subtype?: string }
-    message?: { content?: { text?: string }[] }
+    message?: { content?: { type?: string; text?: string }[] }
     response?: { request_id?: string; response?: { behavior?: string } }
   }
   const channel = chats.get(id)
@@ -227,7 +227,11 @@ function chatSend(args: Args) {
       ...streamedReply(`m-${crypto.randomUUID()}`, after),
       turnEnd(0.0031, 4200),
     ])
-  } else if (message.type === 'user') answerPrompt(id, message.message?.content?.[0]?.text ?? '')
+  } else if (message.type === 'user') {
+    // Pasted images come before the words.
+    const text = message.message?.content?.find((part) => part.type === 'text')?.text
+    answerPrompt(id, text ?? 'What is in this image?')
+  }
 }
 
 /** The transcript Claude Code keeps of a session: a fixture's, or what its host replays. */

@@ -327,12 +327,6 @@ body.resizing * {
   }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes rise {
   from {
     opacity: 0;

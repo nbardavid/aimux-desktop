@@ -31,7 +31,7 @@ import {
   uncommittedRefusal,
 } from '../git/pr'
 import { countClass, Empty, type FileActions, FileList } from './file-list'
-import { dotClass } from './status-dot'
+import { Dot } from './status-dot'
 
 interface Props {
   /** Pixels once dragged, or a CSS width that follows the window. */
@@ -76,10 +76,10 @@ const TONE = {
   },
 } as const
 
-/** The 9px spinner, centred in a 14px icon's box. */
+/** The braille working orbit, centred in a 14px icon's box. */
 const spinner = (
   <span className="grid size-3.5 flex-none place-items-center">
-    <span className={dotClass('working')} />
+    <Dot tone="working" />
   </span>
 )
 

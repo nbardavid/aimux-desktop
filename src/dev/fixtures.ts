@@ -150,11 +150,27 @@ export const HOST_STATUS = {
 // Lines of Claude Code's stream-json, as the host replays them on `chat_open`.
 
 const line = (value: unknown) => JSON.stringify(value)
-const sent = (uuid: string, text: string) =>
+const sent = (uuid: string, text: string, images: string[] = []) =>
   line({
-    message: { message: { content: [{ text, type: 'text' }], role: 'user' }, type: 'user', uuid },
+    message: {
+      message: {
+        content: [
+          ...images.map((data) => ({
+            source: { data, media_type: 'image/png', type: 'base64' },
+            type: 'image',
+          })),
+          { text, type: 'text' },
+        ],
+        role: 'user',
+      },
+      type: 'user',
+      uuid,
+    },
     type: 'aimux_sent',
   })
+/** A pasted screenshot: a context menu, its second row hovered. */
+const MENU_SHOT =
+  'iVBORw0KGgoAAAANSUhEUgAAAPAAAACWCAIAAABvmpKCAAAB7ElEQVR42u3dMQ5AQBRFUZsR1mADtmxLKGlosATJRGL+Py+30cqJZIqJ5jwPKUyNVyCgJaAloCWgBbQEtAS0BLQEtICWgJaAloCWgBbQEtAS0BLQ0u9Ar8uswGUEfVnQAW1AA21AA21AA21AAw000AY00AY00AY00AY00EADbUDHBt13bbCABhpooIEGGmiggQbaodCANqCBNqCBNqCBNqCBNqANaKANaKANaKANaKCBTg563zdVHdBAAw20gAZaQAMtoIEGGmiggU4HOt4VrJKABhpooIEGGmiggQbaodChEGgBDbSABlpAAw000AIaaAHtCpa5ggW0AQ000EAb0EAb0EAb0EAb0EADDbQBDbQBDbQB7ceb2X+tCTTQQAMNNNBAAw20Q6EBDbQBDTTQQBvQQBvQQBvQQBvQQAMNtAENtAENtAFdCPp5VNUB7QvtCw20AQ20AQ20AQ20AW1AA21AA21AA21AAw000AY00AZ0laCncdDLgAYaaKCBBhpooIEG2hwKgTaggTaggTaggQYaaAMaaAMaaAMaaAMaaKCBNqCBNqCBNqCBNqANaKANaKANaKANaKCBBtqABtqABtqA/ga0ApcOtAS0BLSAloCWgJaAloAW0BLQEtAS0BLQAloCWgJaAloCWkG7AXeSjelxh8INAAAAAElFTkSuQmCC'
 const assistant = (id: string, content: unknown[], model = 'claude-opus-5-5') =>
   line({ message: { content, id, model, role: 'assistant' }, type: 'assistant' })
 const toolResult = (id: string, content: string, isError = false) =>
@@ -243,7 +259,9 @@ export const CONTEXT_OUTPUT = `## Context Usage
 const MENUS = [
   initAnswer('chat-menus'),
   systemInit('session-menus', 'claude-opus-5-5'),
-  sent('u-menus-1', 'Why does the context menu lose its hovered row when the mouse stays still?'),
+  sent('u-menus-1', 'Why does the context menu lose its hovered row when the mouse stays still?', [
+    MENU_SHOT,
+  ]),
   assistant('m-menus-1', [
     {
       thinking:
@@ -597,8 +615,13 @@ export function asTranscript(lines: string[]): string[] {
     }
     if (m.type === 'assistant' || m.type === 'user') return [raw]
     if (m.type !== 'aimux_sent') return []
-    const sentLine = m.message as { uuid?: string; message?: { content?: { text?: string }[] } }
-    const command = /^\/(\S+)\s*([\s\S]*)$/.exec(sentLine.message?.content?.[0]?.text ?? '')
+    const sentLine = m.message as {
+      uuid?: string
+      message?: { content?: { type?: string; text?: string }[] }
+    }
+    const content = sentLine.message?.content ?? []
+    const text = content.find((part) => part.type === 'text')?.text ?? ''
+    const command = /^\/(\S+)\s*([\s\S]*)$/.exec(text)
     if (command)
       return [
         localCommand(
@@ -607,7 +630,7 @@ export function asTranscript(lines: string[]): string[] {
       ]
     return [
       line({
-        message: { content: sentLine.message?.content?.[0]?.text ?? '', role: 'user' },
+        message: { content, role: 'user' },
         type: 'user',
         uuid: sentLine.uuid,
       }),
