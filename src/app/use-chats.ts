@@ -5,7 +5,7 @@ import type { ChatRecord, Signal } from '../model/catalog'
 
 import { parseCommand } from '../chat/commands'
 import {
-  addUserTurn,
+  addNote,
   type ChatState,
   initialChat,
   initializeLine,
@@ -15,6 +15,7 @@ import {
   reduceLine,
   replayTranscript,
   resolvePermission,
+  sendTurn,
   userLine,
 } from '../chat/model'
 import { HOST_BLOCKED, type HostChat } from './use-host'
@@ -34,6 +35,8 @@ interface Hooks {
   onAttention: (chat: ChatTab, kind: 'waiting' | 'done') => void
   /** False while an old background host holds the chats: a second Claude would corrupt one. */
   canStart: () => boolean
+  /** The record's model for the one Claude Code says it runs (see `reportedModel`). */
+  modelOf: (reported: string, current: string) => string
 }
 
 const TITLE_LENGTH = 40
@@ -58,6 +61,13 @@ function isLive(line: string): boolean {
   } catch {
     return false
   }
+}
+
+/** The record, following a model Claude Code newly reports (`/model` typed, a resume). */
+function followModel(c: ChatTab, state: ChatState, hooks: Hooks): ChatRecord {
+  if (state.model === null || state.model === c.state.model) return c.record
+  const model = hooks.modelOf(state.model, c.record.model)
+  return model === c.record.model ? c.record : { ...c.record, model }
 }
 
 export function chatSignal(chat: ChatTab): Signal | null {
@@ -107,9 +117,13 @@ export function useChats(hooks: Hooks) {
       edit(id, (c) => {
         const state = reduceLine(c.state, line)
         const sessionId = state.sessionId ?? c.record.sessionId
-        const record = sessionId === c.record.sessionId ? c.record : { ...c.record, sessionId }
+        const followed = followModel(c, state, latest.current.hooks)
         const asked = state.pending.length > c.state.pending.length
         const finished = c.state.status === 'working' && state.status === 'idle'
+        const withSession = sessionId === followed.sessionId ? followed : { ...followed, sessionId }
+        // A result just in: the workspace's age restarts (not for a replayed one).
+        const record =
+          finished && !replaying ? { ...withSession, activeAt: Date.now() } : withSession
         // A replay redraws what happened; the host's `unread` already says what was missed.
         const next = { ...c, record, state, unread: c.unread || (finished && !replaying) }
         if ((asked || finished) && !replaying) {
@@ -129,7 +143,7 @@ export function useChats(hooks: Hooks) {
       if (known) return known
       const chat = latest.current.chats.find((c) => c.record.id === id)
       if (!chat) throw new Error('no such chat')
-      const { effort, model, sessionId } = chat.record
+      const { effort, sessionId } = chat.record
       const host = hosted.current.get(id)
       hosted.current.delete(id)
       const start = async () => {
@@ -140,7 +154,16 @@ export function useChats(hooks: Hooks) {
             : await invoke<string[]>('chat_history', { sessionId }).catch(() => [])
         // The host replays everything since Claude started: the transcript gives what came before.
         const lines = host ? history.slice(0, host.historyLen) : history
-        if (sessionId !== null) edit(id, (c) => ({ ...c, state: replayTranscript(lines) }))
+        // The transcript says which model the session was on last: it resumes on that one.
+        const replayed = replayTranscript(lines)
+        const { model } = followModel(chat, replayed, latest.current.hooks)
+        if (sessionId !== null) {
+          edit(id, (c) => ({
+            ...c,
+            record: followModel(c, replayed, latest.current.hooks),
+            state: replayed,
+          }))
+        }
         // Read-only until then: the transcript shows, nothing runs.
         if (!latest.current.hooks.canStart()) throw new Error(HOST_BLOCKED)
         const channel = new Channel<string>()
@@ -248,8 +271,12 @@ export function useChats(hooks: Hooks) {
       edit(id, (c) => {
         // The first real prompt names the tab; a command does not.
         const names = c.record.title === 'New chat' && parseCommand(text) === null
-        const record = names ? { ...c.record, title: titleOf(text) } : c.record
-        return { ...c, record, state: addUserTurn(c.state, text, crypto.randomUUID()) }
+        const record = {
+          ...c.record,
+          activeAt: Date.now(),
+          ...(names && { title: titleOf(text) }),
+        }
+        return { ...c, record, state: sendTurn(c.state, text, crypto.randomUUID()) }
       })
       // Claude Code fills in its own session id; an empty one is accepted.
       void write(id, userLine(text, null))
@@ -281,22 +308,35 @@ export function useChats(hooks: Hooks) {
     [edit]
   )
 
+  /** A `/model` or `/effort` typed shows as sent; one picked elsewhere as a faint `note`. */
+  const command = useCallback(
+    (id: string, text: string, note: string | undefined) => {
+      if (note === undefined) {
+        send(id, text)
+        return
+      }
+      edit(id, (c) => ({ ...c, state: addNote(c.state, note, crypto.randomUUID()) }))
+      void write(id, userLine(text, null))
+    },
+    [edit, send, write]
+  )
+
   /** The model for the rest of this chat, and for its resumes. `default` is Claude Code's. */
   const setModel = useCallback(
-    (id: string, model: string) => {
+    (id: string, model: string, note?: string) => {
       edit(id, (c) => ({ ...c, record: { ...c.record, model: model === 'default' ? '' : model } }))
-      send(id, `/model ${model}`)
+      command(id, `/model ${model}`, note)
     },
-    [edit, send]
+    [command, edit]
   )
 
   const setEffort = useCallback(
-    (id: string, effort: string) => {
+    (id: string, effort: string, note?: string) => {
       edit(id, (c) => ({ ...c, record: { ...c.record, effort } }))
       // An empty effort is Claude Code's own choice: `auto`.
-      send(id, `/effort ${effort || 'auto'}`)
+      command(id, `/effort ${effort || 'auto'}`, note)
     },
-    [edit, send]
+    [command, edit]
   )
 
   /** A fresh session in the same tab; the old one stays on disk for `/resume`. */

@@ -114,6 +114,15 @@ export function useCatalog() {
     [reload]
   )
 
+  /** Its display name; the branch and folder keep their colour. Empty gives the colour back. */
+  const renameWorkspace = useCallback(
+    async (id: string, name: string) => {
+      await invoke('workspace_rename', { id, name })
+      await reload()
+    },
+    [reload]
+  )
+
   const saveChat = useCallback(
     (chat: ChatRecord) => void invoke('chat_save', { chat }).catch(() => {}),
     []
@@ -133,6 +142,7 @@ export function useCatalog() {
     reload,
     removeProject,
     removeWorkspace,
+    renameWorkspace,
     saveChat,
     select,
     status,

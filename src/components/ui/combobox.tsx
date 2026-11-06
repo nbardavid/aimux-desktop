@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils'
 import { fieldClass } from './input'
 
 /**
- * A searchable list, as `.combo-pop` draws the composer's pickers today: a white sheet,
- * its search on top behind a hairline (`ComboboxSearch`), 32px rows that turn grey when
+ * A searchable list, the composer's pickers: a white sheet with the menus' motion, its
+ * search on top behind a hairline (`ComboboxSearch`), 32px rows that turn grey when
  * highlighted, a check on the chosen one. `ComboboxInput` is the other shape: a field that
  * is its own trigger.
  */
@@ -107,7 +107,7 @@ function ComboboxContent({
       >
         <ComboboxPrimitive.Popup
           className={cn(
-            'bg-popover text-popover-foreground shadow-popover data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1 z-50 flex max-h-(--available-height) w-80 max-w-(--available-width) origin-(--transform-origin) flex-col overflow-hidden rounded-2xl px-1 pb-1 text-sm duration-120 outline-none',
+            'bg-popover text-popover-foreground shadow-popover data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-open:duration-150 data-open:ease-out data-closed:animate-out data-closed:fade-out-0 data-closed:duration-110 data-closed:ease-in data-[side=bottom]:slide-in-from-top-[3px] data-[side=top]:slide-in-from-bottom-[3px] z-50 flex max-h-(--available-height) w-80 max-w-(--available-width) origin-(--transform-origin) flex-col overflow-hidden rounded-xl px-1 pb-1 text-sm outline-none',
             className
           )}
           data-slot="combobox-content"
@@ -131,7 +131,7 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
 function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
   return (
     <ComboboxPrimitive.Empty
-      className={cn('text-faint px-2.5 py-4 text-center text-[12.5px] empty:hidden', className)}
+      className={cn('text-faint px-2.5 py-4 text-center text-sm empty:hidden', className)}
       data-slot="combobox-empty"
       {...props}
     />
@@ -145,7 +145,10 @@ function ComboboxGroup({ ...props }: ComboboxPrimitive.Group.Props) {
 function ComboboxLabel({ className, ...props }: ComboboxPrimitive.GroupLabel.Props) {
   return (
     <ComboboxPrimitive.GroupLabel
-      className={cn('text-label px-2.5 pt-2 pb-1 text-xs font-medium select-none', className)}
+      className={cn(
+        'text-label flex h-6 items-center px-2.5 text-xs font-medium select-none',
+        className
+      )}
       data-slot="combobox-label"
       {...props}
     />
@@ -156,7 +159,7 @@ function ComboboxItem({ children, className, ...props }: ComboboxPrimitive.Item.
   return (
     <ComboboxPrimitive.Item
       className={cn(
-        'data-highlighted:bg-accent data-highlighted:text-accent-foreground relative flex h-8 w-full cursor-default items-center gap-2 rounded-lg pr-8 pl-2.5 outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-45',
+        'data-highlighted:bg-accent data-highlighted:text-accent-foreground relative flex h-8 w-full cursor-default items-center gap-2 rounded-md pr-8 pl-2.5 outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-45',
         className
       )}
       data-slot="combobox-item"
@@ -174,7 +177,7 @@ function ComboboxItem({ children, className, ...props }: ComboboxPrimitive.Item.
 function ComboboxHint({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
-      className={cn('text-faint min-w-0 flex-1 truncate text-[11.5px]', className)}
+      className={cn('text-faint min-w-0 flex-1 truncate text-xs', className)}
       data-slot="combobox-hint"
       {...props}
     />

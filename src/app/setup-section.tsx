@@ -12,6 +12,8 @@ import { dotClass } from './status-dot'
 interface Props {
   status: SetupStatus | null
   workspace: Workspace
+  /** The project's name: the script runs in each of its new workspaces. */
+  projectName: string
   /** The workspace's last Setup tab, while it is open: running, or showing how it ended. */
   run: { running: boolean } | null
   /** Shows that tab. */
@@ -22,16 +24,17 @@ interface Props {
 }
 
 function lastRun(run: Workspace['setup'], running: boolean) {
-  if (running) return { dot: 'working', text: 'Running…' } as const
-  if (!run) return { dot: 'idle', text: 'Not run' } as const
-  if (run.exitCode === 0) return { dot: 'done', text: 'Ran fine' } as const
-  return { dot: 'failing', text: `Exit ${run.exitCode ?? '?'}` } as const
+  if (running) return { dot: 'working', said: 'running', text: 'Running…' } as const
+  if (!run) return { dot: 'idle', said: 'never', text: 'Not run' } as const
+  if (run.exitCode === 0) return { dot: 'done', said: 'ran fine', text: 'Ran fine' } as const
+  const exit = `Exit ${run.exitCode ?? '?'}`
+  return { dot: 'failing', said: exit.toLowerCase(), text: exit } as const
 }
 
-/** `.empty-box .btn`: the box's soft buttons, a size down. */
-const boxBtn = 'h-7 text-[12.5px]'
-
-/** The TUI's setup widget: what a fresh worktree lacks, installed by one script per project. */
+/**
+ * The TUI's setup widget: what a fresh worktree lacks, installed by one script per project.
+ * A 40px strip at the panel's foot, the same bar as Conductor's Run strip, with no Run button.
+ */
 export function SetupSection(props: Props) {
   const { onAgent, onEdit, onRun, status, workspace } = props
   const [open, setOpen] = useState(false)
@@ -45,43 +48,38 @@ export function SetupSection(props: Props) {
   )
   return (
     <div className="flex flex-none flex-col border-t">
-      <div className="flex h-[38px] items-center pr-1.5">
+      <div className="flex h-bar items-center pr-2">
         <button
           type="button"
-          className="group/setup flex h-full min-w-0 flex-1 items-center gap-2 pr-1.5 pl-2.5"
+          className="group/setup flex h-full min-w-0 flex-1 items-center gap-2 pr-1 pl-3"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
-          <span
+          <ChevronRightIcon
             className={cn(
-              'text-label grid transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)]',
+              'text-faint size-3.5 flex-none transition-transform duration-180 ease-in-out motion-reduce:transition-none',
               open && 'rotate-90'
             )}
-          >
-            <ChevronRightIcon className="size-3.5" />
-          </span>
+          />
           <span
             className={cn(
-              'text-faint group-hover/setup:text-foreground relative flex h-full items-center font-medium',
-              open &&
-                'text-foreground after:bg-tan after:absolute after:-inset-x-1 after:bottom-0 after:h-0.5 after:rounded-t-[2px]'
+              'group-hover/setup:text-foreground transition-colors duration-120 ease-out',
+              open ? 'text-foreground' : 'text-muted-foreground'
             )}
           >
             Setup
           </span>
           <span className="min-w-0 flex-1" />
-          {!status.exists && <span className="text-faint">No script</span>}
+          {!status.exists && <span className="text-faint text-xs">No script</span>}
           {status.exists && props.run === null && (
-            <span className="text-muted-foreground inline-flex items-center gap-1.5 text-[12px] font-medium">
-              {said}
-            </span>
+            <span className="text-faint inline-flex items-center gap-1.5 text-xs">{said}</span>
           )}
         </button>
         {/* With its tab still open, the status takes you to it. */}
         {status.exists && props.run !== null && (
           <button
             type="button"
-            className="text-muted-foreground hover:bg-hover hover:text-foreground inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium"
+            className="text-faint hover:bg-hover hover:text-foreground inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors duration-120 ease-out"
             data-tip="Show the Setup tab"
             data-tip-side="top"
             data-tip-align="end"
@@ -91,30 +89,37 @@ export function SetupSection(props: Props) {
           </button>
         )}
       </div>
-      {open && (
-        <div className="px-3 pt-1 pb-3.5">
-          <div className="border-line-strong text-muted-foreground flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-[18px] text-center text-[12.5px] leading-normal">
+      {/* Opens by its height (grid rows 0fr → 1fr), so nothing jumps; inert while shut. */}
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
+          open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        )}
+        inert={!open}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="text-muted-foreground flex flex-col gap-3 px-3 pt-1 pb-3 text-xs">
             <span>
               {status.exists
-                ? `Runs in each new workspace of this project. This one: ${workspace.name}.`
+                ? `Runs in every new workspace of ${props.projectName}. Last run here: ${run.said}.`
                 : 'A setup script installs what a fresh worktree lacks: dependencies, .env, caches.'}
             </span>
-            <span className="flex flex-wrap justify-center gap-1.5">
+            <span className="flex flex-wrap gap-1.5">
               {status.exists && (
-                <Button type="button" variant="secondary" className={boxBtn} onClick={onRun}>
+                <Button type="button" variant="secondary" size="sm" onClick={onRun}>
                   Run
                 </Button>
               )}
-              <Button type="button" variant="secondary" className={boxBtn} onClick={onEdit}>
+              <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
                 {status.exists ? 'Edit' : 'Create script'}
               </Button>
-              <Button type="button" variant="secondary" className={boxBtn} onClick={onAgent}>
+              <Button type="button" variant="secondary" size="sm" onClick={onAgent}>
                 Write it with a chat
               </Button>
             </span>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

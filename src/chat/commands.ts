@@ -31,7 +31,15 @@ const HIDDEN = new Set([
 
 export const isAppCommand = (name: string) => APP_COMMANDS.some((c) => c.name === name)
 
-/** The menu's list: the app's commands, then Claude's built-ins, then skills and plugins. */
+/** `plugin:name` is shown as `name`, with its plugin beside it. */
+export function commandParts(name: string): { plugin: string; short: string } {
+  const at = name.indexOf(':')
+  return at === -1
+    ? { plugin: '', short: name }
+    : { plugin: name.slice(0, at), short: name.slice(at + 1) }
+}
+
+/** The menu's list: the app's commands, then everything Claude Code offers, by the name shown. */
 export function availableCommands(chat: SlashCommand[], appWide: SlashCommand[]): SlashCommand[] {
   const seen = new Set(APP_COMMANDS.map((c) => c.name))
   const claude = (chat.length > 0 ? chat : appWide).filter((c) => {
@@ -39,7 +47,35 @@ export function availableCommands(chat: SlashCommand[], appWide: SlashCommand[])
     seen.add(c.name)
     return true
   })
-  return [...APP_COMMANDS, ...claude.toSorted((a, b) => Number(b.builtin) - Number(a.builtin))]
+  const shown = (c: SlashCommand) => commandParts(c.name).short
+  return [
+    ...APP_COMMANDS,
+    ...claude.toSorted((a, b) => shown(a).localeCompare(shown(b)) || a.name.localeCompare(b.name)),
+  ]
+}
+
+/**
+ * The `/` menu's two groups: aimux (what the app does itself) and Claude Code (the rest).
+ * Claude Code flags its bundled skills `builtin` too: commands and skills can't be told apart.
+ */
+export const commandGroup = (c: SlashCommand): 'aimux' | 'Claude Code' =>
+  isAppCommand(c.name) ? 'aimux' : 'Claude Code'
+
+/** How long a description may run in the menu, "…" included. */
+const DESCRIPTION_MAX = 80
+
+/**
+ * A description as the menu shows it: its first sentence, at most 80 characters, without the
+ * "(plugin)" its plugin's chip already says.
+ */
+export function shortDescription(text: string, plugin = ''): string {
+  let line = text.trim().split('\n')[0] ?? ''
+  if (plugin !== '' && line.startsWith(`(${plugin})`))
+    line = line.slice(plugin.length + 2).trimStart()
+  const sentence = /^[\s\S]*?(?<!\b(?:e\.g|i\.e|etc|vs))[.!?](?=\s|$)/.exec(line)?.[0] ?? line
+  return sentence.length <= DESCRIPTION_MAX
+    ? sentence
+    : `${sentence.slice(0, DESCRIPTION_MAX - 1).trimEnd()}…`
 }
 
 /** A query this short matches names only: in descriptions it would match almost anything. */
@@ -82,6 +118,13 @@ export function rankCommands(list: SlashCommand[], query: string): SlashCommand[
           : 0)
     )
     .map((x) => x.c)
+}
+
+/** The alias a query matched when the name itself does not hold it: shown beside the name. */
+export function matchedAlias(command: SlashCommand, query: string): string | undefined {
+  const q = query.toLowerCase()
+  if (q === '' || command.name.toLowerCase().includes(q)) return undefined
+  return command.aliases.find((a) => a.toLowerCase().includes(q))
 }
 
 /** `/name args` at the start of a line; a lone `/` or a path (`/usr/bin`) is not one. */

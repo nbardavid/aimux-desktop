@@ -15,6 +15,7 @@ const HOME = '/Users/dev'
 const TREES = `${HOME}/.aimux/worktrees`
 export const PATHS = {
   amber: `${TREES}/aimux-desktop/amber`,
+  basil: `${TREES}/pragma-once/basil`,
   main: `${HOME}/dev/aimux-desktop`,
   pragma: `${HOME}/dev/pragma-once`,
   teal: `${TREES}/aimux-desktop/teal`,
@@ -27,6 +28,7 @@ export function catalog(): Catalog {
   return {
     chats: [
       {
+        activeAt: now - 2 * MIN,
         createdAt: now - 3 * HOUR,
         effort: 'high',
         id: 'chat-menus',
@@ -45,6 +47,7 @@ export function catalog(): Catalog {
         workspaceId: 'ws-amber',
       },
       {
+        activeAt: now - 40 * MIN,
         createdAt: now - HOUR,
         effort: 'medium',
         id: 'chat-notes',
@@ -52,6 +55,16 @@ export function catalog(): Catalog {
         sessionId: 'session-notes',
         title: 'Write the release notes',
         workspaceId: 'ws-teal',
+      },
+      {
+        activeAt: now - 23 * HOUR,
+        createdAt: now - 25 * HOUR,
+        effort: 'high',
+        id: 'chat-tiles',
+        model: 'opus',
+        sessionId: null,
+        title: 'Stat tiles in the dashboard',
+        workspaceId: 'ws-violet',
       },
     ],
     projects: [
@@ -84,8 +97,20 @@ export function catalog(): Catalog {
         branch: 'aimux/violet',
         createdAt: now - 26 * HOUR,
         id: 'ws-violet',
-        name: 'violet',
+        // Renamed in place: the colour bar still says violet.
+        name: 'stat tiles',
         path: PATHS.violet,
+        projectId: 'p-pragma',
+        setup: null,
+      },
+      // No pull request yet, two commits to push.
+      {
+        base: 'origin/main',
+        branch: 'aimux/basil',
+        createdAt: now - 2 * HOUR,
+        id: 'ws-basil',
+        name: 'basil',
+        path: PATHS.basil,
         projectId: 'p-pragma',
         setup: null,
       },
@@ -184,7 +209,7 @@ What changes:
 
 See [Base UI's menu docs](https://base-ui.com/react/components/menu) for the parts.`
 
-const CONTEXT_OUTPUT = `## Context Usage
+export const CONTEXT_OUTPUT = `## Context Usage
 
 **Model:** claude-opus-5-5
 **Tokens:** 18.8k / 1m (2%)
@@ -287,6 +312,7 @@ const MENUS = [
       ],
       subtype: 'can_use_tool',
       tool_name: 'Bash',
+      tool_use_id: 'tool-test',
     },
     request_id: 'perm-tests',
     type: 'control_request',
@@ -400,6 +426,71 @@ export const TRANSCRIPTS: Record<string, string[]> = {
   ],
 }
 
+/** The crimson session (its workspace deleted since), so a `/resume` of it has a past. */
+TRANSCRIPTS['session-quotas'] = [
+  line({
+    message: { content: 'Make the quota bars warn at 60% and go red at 85%.', role: 'user' },
+    type: 'user',
+    uuid: 'q-1',
+  }),
+  line({
+    message: {
+      content: [
+        { text: 'The tones live in one function; I will change its thresholds.', type: 'text' },
+        {
+          id: 'tool-q-edit',
+          input: {
+            file_path: `${TREES}/aimux-desktop/crimson/src/app/quotas.tsx`,
+            new_string:
+              "  if (percent >= 85) return 'bg-critical'\n  if (percent >= 60) return 'bg-warn'",
+            old_string:
+              "  if (percent >= 90) return 'bg-critical'\n  if (percent >= 75) return 'bg-warn'",
+          },
+          name: 'Edit',
+          type: 'tool_use',
+        },
+      ],
+      id: 'm-q-1',
+    },
+    type: 'assistant',
+  }),
+  line({
+    message: {
+      content: [
+        {
+          content: 'The file src/app/quotas.tsx has been updated.',
+          tool_use_id: 'tool-q-edit',
+          type: 'tool_result',
+        },
+      ],
+      role: 'user',
+    },
+    type: 'user',
+    uuid: 'q-2',
+  }),
+  line({
+    message: {
+      content: [
+        {
+          text: 'Done: bars turn amber at **60%** and red at **85%**, in the chip and the popover alike.',
+          type: 'text',
+        },
+      ],
+      id: 'm-q-2',
+    },
+    type: 'assistant',
+  }),
+]
+
+/** A setup script's run, line by line: it takes a while, then ends well. */
+export const SETUP_RUN = [
+  '$ bun install\r\n',
+  'bun install v1.3.1\r\n',
+  'Resolving dependencies… 412 packages\r\n',
+  'Copied .env from the main checkout\r\n',
+  '\x1b[32m✓\x1b[0m Setup finished in 7.4s\r\n',
+]
+
 /** What a fresh chat's Claude says when the window writes to it: the answer, streamed. */
 export function streamedReply(id: string, text: string): string[] {
   const event = (e: unknown) => line({ event: e, type: 'stream_event' })
@@ -461,6 +552,7 @@ export function toolAsk(messageId: string, toolId: string, requestId: string, pr
         ],
         subtype: 'can_use_tool',
         tool_name: 'Bash',
+        tool_use_id: toolId,
       },
       request_id: requestId,
       type: 'control_request',
@@ -490,13 +582,29 @@ export const interrupted = (requestId: string) => [
   line({ is_error: false, subtype: 'error_during_execution', type: 'result' }),
 ]
 
+/** How Claude Code's transcript records a local command and what it printed. */
+const localCommand = (content: string) =>
+  line({ content, subtype: 'local_command', type: 'system' })
+
 /** The host's replay lines of a chat, as Claude Code's transcript keeps them. */
 export function asTranscript(lines: string[]): string[] {
   return lines.flatMap((raw) => {
     const m = JSON.parse(raw) as { type?: string; message?: Record<string, unknown> }
+    // A local command's output (`/context`): a `system` line, not an answer of Claude's.
+    if (m.type === 'assistant' && m.message?.model === '<synthetic>') {
+      const text = (m.message.content as { text?: string }[])[0]?.text ?? ''
+      return [localCommand(`<local-command-stdout>${text}</local-command-stdout>`)]
+    }
     if (m.type === 'assistant' || m.type === 'user') return [raw]
     if (m.type !== 'aimux_sent') return []
     const sentLine = m.message as { uuid?: string; message?: { content?: { text?: string }[] } }
+    const command = /^\/(\S+)\s*([\s\S]*)$/.exec(sentLine.message?.content?.[0]?.text ?? '')
+    if (command)
+      return [
+        localCommand(
+          `<command-name>/${command[1]}</command-name>\n<command-message>${command[1]}</command-message>\n<command-args>${command[2]}</command-args>`
+        ),
+      ]
     return [
       line({
         message: { content: sentLine.message?.content?.[0]?.text ?? '', role: 'user' },
@@ -508,9 +616,13 @@ export function asTranscript(lines: string[]): string[] {
 }
 
 /** A Claude started for a chat: a new session, or the one it resumes. */
-export const freshChat = (chatId: string, resumed: string | null) => [
+/** A chat's Claude starting: on the model it was given (`--model`), Claude Code's default if none. */
+export const freshChat = (chatId: string, resumed: string | null, model = '') => [
   initAnswer(chatId),
-  systemInit(resumed ?? `session-${chatId}`, 'claude-opus-5-5'),
+  systemInit(
+    resumed ?? `session-${chatId}`,
+    INIT.models.find((m) => m.value === (model || 'default'))?.resolvedModel ?? model
+  ),
 ]
 
 // Git.
@@ -547,8 +659,10 @@ export const GIT_STATUS: Record<string, FileChange[]> = {
       untracked: true,
     },
   ],
+  [PATHS.basil]: [change('src/tiles/grid.ts', 'M', false, 14, 6)],
   [PATHS.teal]: [change('CHANGELOG.md', 'M', false, 18, 2)],
-  [PATHS.violet]: [],
+  // Left behind after the merge: deleting the workspace asks "Delete anyway".
+  [PATHS.violet]: [change('notes.md', 'M', false, 3, 1)],
 }
 
 export interface MockBranch {
@@ -561,8 +675,10 @@ export interface MockBranch {
 
 export const GIT_BRANCH: Record<string, MockBranch> = {
   [PATHS.amber]: { ahead: 2, behind: 0, branch: 'aimux/amber', remote: true, upstream: true },
-  [PATHS.teal]: { ahead: 1, behind: 0, branch: 'aimux/teal', remote: true, upstream: false },
-  [PATHS.violet]: { ahead: 0, behind: 0, branch: 'aimux/violet', remote: true, upstream: true },
+  [PATHS.basil]: { ahead: 2, behind: 0, branch: 'aimux/basil', remote: true, upstream: true },
+  [PATHS.teal]: { ahead: 0, behind: 0, branch: 'aimux/teal', remote: true, upstream: true },
+  // Merged, then a commit on top: the head offers no Push into a merged branch.
+  [PATHS.violet]: { ahead: 1, behind: 0, branch: 'aimux/violet', remote: true, upstream: true },
 }
 
 /** `gh pr view --json …`, raw. */
@@ -580,13 +696,52 @@ export const PRS: Record<string, { state: string } & Record<string, unknown>> = 
     number: 128,
     state: 'OPEN',
     statusCheckRollup: [
-      { conclusion: 'SUCCESS', name: 'lint', status: 'COMPLETED' },
-      { conclusion: 'SUCCESS', name: 'test', status: 'COMPLETED' },
-      { conclusion: 'FAILURE', name: 'build (macos-14)', status: 'COMPLETED' },
-      { context: 'cargo test', state: 'SUCCESS' },
+      {
+        conclusion: 'SUCCESS',
+        detailsUrl: 'https://github.com/nbardavid/aimux-desktop/actions/runs/101/job/1',
+        name: 'lint',
+        status: 'COMPLETED',
+      },
+      {
+        conclusion: 'SUCCESS',
+        detailsUrl: 'https://github.com/nbardavid/aimux-desktop/actions/runs/101/job/2',
+        name: 'test',
+        status: 'COMPLETED',
+      },
+      {
+        conclusion: 'FAILURE',
+        detailsUrl: 'https://github.com/nbardavid/aimux-desktop/actions/runs/101/job/3',
+        name: 'build (macos-14)',
+        status: 'COMPLETED',
+      },
+      {
+        context: 'cargo test',
+        state: 'SUCCESS',
+        targetUrl: 'https://ci.example.com/aimux-desktop/128',
+      },
     ],
     title: 'Port menus and pickers to Base UI',
     url: 'https://github.com/nbardavid/aimux-desktop/pull/128',
+  },
+  // Open, green and mergeable: the head's band goes pale green.
+  [PATHS.teal]: {
+    additions: 86,
+    baseRefName: 'main',
+    body: 'The 0.4 release notes, from the merged pull requests.',
+    changedFiles: 2,
+    deletions: 4,
+    headRefName: 'aimux/teal',
+    isDraft: false,
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+    number: 131,
+    state: 'OPEN',
+    statusCheckRollup: [
+      { conclusion: 'SUCCESS', name: 'lint', status: 'COMPLETED' },
+      { conclusion: 'SUCCESS', name: 'test', status: 'COMPLETED' },
+    ],
+    title: 'Release notes for 0.4',
+    url: 'https://github.com/nbardavid/aimux-desktop/pull/131',
   },
   [PATHS.violet]: {
     additions: 40,
@@ -713,7 +868,7 @@ export function longFixture() {
   ]
   const files = Array.from({ length: 40 }, (_, i) =>
     change(
-      `${deep[i % deep.length]}/${['subscription', 'invoice', 'refund', 'customer', 'tenant'][i % 5]}-${['created', 'updated', 'deleted', 'renewed'][i % 4]}.handler.ts`,
+      `${deep[(i >> 2) % deep.length]}/${['subscription', 'invoice', 'refund', 'customer', 'tenant'][i % 5]}-${['created', 'updated', 'deleted', 'renewed'][i % 4]}.handler.ts`,
       ['M', 'M', 'A', 'D'][i % 4] ?? 'M',
       i % 3 === 0,
       i % 4 === 3 ? 0 : 3 + ((i * 7) % 60),

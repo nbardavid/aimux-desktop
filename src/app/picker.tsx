@@ -1,24 +1,25 @@
-import { SearchIcon } from 'lucide-react'
+import { GitBranchIcon, MessageCircleIcon, SearchIcon } from 'lucide-react'
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Kbd } from '@/components/ui/kbd'
 import { Popover, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 import type { Signal } from '../model/catalog'
 
 import { pointerMoved } from './pointer'
+import { ProjectAvatar } from './sidebar'
 import { StatusDot } from './status-dot'
 
 export interface PickerItem {
   key: string
   label: string
   sub?: string
-  /** The sub line is a path: set in mono. */
-  mono?: boolean
   meta?: string
-  glyph?: string
+  /** What leads the row: a workspace's colour bar, a chat's bubble, a project's avatar. */
+  icon?: 'workspace' | 'chat' | 'project'
+  /** A faint heading over the first item of each run, while nothing is typed. */
+  section?: string
   /** A status dot after the label, as the sidebar shows it. */
   signal?: Signal | null
 }
@@ -36,6 +37,32 @@ interface Props {
   initialQuery?: string
   /** Said when there are no items at all (rather than none matching). */
   empty?: string
+}
+
+/** `text` cut around the first place it contains `query` (any case): the match is `hit`. */
+export function matchParts(text: string, query: string): { text: string; hit: boolean }[] {
+  const at = query === '' ? -1 : text.toLowerCase().indexOf(query.toLowerCase())
+  if (at === -1) return [{ hit: false, text }]
+  const end = at + query.length
+  return [
+    { hit: false, text: text.slice(0, at) },
+    { hit: true, text: text.slice(at, end) },
+    { hit: false, text: text.slice(end) },
+  ].filter((part) => part.text !== '')
+}
+
+/** A label with what the filter matched in ink and semibold. */
+function Matched({ query, text }: { text: string; query: string }) {
+  return matchParts(text, query).map((part, i) =>
+    part.hit ? (
+      // oxlint-disable-next-line react/no-array-index-key -- parts never move
+      <span key={i} className="text-foreground font-semibold">
+        {part.text}
+      </span>
+    ) : (
+      part.text
+    )
+  )
 }
 
 function stepOf(e: KeyboardEvent): number {
@@ -91,21 +118,19 @@ export function Picker({
 
   const body = (
     <div ref={root} className="contents" onKeyDown={onKeyDown}>
-      {!menu && !filterable && (
-        <div className="px-[18px] pt-4 text-[14px] font-semibold">{title}</div>
-      )}
+      {!menu && !filterable && <div className="px-4 pt-4 text-base font-semibold">{title}</div>}
       {filterable && (
         <label
           className={cn(
-            'text-faint flex items-center gap-2.5',
+            'text-faint flex items-center',
             menu
-              ? 'border-border bg-chrome focus-within:border-faint focus-within:bg-background mx-[18px] mt-3 mb-1.5 h-[38px] rounded-[8px] border px-3'
-              : 'border-border h-[52px] border-b px-[18px] text-[15px]'
+              ? 'border-border bg-chrome focus-within:border-line-strong focus-within:bg-background m-1 mb-0 h-8 gap-2 rounded-md border px-2'
+              : 'border-border h-12 gap-2.5 border-b px-4 text-[15px]'
           )}
         >
-          <SearchIcon className="size-4 flex-none" />
+          <SearchIcon className={cn('flex-none', menu ? 'size-3.5' : 'size-4')} />
           <input
-            className="text-foreground flex-1 border-0 bg-transparent outline-none"
+            className="text-foreground placeholder:text-label flex-1 border-0 bg-transparent p-0 outline-none"
             aria-label={title}
             placeholder={title}
             value={query}
@@ -114,7 +139,19 @@ export function Picker({
         </label>
       )}
       <div className={cn('max-h-[360px] overflow-auto', menu ? 'p-1' : 'p-1.5')} role="listbox">
-        {shown.map((item, i) => (
+        {shown.map((item, i) => [
+          q === '' && item.section !== undefined && item.section !== shown[i - 1]?.section && (
+            <div
+              key={`section:${item.section}`}
+              className={cn(
+                'text-label flex h-7 items-center px-2.5 text-xs font-medium',
+                i > 0 && 'mt-1'
+              )}
+              role="presentation"
+            >
+              {item.section}
+            </div>
+          ),
           <button
             type="button"
             key={item.key}
@@ -122,27 +159,17 @@ export function Picker({
             aria-selected={i === hot}
             className={cn(
               'flex w-full items-center rounded-md',
-              menu ? 'gap-2.5 px-2 py-1.5' : 'gap-3 px-2.5 py-[7px]',
-              i === hot && 'bg-hover'
+              menu ? 'h-7 gap-2 px-2' : 'gap-2.5 px-2.5',
+              !menu && (item.sub === undefined ? 'h-9' : 'h-12'),
+              i === hot && 'bg-accent'
             )}
             onMouseMove={(e) => pointerMoved(e) && setHot(i)}
             onClick={() => onPick(item.key)}
           >
-            {item.glyph !== undefined ? (
-              <span
-                className={cn(
-                  'border-border bg-background text-ink-soft grid flex-none place-items-center rounded-md border font-mono font-semibold tracking-[-0.04em]',
-                  menu ? 'size-[22px] text-[9px]' : 'size-6 text-[9.5px]'
-                )}
-              >
-                {item.glyph}
-              </span>
-            ) : (
-              !menu && <span className="text-faint w-3.5 font-mono text-[11px]">{i + 1}</span>
-            )}
+            {item.icon !== undefined && <ItemIcon icon={item.icon} label={item.label} />}
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="font-medium">
-                {item.label}
+              <span className={cn('truncate', menu ? 'text-sm' : 'text-foreground text-base')}>
+                <Matched text={item.label} query={q} />
                 {item.signal && (
                   <span className="ml-2 inline-flex align-middle">
                     <StatusDot signal={item.signal} />
@@ -150,36 +177,32 @@ export function Picker({
                 )}
               </span>
               {!menu && item.sub !== undefined && (
-                <span
-                  className={cn(
-                    'text-faint truncate',
-                    item.mono === true ? 'font-mono text-[11px]' : 'text-[12px]'
-                  )}
-                >
-                  {item.sub}
+                <span className="text-faint truncate text-xs">
+                  {/* Only when the label itself has no match. */}
+                  <Matched text={item.sub} query={item.label.toLowerCase().includes(q) ? '' : q} />
                 </span>
               )}
             </span>
             {item.meta !== undefined && (
               <span
                 className={cn(
-                  'text-faint tabular-nums',
-                  menu ? 'font-mono text-[11px]' : 'text-[12px]'
+                  'text-faint flex-none text-xs tabular-nums',
+                  menu && 'pl-4 tracking-[0.02em]'
                 )}
               >
                 {item.meta}
               </span>
             )}
-          </button>
-        ))}
+          </button>,
+        ])}
         {shown.length === 0 && (
-          <div className="text-faint px-3 py-8 text-center">
-            {items.length === 0 && empty !== undefined ? empty : `Nothing matches “${query}”`}
+          <div className="text-faint flex h-12 items-center px-2.5 text-sm">
+            {items.length === 0 && empty !== undefined ? empty : `No match for “${query}”`}
           </div>
         )}
       </div>
       {!menu && (
-        <div className="border-border bg-side text-faint flex h-9 items-center gap-4 border-t px-[18px] text-[11.5px]">
+        <div className="border-border bg-chrome text-faint flex h-9 items-center gap-4 border-t px-4 text-xs">
           <Hint keys="↵">open</Hint>
           <Hint keys="↑↓">move</Hint>
           <Hint keys="esc">cancel</Hint>
@@ -198,17 +221,19 @@ export function Picker({
         sideOffset={0}
         aria-label={title}
         initialFocus={firstFocus}
-        className="border-border w-[248px] origin-top-left overflow-hidden rounded-xl border p-0 shadow-[0_0_0_1px_rgb(43_40_38/0.04),0_12px_32px_-12px_rgb(43_40_38/0.28)] duration-140"
+        className="w-[248px] p-0"
       >
         {body}
       </PopoverContent>
     </Popover>
   ) : (
+    // A palette with no veil: it floats over the window, which stays as it was.
     <Dialog open onOpenChange={close}>
       <DialogContent
         aria-label={title}
         initialFocus={firstFocus}
-        className="w-[min(600px,calc(100%-32px))] border-0 shadow-[0_0_0_1px_rgb(43_40_38/0.06),0_24px_64px_-20px_rgb(43_40_38/0.35)]"
+        overlayClassName="bg-transparent"
+        className="shadow-popover data-open:slide-in-from-top-[4px]! data-open:zoom-in-[0.98] top-[18vh] w-[min(640px,calc(100%-32px))] border-0 data-open:duration-160"
       >
         {body}
       </DialogContent>
@@ -216,10 +241,20 @@ export function Picker({
   )
 }
 
+function ItemIcon({ icon, label }: { icon: NonNullable<PickerItem['icon']>; label: string }) {
+  if (icon === 'project') return <ProjectAvatar name={label} />
+  if (icon === 'workspace') return <GitBranchIcon className="text-faint size-4 flex-none" />
+  return <MessageCircleIcon className="text-faint size-4 flex-none" />
+}
+
+// ⌘P's legend keeps the app's only boxed key caps: a key next to a word reads as a legend.
+const KbdBox =
+  'border-border bg-background text-faint inline-flex h-4 min-w-4 items-center justify-center rounded-sm border px-1 text-2xs font-normal'
+
 function Hint({ children, keys }: { children: ReactNode; keys: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Kbd>{keys}</Kbd>
+      <kbd className={KbdBox}>{keys}</kbd>
       {children}
     </span>
   )

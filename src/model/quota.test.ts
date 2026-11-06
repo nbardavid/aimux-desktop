@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { claudeSnapshot, formatRemaining, paceOf } from './quota'
+import { claudeSnapshot, formatRemaining, paceOf, tightest } from './quota'
 
 const NOW = Date.parse('2026-11-05T12:00:00Z')
 const inHours = (h: number) => new Date(NOW + h * 3600_000).toISOString()
@@ -20,7 +20,28 @@ test('pace: half the week gone, 30% used is ahead and lasts', () => {
   expect(pace?.label).toBe('Ahead (-20%)')
   expect(pace?.rightText).toBe('Lasts to reset')
   expect(paceOf(80, week / 2, week)?.rightText).toBe('Runs out in 21h')
-  expect(paceOf(51, week / 2, week)?.label).toBe('On pace')
+  expect(paceOf(49, week / 2, week)?.label).toBe('On pace')
+})
+
+test('pace: running out before the reset is never on pace', () => {
+  const week = 7 * 86_400
+  const pace = paceOf(51, week / 2, week)
+  expect(pace?.label).toBe('Too fast')
+  expect(pace?.stage).toBe('slightlyBehind')
+  expect(pace?.rightText).toBe('Runs out in 3d 8h')
+})
+
+test('the chip shows the window closest to its limit', () => {
+  const snap = claudeSnapshot(
+    {
+      five_hour: { resets_at: inHours(2), utilization: 42 },
+      seven_day: { resets_at: inHours(51), utilization: 71 },
+      seven_day_opus: { resets_at: inHours(51), utilization: 88 },
+    },
+    NOW
+  )
+  expect(tightest({ claude: { fetchedAt: NOW, snapshot: snap } })?.label).toBe('Opus')
+  expect(tightest({})).toBeNull()
 })
 
 test('snapshot takes session first and adds scoped weekly limits', () => {

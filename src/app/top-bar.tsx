@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
 
-import { GitBranchIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react'
+import { GitCompareArrowsIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface Props {
-  /** The workspace (or the page) on screen, set in bold before its tabs. */
+  /** The page on screen (Settings, a diff), set in bold. */
   title: string | undefined
+  /** The workspace on screen: said beside the sidebar's toggle while the sidebar is hidden. */
+  place?: string
   /** The tabs, between the title and the switches. */
   children?: ReactNode
   sideOpen: boolean
@@ -15,6 +17,8 @@ interface Props {
   gitOpen: boolean | null
   /** Whether there is a workspace whose diff to review. */
   canDiff: boolean
+  /** A clean tree: Diff has nothing to show, and says so. */
+  noChanges: boolean
   gitMode: boolean
   onShowSide: () => void
   onToggleGit: () => void
@@ -23,37 +27,57 @@ interface Props {
   tools?: ReactNode
 }
 
-/** A bordered switch of the top bar (Diff, the update pill); `on` while what it shows is. */
+/** A borderless switch of the top bar (Diff, the update pill); `on` while what it shows is. */
 export const barButtonClass = (on: boolean) =>
   cn(
-    'border-border text-muted-foreground h-[26px] gap-1.5 border px-[9px] text-[12.5px] disabled:opacity-100',
-    on && 'border-line-strong bg-active hover:bg-active text-foreground'
+    'text-muted-foreground h-7 gap-1.5 px-2 text-sm disabled:opacity-100',
+    on && 'bg-active hover:bg-active text-foreground'
   )
 
 /** The window's top row: where you are, its tabs, and the switches for what sits around them. */
 export function TopBar(props: Props) {
   return (
     <header
-      className={cn(
-        'border-border flex h-bar flex-none items-center gap-1.5 border-b pr-2 pl-4',
-        !props.sideOpen && 'pl-20'
-      )}
+      className="border-border bg-chrome flex h-bar flex-none items-center gap-1.5 border-b pr-2 pl-4"
       data-tauri-drag-region
     >
-      {!props.sideOpen && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Show the sidebar (⌘B)"
-          data-tip="Show sidebar · ⌘B"
-          onClick={props.onShowSide}
-        >
-          <PanelLeftIcon className="size-4" />
-        </Button>
-      )}
+      {/* With the sidebar hidden: room for the traffic lights, its toggle, the workspace. It
+          opens and shuts with the sidebar (200ms, its width and a fade), so the tabs move
+          once, one way. The header's gap after it is its own, to shut with it. */}
+      <div
+        className={cn(
+          '-mr-1.5 grid flex-none transition-[grid-template-columns,opacity] duration-200 ease-in-out motion-reduce:transition-none',
+          props.sideOpen ? 'grid-cols-[0fr] opacity-0' : 'grid-cols-[1fr] opacity-100'
+        )}
+        inert={props.sideOpen}
+        data-tauri-drag-region
+      >
+        <div className="min-w-0 overflow-hidden" data-tauri-drag-region>
+          <div className="flex items-center gap-1.5 pr-1.5 pl-16" data-tauri-drag-region>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="flex-none"
+              aria-label="Show the sidebar (⌘B)"
+              data-tip="Show sidebar · ⌘B"
+              onClick={props.onShowSide}
+            >
+              <PanelLeftIcon className="size-4" />
+            </Button>
+            {props.place !== undefined && (
+              <span
+                className="text-foreground mr-1.5 max-w-[220px] flex-none truncate text-base font-semibold whitespace-nowrap"
+                data-tauri-drag-region
+              >
+                {props.place}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
       {props.title !== undefined && (
         <span
-          className="mr-1.5 max-w-[220px] flex-none truncate text-[13.5px] font-semibold"
+          className="text-foreground mr-1.5 max-w-[220px] flex-none truncate text-base font-semibold"
           data-tauri-drag-region
         >
           {props.title}
@@ -63,16 +87,19 @@ export function TopBar(props: Props) {
       <span className="ml-2 flex flex-none items-center gap-1.5">
         {props.tools}
         {props.canDiff && (
-          <Button
-            variant="ghost"
-            className={barButtonClass(props.gitMode)}
-            aria-pressed={props.gitMode}
-            data-tip="Review the diff · ⌘G"
-            onClick={props.onGitMode}
-          >
-            <GitBranchIcon className="size-3.5" />
-            Diff
-          </Button>
+          // A disabled button gets no hover of its own: the tip says why on its wrapper.
+          <span className="flex" data-tip={props.noChanges ? 'No changes' : 'Review the diff · ⌘G'}>
+            <Button
+              variant="ghost"
+              className={cn(barButtonClass(props.gitMode), 'disabled:opacity-45')}
+              aria-pressed={props.gitMode}
+              disabled={props.noChanges}
+              onClick={props.onGitMode}
+            >
+              <GitCompareArrowsIcon className="size-4" />
+              Diff
+            </Button>
+          </span>
         )}
         {props.gitOpen !== null && (
           <Button

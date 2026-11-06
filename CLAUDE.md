@@ -34,7 +34,10 @@ branding.
   - stage, unstage, discard (asks twice), push/publish;
   - the PR at the top right of the git panel, with its status and one action: merge, then
     delete the workspace once merged.
-  - No commit message box: nobody commits by hand anymore. No "create PR".
+  - No commit message box: nobody commits by hand anymore. No "create PR": without a PR,
+    "Ask for PR" sends the workspace's chat a prompt and Claude opens it with gh.
+- **Sidebar rows** lead with the workspace's task (its first chat's title, or the name the
+  user gave it) behind a branch icon, the colour word and age at the right. No colour bars.
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. The composer is the one dialog.
 - **Closing the window loses nothing**: chats and terminals keep running in the host.

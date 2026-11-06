@@ -14,8 +14,8 @@ interface Props {
   currentPath: string
   /** The session of the chat `/resume` was typed in. */
   currentSession: string | null
-  /** Sessions open in a tab: picking one goes to it. */
-  openSessions: string[]
+  /** Sessions open in a tab, with the tab's title: picking one goes to it. */
+  openSessions: Record<string, string>
   initialQuery: string
   onPick: (session: Session) => void
   onClose: () => void
@@ -44,14 +44,18 @@ export function ResumePicker(props: Props) {
   // An open session says so in place of its age: it is live, and picking it goes to its tab.
   const when = (s: Session) => {
     if (s.id === props.currentSession) return 'this chat'
-    return props.openSessions.includes(s.id) ? 'open in tab' : age(s.updatedAt)
+    return props.openSessions[s.id] === undefined ? age(s.updatedAt) : 'open in tab'
   }
-  const items: PickerItem[] = (sessions ?? []).map((s) => ({
-    key: s.id,
-    label: s.title || s.firstPrompt,
-    meta: `${originLabel(s, workspaces, mainPath)} · ${when(s)}`,
-    sub: s.title === '' ? undefined : s.firstPrompt,
-  }))
+  // A session open in a tab goes by the tab's title, as the tab bar shows it.
+  const items: PickerItem[] = (sessions ?? []).map((s) => {
+    const label = props.openSessions[s.id] ?? (s.title || s.firstPrompt)
+    return {
+      key: s.id,
+      label,
+      meta: `${originLabel(s, workspaces, mainPath)} · ${when(s)}`,
+      sub: label === s.firstPrompt ? undefined : s.firstPrompt,
+    }
+  })
   let empty = 'No earlier sessions in this project.'
   if (error !== null) empty = error
   else if (sessions === null) empty = 'Loading sessions…'

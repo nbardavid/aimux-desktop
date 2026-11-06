@@ -5,8 +5,11 @@
 // from an older protocol holding work (the restart bar), `?update` a release waiting (the
 // pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
 // (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
-// (truncation). Replies stream in over about two seconds; every other one asks to run a
-// tool first. Stage, discard, push and merge change what the panel shows.
+// (truncation), `?empty-inbox` nothing waiting or done. Replies stream in over about two
+// seconds; every other one asks to run a tool first. Stage, discard, push and merge change
+// what the panel shows. A setup run takes about eight seconds; deleting a workspace with
+// changes (stat tiles' Delete workspace, teal's menu) is refused, so "Delete anyway" shows.
+// basil has no PR and two commits to push.
 
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 
@@ -17,6 +20,7 @@ import {
   asTranscript,
   BRANCHES,
   catalog,
+  CONTEXT_OUTPUT,
   diffOf,
   freshChat,
   GIT_BRANCH,
@@ -34,6 +38,7 @@ import {
   quotaCache,
   SESSIONS,
   SETTINGS,
+  SETUP_RUN,
   streamedReply,
   TERMINAL_HISTORY,
   TERMINAL_PROMPT,
@@ -53,6 +58,16 @@ type Args = Record<string, unknown>
 const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
 if (flags.has('bare')) store.workspaces = store.workspaces.filter((w) => w.projectId !== 'p-pragma')
+// When each chat's last turn moved (store.rs `active_at`): the sidebar's ages differ.
+const ACTIVE_AGO: Record<string, number> = {
+  'chat-menus': 3 * 60_000,
+  'chat-notes': 12 * 60_000,
+  'chat-resume': 2 * 3_600_000,
+}
+for (const c of store.chats) {
+  const ago = ACTIVE_AGO[c.id]
+  if (ago !== undefined) Object.assign(c, { activeAt: Date.now() - ago })
+}
 const hostList = structuredClone(HOST_STATUS.list)
 if (flags.has('long')) {
   const long = longFixture()
@@ -63,9 +78,13 @@ if (flags.has('long')) {
   GIT_STATUS[long.path] = long.files
   GIT_BRANCH[long.path] = long.branch
 }
+if (flags.has('empty-inbox')) {
+  for (const c of hostList.chats) Object.assign(c, { unread: false, waiting: false })
+}
 const chats = new Map<string, Channel>()
-/** The session each started chat resumed, if any. */
+/** The session each started chat resumed, if any, and the model it was started on. */
 const resumes = new Map<string, string | null>()
+const startModels = new Map<string, string>()
 const terms = new Map<string, Channel>()
 const unknown = new Set<string>()
 
@@ -80,7 +99,13 @@ const timers = new Map<string, ReturnType<typeof setTimeout>[]>()
 /** A permission the preview's Claude waits on: the tool it asked for. */
 const asked = new Map<string, { chatId: string; toolId: string; prompt: string }>()
 // The fixtures' own pending permissions.
-asked.set('perm-tests', { chatId: 'chat-menus', prompt: 'the tests', toolId: 'tool-test' })
+if (!flags.has('empty-inbox'))
+  asked.set('perm-tests', { chatId: 'chat-menus', prompt: 'the tests', toolId: 'tool-test' })
+/** What the host replays of a chat; `?empty-inbox` leaves its question out. */
+const replayOf = (id: string) =>
+  (HOSTED_LINES[id] ?? []).filter(
+    (l) => !flags.has('empty-inbox') || !l.includes('"subtype":"can_use_tool"')
+  )
 let replies = 0
 
 /** Lines spread over `ms`, as Claude writes them. */
@@ -96,6 +121,24 @@ function drip(chatId: string, lines: string[], ms = 2000) {
 function stop(chatId: string) {
   for (const t of timers.get(chatId) ?? []) clearTimeout(t)
   timers.delete(chatId)
+}
+
+/** Chats in a turn (a reply being written, or a question waiting). */
+const working = new Set<string>(flags.has('empty-inbox') ? [] : ['chat-menus'])
+/** Prompts sent during a turn: Claude Code takes the next one once the turn's result is out. */
+const queued = new Map<string, string[]>()
+
+/** A turn's lines over `ms`, its `result` last; then the next queued prompt starts. */
+function turn(chatId: string, lines: string[], ms = 2000) {
+  drip(chatId, lines, ms)
+  timers.get(chatId)?.push(setTimeout(() => nextTurn(chatId), 160 + ms))
+}
+
+function nextTurn(chatId: string) {
+  working.delete(chatId)
+  const [next, ...rest] = queued.get(chatId) ?? []
+  queued.set(chatId, rest)
+  if (next !== undefined) answerPrompt(chatId, next)
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -127,20 +170,20 @@ const MODEL_NAMES = new Map(
   ])
 )
 
-/** Prompts sent while a permission waits: Claude Code takes them once the turn moves on. */
-const queued = new Map<string, string[]>()
-
 function answerPrompt(chatId: string, text: string) {
-  if ([...asked.values()].some((a) => a.chatId === chatId)) {
+  if (working.has(chatId)) {
     queued.set(chatId, [...(queued.get(chatId) ?? []), text])
     return
   }
+  working.add(chatId)
   const model = /^\/model\s+(\S+)/.exec(text)?.[1]
   const effort = /^\/effort\s+(\S+)/.exec(text)?.[1]
   if (model !== undefined) {
-    drip(chatId, localOutput(`Set model to ${MODEL_NAMES.get(model) ?? model}`), 100)
+    turn(chatId, localOutput(`Set model to ${MODEL_NAMES.get(model) ?? model}`), 100)
   } else if (effort !== undefined) {
-    drip(chatId, localOutput(`Set effort level to ${effort}`), 100)
+    turn(chatId, localOutput(`Set effort level to ${effort}`), 100)
+  } else if (text.trim() === '/context') {
+    turn(chatId, localOutput(CONTEXT_OUTPUT), 100)
   } else if (replies++ % 2 === 1) {
     // Every other prompt: a tool first, and its permission.
     const requestId = `perm-${crypto.randomUUID()}`
@@ -148,7 +191,7 @@ function answerPrompt(chatId: string, text: string) {
     asked.set(requestId, { chatId, prompt: text, toolId })
     drip(chatId, toolAsk(`m-${crypto.randomUUID()}`, toolId, requestId, text), 1200)
   } else {
-    drip(chatId, [...streamedReply(`m-${crypto.randomUUID()}`, previewAnswer(text)), turnEnd()])
+    turn(chatId, [...streamedReply(`m-${crypto.randomUUID()}`, previewAnswer(text)), turnEnd()])
   }
 }
 
@@ -163,12 +206,12 @@ function chatSend(args: Args) {
   }
   const channel = chats.get(id)
   if (message.type === 'control_request' && message.request?.subtype === 'initialize')
-    later(channel, [...freshChat(id, resumes.get(id) ?? null), LIVE])
+    later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
   else if (message.type === 'control_request' && message.request?.subtype === 'interrupt') {
     stop(id)
     for (const [key, a] of asked) if (a.chatId === id) asked.delete(key)
-    queued.delete(id)
-    drip(id, interrupted(str(message.request_id)), 4000)
+    // Esc ends the turn; what was queued behind it still runs.
+    turn(id, interrupted(str(message.request_id)), 4000)
   } else if (message.type === 'control_response') {
     const requestId = str(message.response?.request_id)
     const ask = asked.get(requestId)
@@ -176,18 +219,11 @@ function chatSend(args: Args) {
     asked.delete(requestId)
     const allowed = message.response?.response?.behavior === 'allow'
     const after = allowed ? 'The tests pass: 86 of 86.' : 'Understood, I will not run them.'
-    drip(id, [
+    turn(id, [
       toolDone(ask.toolId, allowed),
       ...streamedReply(`m-${crypto.randomUUID()}`, after),
       turnEnd(0.0031, 4200),
     ])
-    const next = queued.get(id) ?? []
-    queued.delete(id)
-    timers.get(id)?.push(
-      setTimeout(() => {
-        for (const t of next) answerPrompt(id, t)
-      }, 2500)
-    )
   } else if (message.type === 'user') answerPrompt(id, message.message?.content?.[0]?.text ?? '')
 }
 
@@ -219,11 +255,18 @@ function handle(cmd: string, args: Args): unknown {
     case 'chat_open': {
       const channel = args.onLine as Channel
       chats.set(str(args.id), channel)
-      const start = args.start as { resume?: string | null } | null
+      const start = args.start as { resume?: string | null; model?: string } | null
       resumes.set(str(args.id), start?.resume ?? null)
-      if (args.start === null) later(channel, HOSTED_LINES[str(args.id)] ?? [])
+      startModels.set(str(args.id), start?.model ?? '')
+      if (args.start === null) later(channel, replayOf(str(args.id)))
       if (flags.has('attention') && args.id === 'chat-notes')
         setTimeout(() => channel.onmessage(NOTES_ASK), 1500)
+      return null
+    }
+    case 'setup_ran': {
+      // Kept, as store.rs keeps it: the strip says how the last run ended after a reload.
+      const w = store.workspaces.find((x) => x.id === args.workspaceId)
+      if (w) w.setup = { exitCode: (args.exitCode as number | null) ?? null, ranAt: Date.now() }
       return null
     }
     case 'chat_send':
@@ -240,7 +283,15 @@ function handle(cmd: string, args: Args): unknown {
     case 'term_open': {
       const channel = args.onData as Channel
       terms.set(str(args.id), channel)
-      later(channel, [args.start === null ? TERMINAL_HISTORY : TERMINAL_PROMPT])
+      const start = args.start as { command?: string | null } | null
+      if (typeof start?.command === 'string') {
+        // A setup script: it prints as it goes, and ends after a while.
+        const exit = args.onExit as Channel
+        for (const [i, l] of SETUP_RUN.entries()) {
+          setTimeout(() => channel.onmessage(l), 400 + i * 1200)
+        }
+        setTimeout(() => exit.onmessage(0), 400 + SETUP_RUN.length * 1200)
+      } else later(channel, [args.start === null ? TERMINAL_HISTORY : TERMINAL_PROMPT])
       return null
     }
     case 'term_write': {
@@ -250,9 +301,23 @@ function handle(cmd: string, args: Args): unknown {
     }
     case 'workspace_create':
       return createWorkspace(args)
-    case 'workspace_remove':
-      store.workspaces = store.workspaces.filter((w) => w.id !== args.id)
+    case 'workspace_remove': {
+      // As git does: a worktree with changes is removed only by force.
+      const w = store.workspaces.find((x) => x.id === args.id)
+      if (w && args.force !== true && (GIT_STATUS[w.path] ?? []).length > 0) {
+        throw new Error(
+          `fatal: '${w.path}' contains modified or untracked files, use --force to delete it`
+        )
+      }
+      store.workspaces = store.workspaces.filter((x) => x.id !== args.id)
       return null
+    }
+    case 'workspace_rename': {
+      const w = store.workspaces.find((x) => x.id === args.id)
+      if (!w) throw new Error('unknown workspace')
+      w.name = str(args.name).trim() || w.branch.replace(/^aimux\//, '')
+      return structuredClone(w)
+    }
     case 'project_remove':
       store.projects = store.projects.filter((p) => p.id !== args.id)
       return null
@@ -318,7 +383,6 @@ function handle(cmd: string, args: Args): unknown {
     case 'term_resize':
     case 'term_kill':
     case 'chat_stop':
-    case 'setup_ran':
     case 'write_setting':
     case 'write_quota_cache':
     case 'host_restart':

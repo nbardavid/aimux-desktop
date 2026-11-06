@@ -4,8 +4,8 @@ import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 
 import {
+  agentLabel,
   type ChatSettings,
-  describe,
   effortLabel,
   type ModelInfo,
   normalize,
@@ -39,9 +39,9 @@ function Intelligence({ models, onChange, value }: Props) {
   const at = Math.max(levels.indexOf(value.effort), 0)
   const set = (i: number) => onChange({ ...value, effort: levels[i] ?? '' })
   return (
-    <div className="border-border -mx-1 mt-1 -mb-1 flex flex-none flex-col gap-1.5 border-t px-3.5 py-3">
-      <div className="flex justify-between text-[12.5px] font-medium">
-        <span>Intelligence</span>
+    <div className="border-border -mx-1 mt-1 -mb-1 flex flex-none flex-col gap-1.5 border-t p-3">
+      <div className="flex justify-between text-sm">
+        <span className="font-medium">Intelligence</span>
         <span className="text-muted-foreground tabular-nums">
           {value.effort === '' ? 'Auto' : effortLabel(value.effort)}
         </span>
@@ -66,7 +66,7 @@ function Intelligence({ models, onChange, value }: Props) {
             type="button"
             key={level}
             className={cn(
-              'text-label hover:text-foreground rounded-[5px] px-1 py-0.5 text-[11px] transition-[color] duration-120',
+              'text-faint hover:text-foreground rounded-sm px-1 py-0.5 text-xs transition-[color] duration-120 ease-out',
               i === at && 'text-foreground font-medium'
             )}
             onClick={() => set(i)}
@@ -75,7 +75,7 @@ function Intelligence({ models, onChange, value }: Props) {
           </button>
         ))}
       </div>
-      <span className="text-faint mt-0.5 text-[11.5px]">
+      <span className="text-faint mt-0.5 text-xs">
         <Kbd>⇧⌘/</Kbd> steps through it
       </span>
     </div>
@@ -83,25 +83,35 @@ function Intelligence({ models, onChange, value }: Props) {
 }
 
 interface SelectProps extends Props {
-  /** The button's words, when not "Opus 5.5 · High". */
-  label?: string
   className?: string
   open?: boolean
   onOpenChange?: (open: boolean) => void
   finalFocus?: RefObject<HTMLElement | null>
 }
 
-/** "Opus 5.5 · High ▾": Claude Code's models to search, the intelligence slider under them. */
+/** "Opus 5.5 · High ▾", as the chat's footer and the composer both say it: Claude Code's
+ * models to search, the intelligence slider under them. */
 export function ModelSelect(props: SelectProps) {
   const { models, onChange, value } = props
+  const [name, effort] = agentLabel(value, models).split(' · ')
   return (
     <Combo
-      button={props.label ?? describe(value, models)}
+      // "Opus 5.5" in ink, "· High" in the button's own grey.
+      button={
+        <>
+          <span className="text-foreground font-medium">{name}</span>
+          {effort !== undefined && <span>· {effort}</span>}
+        </>
+      }
       className={props.className}
       open={props.open}
       onOpenChange={props.onOpenChange}
       finalFocus={props.finalFocus}
-      options={models.map((m) => ({ hint: m.description, label: m.name, value: m.value }))}
+      options={models.map((m) => ({
+        hint: m.description,
+        label: m.name,
+        value: m.value,
+      }))}
       selected={value.model}
       placeholder="Search models"
       onPick={(model) => onChange(normalize({ ...value, model }, models))}

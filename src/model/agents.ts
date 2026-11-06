@@ -88,31 +88,49 @@ export function cycleEffort(settings: ChatSettings, models: ModelInfo[]): ChatSe
   return { ...settings, effort: next }
 }
 
-/** "Opus 5.5 · High", leaving a default effort unsaid. */
-export function describe(settings: ChatSettings, models: ModelInfo[]): string {
-  const model = models.find((m) => m.value === settings.model)
-  return [model?.name ?? 'Claude', settings.effort === '' ? '' : effortLabel(settings.effort)]
-    .filter(Boolean)
-    .join(' · ')
-}
-
 /** What `chat_start` passes on: nothing for Claude Code's defaults. */
 export const chatFlags = (settings: ChatSettings) => ({
   effort: settings.effort,
   model: settings.model === 'default' ? '' : settings.model,
 })
 
-/** A chat's model as its footer says it: "Sonnet 5.5 · High", "Default (Opus 5.5) · Auto". */
-export function agentLabel(settings: ChatSettings, models: ModelInfo[]): string {
-  const model = models.find((m) => m.value === settings.model)
-  if (!model) return settings.model === 'default' ? 'Default' : settings.model || 'Claude'
+/**
+ * A model as the app names it: "Sonnet 5.5", and the default by the model it runs ("Opus
+ * 5.5"); "Default" is only a row of the picker.
+ */
+export function modelName(value: string, models: ModelInfo[]): string {
+  const model = models.find((m) => m.value === value)
+  if (!model) return value === 'default' ? 'Default' : value || 'Claude'
   const twin =
     model.value === 'default'
       ? models.find((m) => m !== model && m.resolved !== undefined && m.resolved === model.resolved)
       : undefined
-  const name = twin ? `${model.name} (${twin.name})` : model.name
-  if (model.efforts.length === 0) return name
-  return `${name} · ${settings.effort === '' ? 'Auto' : effortLabel(settings.effort)}`
+  return twin ? twin.name : model.name
+}
+
+/** An effort as the slider says it: Auto for Claude Code's own choice. */
+export const effortName = (effort: string) => (effort === '' ? 'Auto' : effortLabel(effort))
+
+/** A chat's model as its footer says it: "Sonnet 5.5 · High", "Opus 5.5 · Auto". */
+export function agentLabel(settings: ChatSettings, models: ModelInfo[]): string {
+  const name = modelName(settings.model, models)
+  const model = models.find((m) => m.value === settings.model)
+  if (!model || model.efforts.length === 0) return name
+  return `${name} · ${effortName(settings.effort)}`
+}
+
+/**
+ * What a chat's record keeps for the model Claude Code says it runs (`claude-sonnet-5-5` at
+ * start, "Sonnet 5.5" after `/model`): the record's own when that is the same model.
+ */
+export function reportedModel(reported: string, current: string, models: ModelInfo[]): string {
+  const said = reported.toLowerCase()
+  const is = (m: ModelInfo) => [m.value, m.resolved, m.name].some((x) => x?.toLowerCase() === said)
+  const now = models.find((m) => m.value === (current || 'default'))
+  if (now && is(now)) return current
+  const match = models.find((m) => m.value !== 'default' && is(m)) ?? models.find(is)
+  if (!match) return current
+  return match.value === 'default' ? '' : match.value
 }
 
 /**

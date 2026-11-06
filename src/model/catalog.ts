@@ -27,6 +27,8 @@ export interface ChatRecord {
   model: string
   effort: string
   createdAt: number
+  /** When a turn last started or ended (ms): the sidebar's age. Absent in older catalogs. */
+  activeAt?: number
 }
 
 export interface Catalog {

@@ -5,9 +5,9 @@ import {
   agentLabel,
   chatFlags,
   cycleEffort,
-  describe as label,
   normalize,
   parseModels,
+  reportedModel,
 } from './agents'
 
 const models = parseModels(
@@ -48,8 +48,8 @@ test('effort cycles through the model’s levels and back to its default', () =>
   expect([at(''), at('low'), at('high')]).toEqual(['low', 'high', ''])
 })
 
-test('describe and flags leave defaults unsaid', () => {
-  expect(label({ effort: 'high', model: 'opus' }, models)).toBe('Opus 5.5 · High')
+test('the label and the flags leave defaults unsaid', () => {
+  expect(agentLabel({ effort: 'high', model: 'opus' }, models)).toBe('Opus 5.5 · High')
   expect(chatFlags({ effort: '', model: 'default' })).toEqual({ effort: '', model: '' })
 })
 
@@ -72,7 +72,7 @@ const live = parseModels(
 )
 
 test('a chat’s footer names its model, the default’s real one, and its effort', () => {
-  expect(agentLabel({ effort: '', model: 'default' }, live)).toBe('Default (Opus 5.5) · Auto')
+  expect(agentLabel({ effort: '', model: 'default' }, live)).toBe('Opus 5.5 · Auto')
   expect(agentLabel({ effort: 'high', model: 'opus' }, live)).toBe('Opus 5.5 · High')
   expect(agentLabel({ effort: '', model: 'claude-haiku-4-5' }, live)).toBe('Haiku 4.5')
 })
@@ -89,4 +89,14 @@ test('/model and /effort with a name apply it; anything else opens the picker', 
   expect(agentCommand('effort', 'Low', now, live)).toEqual({ effort: 'low', model: 'opus' })
   expect(agentCommand('effort', 'auto', now, live)).toEqual({ effort: '', model: 'opus' })
   expect(agentCommand('effort', 'max', now, live)).toBeNull()
+})
+
+test('the model Claude Code reports becomes the record’s, unless it is the same one', () => {
+  // `default` runs Opus 5.5: the record keeps saying default.
+  expect(reportedModel('claude-opus-5-5', '', live)).toBe('')
+  expect(reportedModel('claude-opus-5-5', 'opus', live)).toBe('opus')
+  expect(reportedModel('Haiku 4.5', 'opus', live)).toBe('claude-haiku-4-5')
+  expect(reportedModel('Opus 5.5', 'claude-haiku-4-5', live)).toBe('opus')
+  expect(reportedModel('Default', 'opus', live)).toBe('')
+  expect(reportedModel('gpt-9', 'opus', live)).toBe('opus')
 })

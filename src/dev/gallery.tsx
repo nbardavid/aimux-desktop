@@ -1,7 +1,7 @@
 // Every shadcn primitive in the app's look, for screenshots: `bun run web:dev`, then
 // http://localhost:1420/?gallery. Dev only; nothing ships it.
 
-import { CopyIcon, FolderIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { CopyIcon, FolderIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -60,6 +60,36 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
+// The type scale and the colour tokens (styles.css), to check a token change at a glance.
+const TYPE = [
+  ['text-2xs', '11 / 14 · badges'],
+  ['text-xs', '12 / 16 · ages, hints, labels'],
+  ['text-sm', '13 / 18 · chrome'],
+  ['text-base', '14 / 22 · bubble, composer, titles'],
+  ['text-lg', '20 / 28 · empty states'],
+] as const
+const SWATCHES = [
+  'bg-chrome',
+  'bg-bubble',
+  'bg-hover',
+  'bg-active',
+  'bg-border',
+  'bg-line-strong',
+  'bg-tick',
+  'bg-label',
+  'bg-faint',
+  'bg-good-wash',
+  'bg-good',
+  'bg-good-ink',
+  'bg-critical-wash',
+  'bg-critical',
+  'bg-critical-ink',
+  'bg-warn',
+  'bg-warn-ink',
+  'bg-merge',
+  'bg-tan',
+]
+
 const BRANCHES = ['main', 'develop', 'release/0.2', 'feat/dark-mode', 'fix/resume-order']
 const GROUPS = [{ items: BRANCHES.slice(0, 2), value: 'Recent' }]
 
@@ -78,6 +108,24 @@ export function Gallery() {
     <TooltipProvider>
       <main className="bg-background h-full overflow-auto p-8">
         <div className="flex max-w-3xl flex-col gap-6">
+          <Row label="Type">
+            <div className="flex flex-col gap-1">
+              {TYPE.map(([size, use]) => (
+                <span key={size} className={size}>
+                  {size} — {use}
+                </span>
+              ))}
+              <span className="md">.md — 15 / 24 · Claude’s answers</span>
+            </div>
+          </Row>
+          <Row label="Colours">
+            {SWATCHES.map((bg) => (
+              <span key={bg} className="text-faint flex flex-col items-center gap-1 text-2xs">
+                <span className={`${bg} border-border size-8 rounded-md border`} />
+                {bg.slice(3)}
+              </span>
+            ))}
+          </Row>
           <Row label="Button">
             <Button>Create</Button>
             <Button variant="secondary">Deny</Button>
@@ -86,6 +134,11 @@ export function Gallery() {
             <Button variant="destructive">Delete</Button>
             <Button variant="link">Link</Button>
             <Button disabled>Disabled</Button>
+            <Button size="sm">
+              Create
+              <Kbd className="text-white/60">↩</Kbd>
+            </Button>
+            <Button className="bg-merge hover:bg-merge-hover h-7 px-2.5 text-white">Merge</Button>
             <Button size="sm" variant="secondary">
               <PlusIcon />
               Small
@@ -121,6 +174,7 @@ export function Gallery() {
                   <MenuItem>
                     <FolderIcon />
                     Show in Finder
+                    <MenuShortcut>⌥⌘R</MenuShortcut>
                   </MenuItem>
                   <MenuItem>
                     <CopyIcon />
@@ -143,7 +197,10 @@ export function Gallery() {
                 Right-click here
               </ContextMenuTrigger>
               <ContextMenuContent>
-                <ContextMenuItem>Rename</ContextMenuItem>
+                <ContextMenuItem>
+                  <PencilIcon />
+                  Rename
+                </ContextMenuItem>
                 <ContextMenuItem>
                   Close
                   <ContextMenuShortcut>⌘W</ContextMenuShortcut>
@@ -203,7 +260,7 @@ export function Gallery() {
                   <DialogTitle>New workspace</DialogTitle>
                   <DialogDescription>The composer is the app’s one dialog.</DialogDescription>
                 </DialogHeader>
-                <div className="px-[18px] py-3">
+                <div className="px-4 py-3">
                   <Textarea placeholder="What do you want to work on?" />
                 </div>
                 <DialogFooter>

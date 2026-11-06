@@ -33,7 +33,7 @@ export function StatusDot({ signal, withLabel = false }: { signal: Signal; withL
   )
   if (!withLabel) return dot
   return (
-    <span className="text-muted-foreground inline-flex items-center gap-1.5 text-[12px] font-medium">
+    <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs font-medium">
       {dot}
       {LABEL[signal]}
     </span>

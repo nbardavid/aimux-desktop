@@ -27,12 +27,12 @@ export function HostBar({
       : `Restart the background process to keep working. ${clauses.join('; ')}.`
   return (
     <div
-      className="border-border flex flex-none items-center gap-3 border-b bg-[color-mix(in_srgb,var(--warn)_12%,var(--background))] py-1.5 pr-2 pl-4 text-[12.5px] text-[#7a5a08]"
+      className="border-border flex flex-none items-center gap-3 border-b bg-[color-mix(in_srgb,var(--warn)_12%,var(--background))] px-4 py-1.5 text-xs text-warn-ink"
       role="alert"
     >
       <span className="min-w-0 flex-1">{error ?? said}</span>
       <Button
-        className="h-[26px] px-2.5 text-[12.5px]"
+        className="h-7 px-2.5 text-xs"
         disabled={busy}
         onClick={() => {
           setBusy(true)

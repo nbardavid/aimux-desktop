@@ -1,4 +1,11 @@
-import type { KeyboardEvent, PointerEvent } from 'react'
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 
 interface Props {
   label: string
@@ -12,15 +19,22 @@ interface Props {
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(v)))
 
+/** The panel's width as drawn: it may follow the window rather than a stored value. */
+function drawn(splitter: HTMLElement, direction: 1 | -1, value: number) {
+  const panel = direction === 1 ? splitter.previousElementSibling : splitter.nextElementSibling
+  return panel?.getBoundingClientRect().width ?? value
+}
+
 /** A 1 px line with a wider grab area; drag it, or focus it and use the arrows. */
 export function Splitter({ direction, label, max, min, onChange, value }: Props) {
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const start = e.clientX
     const target = e.currentTarget
+    const from = drawn(target, direction, value)
     target.setPointerCapture(e.pointerId)
     const move = (ev: globalThis.PointerEvent) =>
-      onChange(clamp(value + direction * (ev.clientX - start), min, max))
+      onChange(clamp(from + direction * (ev.clientX - start), min, max))
     const up = () => {
       target.removeEventListener('pointermove', move)
       target.removeEventListener('pointerup', up)
@@ -30,11 +44,11 @@ export function Splitter({ direction, label, max, min, onChange, value }: Props)
     target.addEventListener('pointermove', move)
     target.addEventListener('pointerup', up)
   }
-  const onKeyDown = (e: KeyboardEvent) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const step = { ArrowLeft: -16, ArrowRight: 16 }[e.key]
     if (step === undefined) return
     e.preventDefault()
-    onChange(clamp(value + direction * step, min, max))
+    onChange(clamp(drawn(e.currentTarget, direction, value) + direction * step, min, max))
   }
   return (
     <div
@@ -49,5 +63,58 @@ export function Splitter({ direction, label, max, min, onChange, value }: Props)
       onPointerDown={onPointerDown}
       onKeyDown={onKeyDown}
     />
+  )
+}
+
+const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/**
+ * A panel that slides its width open and shut (⌘B, ⌥⌘B; DESIGN.md: 200ms ease-in-out). The
+ * panel inside keeps its own width, so nothing reflows mid-way; it unmounts once shut.
+ * Only a toggle slides (`data-sliding`, until its transition ends): a window resized, or a
+ * splitter dragged, moves it at once. Reduced motion: no transition.
+ */
+export function Slide({
+  children,
+  open,
+  width,
+}: {
+  open: boolean
+  /** The panel's width, its splitter's 1px included. */
+  width: string
+  children: ReactNode
+}) {
+  const [mounted, setMounted] = useState(open)
+  const [wide, setWide] = useState(open)
+  const [sliding, setSliding] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (open && !mounted) setMounted(true)
+    else if (open && !wide) {
+      // Its zero width is laid out first, so the change from it transitions.
+      box.current?.getBoundingClientRect()
+      setWide(true)
+      setSliding(!still())
+    } else if (!open && wide) {
+      setWide(false)
+      setSliding(!still())
+      if (still()) setMounted(false)
+    }
+  }, [open, mounted, wide])
+  if (!mounted) return null
+  return (
+    <div
+      ref={box}
+      className="flex min-h-0 flex-none overflow-hidden data-sliding:transition-[width] data-sliding:duration-200 data-sliding:ease-in-out in-[.resizing]:transition-none motion-reduce:transition-none"
+      style={{ width: wide ? width : 0 }}
+      data-sliding={sliding || undefined}
+      onTransitionEnd={(e) => {
+        if (e.target !== e.currentTarget) return
+        setSliding(false)
+        if (!open) setMounted(false)
+      }}
+    >
+      {children}
+    </div>
   )
 }

@@ -1,62 +1,77 @@
 @import 'tailwindcss' source('.');
 @import 'tw-animate-css';
 
-/* A flat, warm white app: hairlines between panes, grey for what is selected, one tan
-   underline for the tab on screen. Colour otherwise says what needs attention.
+/* A flat white app with warm inks: neutral fills, hairlines between panes, grey for what is
+   selected, one tan underline for the tab on screen. Colour otherwise says what needs
+   attention. The values are DESIGN.md's Tokens table; change them there too.
 
    The tokens are shadcn's names (background, foreground, muted, accent, border, ring,
-   sidebar…) plus the app's own (good, warn, critical, chrome, pill, hover, label, faint…),
-   registered in `@theme inline` below so utilities use them: `bg-background`,
-   `text-muted-foreground`, `border-border`, `bg-chrome`, `text-warn`, `h-bar`. */
+   sidebar…) plus the app's own (good, warn, critical and their inks and washes, chrome,
+   bubble, hover, active, label, faint, tick…), registered in `@theme inline` below so
+   utilities use them: `bg-background`, `text-muted-foreground`, `bg-chrome`, `text-good-ink`,
+   `bg-merge`, `h-bar`, `shadow-composer`. */
 :root {
-  /* Controls (buttons, inputs) take lg = 7px; rows in a popup md = 6px; popups xl = 10px;
-     dialogs 2xl = 12px; key caps sm = 4px. */
-  --radius: 7px;
+  /* sm 4 (key caps, inline code), md 6 (rows, chips), lg 8 (controls, cards, the composer),
+     xl 12 (popups, ⌘P, the ⌘N dialog). */
+  --radius: 8px;
 
   --background: #ffffff;
-  --foreground: #2b2826;
+  --foreground: #282725;
   --card: #ffffff;
-  --card-foreground: #2b2826;
+  --card-foreground: #282725;
   --popover: #ffffff;
-  --popover-foreground: #2b2826;
+  --popover-foreground: #282725;
   /* The ink button: the one filled action. */
-  --primary: #2b2826;
+  --primary: #282725;
   --primary-foreground: #ffffff;
-  --secondary: #f5f4f3;
-  --secondary-foreground: #2b2826;
-  --muted: #f5f4f3;
+  --secondary: #f4f4f3;
+  --secondary-foreground: #282725;
+  --muted: #f4f4f3;
   --muted-foreground: #6c6a69;
   /* What a hovered or highlighted row turns: a grey, never a colour. */
-  --accent: #f5f4f3;
-  --accent-foreground: #2b2826;
-  --destructive: #c43a2b;
+  --accent: #f4f4f3;
+  --accent-foreground: #282725;
+  --destructive: #b8473a;
   --destructive-foreground: #ffffff;
-  --border: #eae8e6;
-  --input: #dcd9d6;
+  --border: #ebeae9;
+  --input: #dddbd9;
   --ring: #c29c87;
 
   --sidebar: #fdfcfc;
-  --sidebar-foreground: #2b2826;
-  --sidebar-primary: #2b2826;
+  --sidebar-foreground: #282725;
+  --sidebar-primary: #282725;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f0f0;
-  --sidebar-accent-foreground: #2b2826;
-  --sidebar-border: #eae8e6;
+  --sidebar-accent: #efefee;
+  --sidebar-accent-foreground: #282725;
+  --sidebar-border: #ebeae9;
   --sidebar-ring: #c29c87;
 
-  /* The app's own. */
+  /* The app's own. Status colours, and for each the ink that sets text on a wash of it. */
   --good: #4d8a5b;
+  --good-ink: #2f6b3e;
+  --good-wash: #f3f8f3;
   --warn: #c99a1e;
-  --critical: #c43a2b;
+  --warn-ink: #7a5a08;
+  --critical: #b8473a;
+  --critical-ink: #9e3324;
+  --critical-wash: #fbf3f2;
   --neutral: #b4b8bf;
+  /* The Merge button. */
+  --merge: #2f8a4c;
+  --merge-hover: #287a42;
+  /* Only the active-tab underline, the streaming caret and ::selection. */
   --tan: #c29c87;
-  --chrome: #faf9f8;
-  --pill: #ecebeb;
+  /* The tab band, the composer, code blocks, command cards. */
+  --chrome: #fafaf9;
+  /* The user's bubble in a chat. */
+  --bubble: #f7f6f4;
   --hover: var(--accent);
-  --active: #f1f0f0;
-  --label: #9b9999;
+  --active: #efefee;
+  --label: #a3a19f;
   --faint: #8d8885;
   --ink-soft: #3d3a38;
+  /* The turn ruler's ticks. */
+  --tick: #dcdbd9;
   /* The ink button's hover. */
   --line-ink: #4a4644;
   --line-strong: var(--input);
@@ -67,6 +82,7 @@
   --mono: 'Geist Mono', ui-monospace, monospace;
   --shadow-popover: 0 0 0 1px rgb(43 40 38 / 0.06), 0 12px 32px -12px rgb(43 40 38 / 0.3);
   --shadow-dialog: 0 24px 64px -24px rgb(43 40 38 / 0.32);
+  --shadow-composer: 0 1px 2px rgb(40 39 37 / 0.04), 0 4px 12px -6px rgb(40 39 37 / 0.08);
 
   color-scheme: light;
 }
@@ -75,22 +91,38 @@
   --font-sans: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: var(--mono);
 
-  /* The UI's two sizes: text-sm is the body's 13px, text-xs the 11px of labels and meta. */
-  --text-xs: 11px;
-  --text-xs--line-height: 1.4;
+  /* The type scale: every size in a component comes from here (DESIGN.md). Prose (`.md`,
+     15 / 24) and mono (12.5 / 20 in code blocks) are set below. */
+  --text-*: initial;
+  /* Badges and inbox counts only. */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 14px;
+  --text-2xs--font-weight: 500;
+  /* Ages, hints, section labels, footers, counts, chips. */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  /* All chrome: sidebar, tabs, menus, file rows, buttons. The body's size. */
   --text-sm: 13px;
-  --text-sm--line-height: 1.45;
+  --text-sm--line-height: 18px;
+  /* The user bubble, composer text, the top bar's title, PR status, card titles. */
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  /* Empty-state titles only. */
+  --text-lg: 20px;
+  --text-lg--line-height: 28px;
+  --text-lg--font-weight: 600;
 
-  --radius-sm: calc(var(--radius) - 3px);
-  --radius-md: calc(var(--radius) - 1px);
+  --radius-*: initial;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 3px);
-  --radius-2xl: calc(var(--radius) + 5px);
+  --radius-xl: calc(var(--radius) + 4px);
 
   --spacing-bar: var(--bar);
 
   --shadow-popover: var(--shadow-popover);
   --shadow-dialog: var(--shadow-dialog);
+  --shadow-composer: var(--shadow-composer);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -122,18 +154,26 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-good-wash: var(--good-wash);
   --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
   --color-critical: var(--critical);
+  --color-critical-ink: var(--critical-ink);
+  --color-critical-wash: var(--critical-wash);
   --color-neutral: var(--neutral);
+  --color-merge: var(--merge);
+  --color-merge-hover: var(--merge-hover);
   --color-tan: var(--tan);
   --color-side: var(--sidebar);
   --color-chrome: var(--chrome);
-  --color-pill: var(--pill);
+  --color-bubble: var(--bubble);
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-label: var(--label);
   --color-faint: var(--faint);
   --color-ink-soft: var(--ink-soft);
+  --color-tick: var(--tick);
   --color-line-ink: var(--line-ink);
   --color-line-strong: var(--line-strong);
 }
@@ -162,7 +202,7 @@
     background: var(--background);
     color: var(--foreground);
     font:
-      13px/1.45 -apple-system,
+      13px/18px -apple-system,
       BlinkMacSystemFont,
       system-ui,
       sans-serif;
@@ -176,30 +216,12 @@
     background: color-mix(in srgb, var(--tan) 28%, transparent);
   }
 
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    border: 3px solid transparent;
-    border-radius: 999px;
-    background: rgb(43 40 38 / 0.14) padding-box;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgb(43 40 38 / 0.26) padding-box;
-  }
-
-  ::-webkit-scrollbar-track,
-  ::-webkit-scrollbar-corner {
-    background: transparent;
-  }
+  /* No scrollbar rules: WKWebView draws macOS's overlay scrollbars, hidden while idle. */
 
   button {
     margin: 0;
     padding: 0;
-    border: 0;
+    border-width: 0;
     background: none;
     color: inherit;
     font: inherit;
@@ -217,7 +239,8 @@
   /* What preflight resets and the hand-written rules relied on: the browser's own look
      for rendered markdown (list markers, link underlines, heading and rule margins), and
      its placeholder grey and field padding. */
-  .md :where(*) {
+  /* `data-ui`: the app's own controls inside markdown (a code block's Copy) keep their look. */
+  .md :where(*:not([data-ui], [data-ui] *)) {
     all: revert;
     box-sizing: border-box;
   }
@@ -245,11 +268,11 @@
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--foreground);
-  color: #fff;
+  color: var(--background);
   content: attr(data-tip);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 16px;
   opacity: 0;
   pointer-events: none;
   transform: translate(var(--tip-x), -2px);
@@ -332,12 +355,12 @@ body.resizing * {
   }
 }
 
-/* Rendered markdown (Claude's answers, a command's output). In the components layer, so a
-   utility on the `.md` element (a smaller size for an output card) wins. */
+/* Rendered markdown (Claude's answers, a command's output): 15 / 24 prose. In the components
+   layer, so a utility on the `.md` element (a smaller size for an output card) wins. */
 @layer components {
   .md {
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 24px;
     overflow-wrap: anywhere;
   }
 
@@ -359,7 +382,7 @@ body.resizing * {
   .md pre,
   .md table,
   .md blockquote {
-    margin: 0 0 10px;
+    margin: 0 0 12px;
   }
 
   .md ul,
@@ -368,49 +391,66 @@ body.resizing * {
   }
 
   .md li + li {
-    margin-top: 3px;
+    margin-top: 4px;
+  }
+
+  .md li::marker {
+    color: var(--faint);
   }
 
   .md h1,
   .md h2,
   .md h3,
   .md h4 {
-    margin: 18px 0 8px;
+    margin: 20px 0 8px;
     font-size: 15px;
     font-weight: 600;
-    line-height: 1.35;
+    line-height: 24px;
   }
 
   .md h1 {
-    font-size: 17px;
+    font-size: 18px;
+    line-height: 26px;
+  }
+
+  .md h2 {
+    font-size: 16px;
   }
 
   .md a {
     color: var(--foreground);
-    text-decoration-color: var(--tan);
+    text-decoration-color: var(--line-strong);
     text-underline-offset: 2px;
+    transition: text-decoration-color 120ms ease-out;
+  }
+
+  .md a:hover {
+    text-decoration-color: var(--foreground);
   }
 
   .md code {
     padding: 1px 5px;
-    border-radius: 5px;
-    background: var(--hover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--background);
     font-family: var(--mono);
-    font-size: 12.5px;
+    font-size: 13px;
   }
 
   .md pre {
     overflow: auto;
     padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: var(--chrome);
-    line-height: 1.55;
+    font: 12.5px/20px var(--mono);
   }
 
   .md pre code {
     padding: 0;
+    border: 0;
     background: none;
+    font-size: inherit;
   }
 
   .md blockquote {
@@ -421,22 +461,49 @@ body.resizing * {
 
   .md table {
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 13.5px;
+    line-height: 20px;
   }
 
   .md th,
   .md td {
-    padding: 5px 10px;
-    border: 1px solid var(--border);
+    padding: 6px 16px 6px 0;
+    border-bottom: 1px solid var(--border);
     text-align: left;
+  }
+
+  .md th {
+    color: var(--muted-foreground);
+    font-weight: 600;
   }
 }
 
+/* Reduced motion keeps the fades and drops the movement: tw-animate's slides and zooms go
+   flat, `rise` and `pop` become plain fades, smooth scrolls jump. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-enter-rotate: 0 !important;
+    --tw-exit-rotate: 0 !important;
+    scroll-behavior: auto !important;
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes pop {
+    from {
+      opacity: 0;
+    }
   }
 }

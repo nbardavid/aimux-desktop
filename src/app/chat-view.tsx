@@ -1,8 +1,13 @@
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { ArrowUpIcon, MessageCircleIcon, SquareIcon } from 'lucide-react'
-import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import Markdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { ArrowUpIcon, SquareIcon } from 'lucide-react'
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
@@ -10,13 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 import { isAppCommand, parseCommand, rankCommands } from '../chat/commands'
-import {
-  type Block,
-  type ChatState,
-  type Permission,
-  type SlashCommand,
-  toolSummary,
-} from '../chat/model'
+import { type ChatState, type Permission, type SlashCommand, toolSummary } from '../chat/model'
 import {
   agentCommand,
   agentLabel,
@@ -26,15 +25,19 @@ import {
 } from '../model/agents'
 import { ModelSelect } from './agent-select'
 import { CommandHint, CommandMenu } from './command-menu'
+import { overlayShown } from './overlay'
+import { QueuedTurn, Transcript } from './transcript'
 
 interface Props {
+  /** The chat's id: a new one is a chat navigated to, whose composer takes the focus. */
+  id: string
   cwd: string
   state: ChatState
   /** This chat's model and effort, as its record keeps them. */
   agent: ChatSettings
   models: ModelInfo[]
-  /** A model or effort picked in the footer, by `/model`, `/effort` or ⇧⌘/. */
-  onAgent: (next: ChatSettings) => void
+  /** A model or effort picked in the footer or by ⇧⌘/, or `typed` as `/model`, `/effort`. */
+  onAgent: (next: ChatSettings, typed: boolean) => void
   /** An old background host holds the chats: the transcript shows, nothing runs. */
   blocked: boolean
   /** What the `/` menu offers: the app's commands and this chat's Claude's. */
@@ -44,186 +47,48 @@ interface Props {
   onCommand: (name: string, args: string) => void
   onAnswer: (permission: Permission, choice: 'allow' | 'always' | 'deny') => void
   onInterrupt: () => void
-}
-
-// Links open in the browser, never in this window; images are not fetched.
-const MD: Components = {
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault()
-        if (href !== undefined && /^https?:/.test(href)) void openUrl(href)
-      }}
-    >
-      {children}
-    </a>
-  ),
-  img: ({ alt }) => <span className="text-faint">[{alt ?? 'image'}]</span>,
-}
-
-// How a message or a block comes in: a short rise. (Written out whole: Tailwind only sees
-// complete class names.)
-const ENTER =
-  'animate-in fade-in slide-in-from-bottom-[6px] duration-280 ease-[cubic-bezier(0.2,0,0,1)]'
-// The same, for a <details>' body as it opens (`[open] > *`).
-const OPENING =
-  '[[open]>&]:animate-in [[open]>&]:fade-in [[open]>&]:slide-in-from-bottom-[6px] [[open]>&]:duration-200 [[open]>&]:ease-[cubic-bezier(0.2,0,0,1)]'
-// A blinking tan block after the last thing a streaming answer wrote.
-const CARET =
-  '[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:h-[1.05em] [&>:last-child]:after:w-[7px] [&>:last-child]:after:animate-[caret_1s_ease-in-out_infinite] [&>:last-child]:after:rounded-[2px] [&>:last-child]:after:bg-tan [&>:last-child]:after:align-[-0.15em]'
-// Status dots, as `.st-*` draws them.
-const SPINNER =
-  'size-[9px] flex-none animate-[spin_0.9s_linear_infinite] rounded-full border-[1.5px] border-faint border-t-transparent'
-const DOT = 'size-[7px] flex-none rounded-full'
-// A <details> header: a grey row under the pointer, no marker.
-const SUMMARY =
-  'flex h-7 cursor-pointer list-none items-center gap-2 rounded-lg px-2 text-faint hover:bg-hover hover:text-foreground [&::-webkit-details-marker]:hidden'
-
-const PLUGINS = [remarkGfm]
-
-// A command's output past this many lines folds, with "Show all".
-const OUTPUT_LINES = 12
-
-function OutputCard({ text }: { text: string }) {
-  const long = text.split('\n').length > OUTPUT_LINES
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="relative rounded-xl border bg-chrome px-3.5 py-2.5 text-ink-soft">
-      <div
-        className={cn(
-          'md text-[13px] leading-[1.55]',
-          long &&
-            !open &&
-            'max-h-[calc(12*1.55em)] overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]'
-        )}
-      >
-        <Markdown remarkPlugins={PLUGINS} components={MD}>
-          {text}
-        </Markdown>
-      </div>
-      {long && (
-        <button
-          type="button"
-          className="mt-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground"
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? 'Show less' : 'Show all'}
-        </button>
-      )}
-    </div>
-  )
-}
-
-const TOOL_OUT = `my-1 ml-2 max-h-[320px] overflow-auto rounded-[8px] border bg-chrome px-3 py-2.5 font-mono text-[12px] leading-[1.55] whitespace-pre-wrap wrap-anywhere ${OPENING}`
-
-function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
-  const { input, name, result } = block
-  if (
-    name === 'Edit' &&
-    typeof input.old_string === 'string' &&
-    typeof input.new_string === 'string'
-  ) {
-    return (
-      <pre className={TOOL_OUT}>
-        {input.old_string.split('\n').map((line, i) => (
-          // oxlint-disable-next-line react/no-array-index-key -- lines are positional
-          <div key={`d${i}`} className="bg-critical/8">
-            − {line}
-          </div>
-        ))}
-        {input.new_string.split('\n').map((line, i) => (
-          // oxlint-disable-next-line react/no-array-index-key -- lines are positional
-          <div key={`a${i}`} className="bg-good/9">
-            + {line}
-          </div>
-        ))}
-      </pre>
-    )
-  }
-  const command = typeof input.command === 'string' ? input.command : ''
-  const shown = name === 'Bash' ? `$ ${command}` : JSON.stringify(input, null, 2)
-  return (
-    <pre className={TOOL_OUT}>
-      {shown}
-      {result !== undefined && result.text !== '' && `\n\n${result.text}`}
-    </pre>
-  )
-}
-
-function BlockView({ block, cwd, live }: { block: Block; cwd: string; live: boolean }) {
-  if (block.kind === 'text') {
-    return (
-      <div className={cn('md', live && CARET)}>
-        <Markdown remarkPlugins={PLUGINS} components={MD}>
-          {block.text}
-        </Markdown>
-      </div>
-    )
-  }
-  if (block.kind === 'output') return <OutputCard text={block.text} />
-  if (block.kind === 'command') return null
-  if (block.kind === 'thinking') {
-    if (block.text.trim() === '') return null
-    return (
-      <details className="-ml-2">
-        <summary className={cn(SUMMARY, 'w-max italic')}>Thought</summary>
-        <div
-          className={cn(
-            'ml-2 border-l-2 pt-1 pr-2 pb-1.5 pl-4 text-[13px] leading-[1.55] whitespace-pre-wrap text-muted-foreground',
-            OPENING
-          )}
-        >
-          {block.text}
-        </div>
-      </details>
-    )
-  }
-  let dot = SPINNER
-  if (block.result) {
-    dot = block.result.isError
-      ? cn(DOT, 'bg-critical')
-      : cn(DOT, 'animate-[pop_0.3s_cubic-bezier(0.2,0,0,1)] bg-good')
-  }
-  return (
-    <details className="-ml-2">
-      <summary className={SUMMARY}>
-        <span className={dot} />
-        <span className="flex-none font-medium text-foreground">{block.name}</span>
-        <span className="truncate font-mono text-[12px]">
-          {toolSummary(block.name, block.input, cwd)}
-        </span>
-      </summary>
-      <ToolBody block={block} />
-    </details>
-  )
+  /** Under the empty chat's question, in place of how the chat works. */
+  intro?: ReactNode
+  /** The workspace's name, for the empty chat's question (a renamed one is not its folder). */
+  place?: string
+  /** Toasts, floated at the pane's right just above the question and the composer. */
+  above?: ReactNode
+  /** A turn footer's file chip: git mode on that file (relative path), or on all (`null`). */
+  onOpenFile?: (path: string | null) => void
 }
 
 /** A key cap on the ink button. */
-const KBD_INK = 'h-4 border-0 bg-white/16 px-1 text-inherit'
+const KBD_INK = 'text-white/60'
+// The card dims as a whole while the turn stops: its buttons don't dim a second time.
+const ANSWER = 'disabled:opacity-100'
 
 function PermissionCard({
   cwd,
+  disabled,
   onAnswer,
   permission,
 }: {
   cwd: string
   permission: Permission
   onAnswer: Props['onAnswer']
+  /** The turn is being stopped: the question goes with it. */
+  disabled: boolean
 }) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-2xl border border-line-strong bg-background px-3.5 py-3 shadow-[0_8px_24px_-14px_rgb(43_40_38/0.25)]',
-        ENTER
+        'flex flex-col gap-2 rounded-lg border border-line-strong bg-background px-3.5 py-3 transition-opacity duration-160',
+        'animate-in fade-in slide-in-from-bottom-[6px] duration-200 ease-out',
+        disabled && 'opacity-60'
       )}
+      aria-disabled={disabled || undefined}
       role="alertdialog"
       aria-label={`Allow ${permission.toolName}?`}
     >
-      <div className="text-[13.5px]">
-        Allow <b>{permission.toolName}</b>?
+      <div className="text-base">
+        Allow <b className="font-semibold">{permission.toolName}</b>?
       </div>
-      <code className="max-h-[120px] overflow-auto font-mono text-[12px] whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+      <code className="max-h-[120px] overflow-auto rounded-md bg-chrome px-2.5 py-2 font-mono text-[12.5px] leading-5 whitespace-pre-wrap wrap-anywhere text-ink-soft">
         {toolSummary(permission.toolName, permission.input, cwd) || permission.description}
       </code>
       {/* No button takes the focus: a key meant for the composer never answers. */}
@@ -231,8 +96,9 @@ function PermissionCard({
         <Button
           variant="secondary"
           size="sm"
-          className="pr-1.5 pl-3"
+          className={ANSWER}
           aria-keyshortcuts="Meta+Backspace"
+          disabled={disabled}
           onClick={() => onAnswer(permission, 'deny')}
         >
           Deny
@@ -242,8 +108,9 @@ function PermissionCard({
           <Button
             variant="secondary"
             size="sm"
-            className="pr-1.5 pl-3"
+            className={ANSWER}
             aria-keyshortcuts="Shift+Meta+Enter"
+            disabled={disabled}
             onClick={() => onAnswer(permission, 'always')}
           >
             Always allow
@@ -252,8 +119,9 @@ function PermissionCard({
         )}
         <Button
           size="sm"
-          className="pr-1.5 pl-3"
+          className={ANSWER}
           aria-keyshortcuts="Meta+Enter"
+          disabled={disabled}
           onClick={() => onAnswer(permission, 'allow')}
         >
           Allow
@@ -264,28 +132,8 @@ function PermissionCard({
   )
 }
 
-const USER = `max-w-[80%] self-end rounded-2xl bg-[#f4f1ec] px-3.5 py-[9px] text-[14px] leading-[1.5] whitespace-pre-wrap wrap-anywhere ${ENTER}`
-
-function UserTurn({ blocks }: { blocks: Block[] }) {
-  const first = blocks[0]
-  if (first?.kind === 'command') {
-    return (
-      <div className={cn(USER, 'px-3 py-1.5 font-mono text-[12.5px] leading-[1.5] text-ink-soft')}>
-        <span className="font-semibold text-foreground">/{first.name}</span>
-        {first.args !== '' && ` ${first.args}`}
-      </div>
-    )
-  }
-  return <div className={USER}>{blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')}</div>
-}
-
 // The ink square that sends (or stops): no hover change, grey and opaque when disabled.
-const SEND = 'rounded-[8px] hover:bg-primary disabled:bg-line-strong disabled:opacity-100'
-
-function status(state: ChatState): string {
-  if (state.stopping) return 'Stopping…'
-  return state.status === 'starting' ? 'Starting Claude…' : 'Working…'
-}
+const SEND = 'rounded-md hover:bg-primary disabled:bg-line-strong disabled:opacity-100'
 
 function stepOf(e: KeyboardEvent): number {
   if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) return 1
@@ -294,16 +142,21 @@ function stepOf(e: KeyboardEvent): number {
 }
 
 export function ChatView({
+  above,
   agent,
   blocked,
   commands,
   cwd,
+  id,
+  intro,
   models,
   onAgent,
   onAnswer,
   onCommand,
   onInterrupt,
+  onOpenFile,
   onSend,
+  place,
   state,
 }: Props) {
   const [draft, setDraft] = useState('')
@@ -314,38 +167,58 @@ export function ChatView({
   const menuId = useId()
   const [agentOpen, setAgentOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
-  const scroller = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
-  // Follow the conversation unless the user scrolled up to read.
-  const pinned = useRef(true)
   const working = state.status === 'working' || state.status === 'starting'
   const permission = state.pending[0]
+  // Nothing can be typed: Claude has stopped, or an old host holds the chat.
+  const off = blocked || state.status === 'exited'
 
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (el && pinned.current) el.scrollTop = el.scrollHeight
-  }, [state.turns, state.pending])
-
+  // A chat navigated to takes the keys, question pending or not; a question arriving in the
+  // chat you look at leaves the focus where it is, and its answer gives it back.
+  useEffect(() => {
+    field.current?.focus()
+  }, [id])
   useEffect(() => {
     if (permission === undefined) field.current?.focus()
   }, [permission])
 
   // Keys that work anywhere in the chat, not only in the composer: answering a permission
-  // (⌘↩ Allow, ⇧⌘↩ Always allow, ⌘⌫ Deny), ⇧⌘/ for the effort, and Esc to stop.
-  const keys = useRef({ agent, models, onAgent, onAnswer, onInterrupt, permission, working })
-  keys.current = { agent, models, onAgent, onAnswer, onInterrupt, permission, working }
+  // (⌘↩ Allow, ⇧⌘↩ Always allow, ⌘⌫ Deny), ⇧⌘/ for the effort, Esc to stop, and ⌘L, from
+  // anywhere in the window, to type here (a terminal lets it through: appShortcut).
+  // While the turn is being stopped, its question can no longer be answered.
+  const answerable = state.stopping ? undefined : permission
+  const keys = useRef({
+    agent,
+    answerable,
+    models,
+    onAgent,
+    onAnswer,
+    onInterrupt,
+    working,
+  })
+  keys.current = {
+    agent,
+    answerable,
+    models,
+    onAgent,
+    onAnswer,
+    onInterrupt,
+    working,
+  }
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       const k = keys.current
       // Handled already (the `/` menu's Esc), or meant for a dialog or menu over the chat.
-      if (e.defaultPrevented || document.querySelector('[role=dialog], [role=menu]')) return
-      const p = k.permission
+      if (e.defaultPrevented || overlayShown()) return
+      const p = k.answerable
       if (p && e.metaKey && e.key === 'Enter') {
         if (!e.shiftKey) k.onAnswer(p, 'allow')
         else if (p.suggestions.length > 0) k.onAnswer(p, 'always')
       } else if (p && e.metaKey && e.key === 'Backspace') k.onAnswer(p, 'deny')
       else if (e.metaKey && e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
-        k.onAgent(cycleEffort(k.agent, k.models))
+        k.onAgent(cycleEffort(k.agent, k.models), false)
+      } else if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyL') {
+        field.current?.focus()
       } else if (
         e.key === 'Escape' &&
         k.working &&
@@ -363,7 +236,8 @@ export function ChatView({
     const el = field.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+    // Grows to 40% of the window, then scrolls.
+    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
   }, [draft])
 
   const typing = /^\/(\S*)$/.exec(draft)
@@ -386,13 +260,12 @@ export function ChatView({
 
   const submit = (line = draft) => {
     const text = line.trim()
-    if (text === '' || state.status === 'exited') return
-    pinned.current = true
+    if (text === '' || off) return
     const command = parseCommand(text)
     if (command?.name === 'model' || command?.name === 'effort') {
       // A name it knows applies at once; anything else opens the picker.
       const next = agentCommand(command.name, command.args, agent, models)
-      if (next) onAgent(next)
+      if (next) onAgent(next, true)
       else setAgentOpen(true)
     } else if (command && isAppCommand(command.name)) onCommand(command.name, command.args)
     else onSend(text)
@@ -435,140 +308,115 @@ export function ChatView({
   if (blocked) placeholder = 'Read-only until the background process restarts'
   else if (state.status === 'exited') placeholder = 'Claude has stopped'
 
-  const last = state.turns.at(-1)
-  const streamingText = last?.role === 'assistant' && last.blocks.at(-1)?.kind === 'text'
-  const name = cwd.split('/').pop() ?? cwd
-
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={root}>
-      <div
-        className="min-h-0 flex-1 overflow-auto"
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
-        }}
-      >
-        <div className="mx-auto flex max-w-[780px] flex-col gap-[18px] px-7 pt-7 pb-5 select-text">
-          {state.turns.length === 0 && !blocked && (
-            <div className="flex flex-col items-center gap-1.5 pt-[120px] text-center text-sm text-faint">
-              <MessageCircleIcon className="mb-1.5 size-[22px] p-0.5 text-label" />
-              <span className="text-[16px] font-semibold text-balance text-foreground">
-                What are we doing in {name}?
-              </span>
-              <span className="text-faint">
-                Claude Code, in this workspace’s folder. Enter sends, Esc stops.
-              </span>
-            </div>
+      <Transcript
+        cwd={cwd}
+        place={place}
+        state={state}
+        blocked={blocked}
+        intro={intro}
+        onOpenFile={onOpenFile}
+      />
+      {/* Toasts float at the pane's right, above the question and the composer. */}
+      <div className="relative flex-none">
+        {above}
+        {/* The column's 720px and 16px either side: 752px of composer. */}
+        <div className="relative mx-auto flex w-full max-w-[784px] flex-col gap-2 px-4 pb-4">
+          {permission !== undefined && (
+            <PermissionCard
+              cwd={cwd}
+              permission={permission}
+              disabled={state.stopping}
+              onAnswer={onAnswer}
+            />
           )}
-          {state.turns.map((turn) =>
-            turn.role === 'user' ? (
-              <UserTurn key={turn.id} blocks={turn.blocks} />
-            ) : (
-              <div
-                key={turn.id}
-                className="flex min-w-0 flex-col gap-2.5 *:animate-in *:fade-in *:slide-in-from-bottom-[6px] *:duration-280 *:ease-[cubic-bezier(0.2,0,0,1)]"
-              >
-                {turn.blocks.map((block, i) => (
-                  // oxlint-disable-next-line react/no-array-index-key -- blocks keep their stream index
-                  <BlockView
-                    key={i}
-                    block={block}
-                    cwd={cwd}
-                    live={working && turn === last && i === turn.blocks.length - 1}
-                  />
-                ))}
-              </div>
-            )
-          )}
-          {((working && !streamingText && permission === undefined) || state.stopping) && (
-            <div className="flex w-max animate-[shimmer_2.2s_linear_infinite] items-center gap-2 bg-[linear-gradient(90deg,var(--faint)_0%,var(--faint)_40%,var(--foreground)_50%,var(--faint)_60%,var(--faint)_100%)] bg-[length:300%_100%] bg-clip-text text-transparent">
-              <span className={SPINNER} />
-              {status(state)}
-            </div>
-          )}
-          {state.lastTurn && !working && (
-            <div className="-mt-2 font-mono text-[11px] text-label">
-              {(state.lastTurn.durationMs / 1000).toFixed(1)}s · $
-              {state.lastTurn.costUsd.toFixed(3)}
-            </div>
-          )}
-          {state.errors.length > 0 && (
-            <div className="rounded-[8px] bg-critical/7 px-3 py-2.5 text-[12.5px] whitespace-pre-wrap text-[#a2301f]">
-              {state.errors.at(-1)}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="mx-auto flex w-full max-w-[812px] flex-none flex-col gap-2 px-4 pb-4">
-        {permission !== undefined && (
-          <PermissionCard cwd={cwd} permission={permission} onAnswer={onAnswer} />
-        )}
-        {/* The `/` menu floats over the composer: the composer itself never moves. */}
-        <div
-          data-composer
-          className="relative flex flex-col rounded-[14px] border bg-[#f8f6f3] transition-[border-color,box-shadow] duration-150 ease-[ease] focus-within:border-[color-mix(in_srgb,var(--tan)_55%,var(--border))] focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--tan)_14%,transparent)]"
-        >
-          {menu.length > 0 && (
-            <CommandMenu id={menuId} items={menu} hot={at} onHover={setHot} onPick={accept} />
-          )}
-          {hint && <CommandHint command={hint} />}
-          <Textarea
-            ref={field}
-            className="min-h-12 rounded-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-[1.5] field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
-            rows={1}
-            value={draft}
-            placeholder={placeholder}
-            disabled={state.status === 'exited'}
-            role="combobox"
-            aria-expanded={menu.length > 0}
-            aria-controls={menuId}
-            aria-autocomplete="list"
-            aria-activedescendant={menu.length > 0 ? `${menuId}-${at}` : undefined}
-            onChange={(e) => edit(e.target.value)}
-            onKeyDown={onKeyDown}
-          />
-          <div className="flex items-center gap-2 pt-1.5 pr-2 pb-2 pl-2 text-[12px]">
-            {state.status === 'exited' ? (
-              <span className="text-faint pl-2">{agentLabel(agent, models)}</span>
-            ) : (
-              <ModelSelect
-                value={agent}
-                models={models}
-                label={agentLabel(agent, models)}
-                className="text-muted-foreground h-7 gap-1 pr-1.5 pl-2 text-[12px]"
-                open={agentOpen}
-                onOpenChange={setAgentOpen}
-                finalFocus={field}
-                onChange={onAgent}
+          {state.queued.map((turn) => (
+            <QueuedTurn key={turn.id} turn={turn} />
+          ))}
+          {/* The `/` menu floats over the composer: the composer itself never moves. */}
+          <div
+            data-composer
+            className={cn(
+              'shadow-composer focus-within:border-line-strong relative flex flex-col rounded-lg border transition-[border-color,background-color] duration-120 ease-out',
+              off ? 'bg-background' : 'bg-chrome'
+            )}
+          >
+            {menu.length > 0 && (
+              <CommandMenu
+                id={menuId}
+                items={menu}
+                query={typing?.[1] ?? ''}
+                hot={at}
+                onHover={setHot}
+                onPick={accept}
               />
             )}
-            <span className="min-w-0 flex-1" />
-            {working ? (
-              <Button
-                size="icon"
-                className={SEND}
-                aria-label={state.stopping ? 'Stopping' : 'Stop (Esc)'}
-                data-tip={state.stopping ? 'Stopping…' : 'Stop · Esc'}
-                data-tip-side="top"
-                disabled={state.stopping}
-                onClick={onInterrupt}
-              >
-                <SquareIcon className="size-[10px] fill-current" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                className={SEND}
-                aria-label="Send (Enter)"
-                data-tip="Send · Enter"
-                data-tip-side="top"
-                disabled={draft.trim() === ''}
-                onClick={() => submit()}
-              >
-                <ArrowUpIcon className="size-3.5" />
-              </Button>
+            {hint && <CommandHint command={hint} />}
+            <Textarea
+              ref={field}
+              // Three lines' worth empty: the box is 116px with its toolbar.
+              className="peer min-h-[74px] rounded-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
+              rows={1}
+              value={draft}
+              placeholder={placeholder}
+              disabled={off}
+              role="combobox"
+              aria-expanded={menu.length > 0}
+              aria-controls={menuId}
+              aria-autocomplete="list"
+              aria-activedescendant={menu.length > 0 ? `${menuId}-${at}` : undefined}
+              onChange={(e) => edit(e.target.value)}
+              onKeyDown={onKeyDown}
+            />
+            {!off && draft === '' && (
+              <span className="text-faint pointer-events-none absolute top-3.5 right-4 text-xs leading-[22px] transition-opacity duration-120 ease-out select-none peer-focus:opacity-0">
+                ⌘L to focus
+              </span>
             )}
+            <div className="flex h-10 flex-none items-end gap-1 px-2 pb-2">
+              {state.status === 'exited' ? (
+                <span className="text-faint flex h-7 items-center pl-2">
+                  {agentLabel(agent, models)}
+                </span>
+              ) : (
+                <ModelSelect
+                  value={agent}
+                  models={models}
+                  className="text-muted-foreground hover:bg-hover data-popup-open:bg-hover h-7 gap-1 rounded-md pr-1.5 pl-2 font-normal [&>svg:last-child]:size-3"
+                  open={agentOpen}
+                  onOpenChange={setAgentOpen}
+                  finalFocus={field}
+                  onChange={(next) => onAgent(next, false)}
+                />
+              )}
+              <span className="min-w-0 flex-1" />
+              {working ? (
+                <Button
+                  size="icon"
+                  className={SEND}
+                  aria-label={state.stopping ? 'Stopping' : 'Stop (Esc)'}
+                  data-tip={state.stopping ? 'Stopping…' : 'Stop · Esc'}
+                  data-tip-side="top"
+                  disabled={state.stopping}
+                  onClick={onInterrupt}
+                >
+                  <SquareIcon className="size-[10px] fill-current" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  className={SEND}
+                  aria-label="Send (Enter)"
+                  data-tip="Send · Enter"
+                  data-tip-side="top"
+                  disabled={off || draft.trim() === ''}
+                  onClick={() => submit()}
+                >
+                  <ArrowUpIcon className="size-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -10,6 +10,8 @@ export type Block =
   | { kind: 'command'; name: string; args: string }
   /** What a local command printed, shown as a card rather than as Claude's answer. */
   | { kind: 'output'; text: string }
+  /** A faint line of the app's own: a model or effort picked outside the composer. */
+  | { kind: 'note'; text: string }
   | { kind: 'thinking'; text: string }
   | {
       kind: 'tool'
@@ -18,16 +20,31 @@ export type Block =
       input: Record<string, unknown>
       json: string
       result?: { text: string; isError: boolean }
+      /** The turn ended (stopped, failed, or the session closed) before its result came. */
+      stopped?: boolean
     }
+
+/** How an exchange ended: its price and length, or `stopped` when Esc ended it. */
+export interface TurnEnd {
+  /** Claude Code's API-price estimate; 0 when free or unknown (a replayed transcript). */
+  costUsd: number
+  /** 0 when unknown. */
+  durationMs: number
+  stopped: boolean
+}
 
 export interface Turn {
   role: 'user' | 'assistant'
   id: string
   blocks: Block[]
+  /** On the last turn of a finished exchange (the prompt itself, when nothing answered). */
+  end?: TurnEnd
 }
 
 export interface Permission {
   requestId: string
+  /** The tool call it asks about: its row stays open while the question waits. */
+  toolUseId: string
   toolName: string
   input: Record<string, unknown>
   description: string | null
@@ -49,8 +66,12 @@ export interface ChatState {
   /** Esc was pressed: the turn is being stopped, until its result arrives. */
   stopping: boolean
   turns: Turn[]
+  /**
+   * Prompts sent while Claude works: already written to it, shown above the composer until
+   * the turn before them ends (one per `result`), so answers stay under their prompt.
+   */
+  queued: Turn[]
   pending: Permission[]
-  lastTurn: { costUsd: number; durationMs: number } | null
   errors: string[]
   /** The commands this chat's Claude offers, from its `initialize` answer. */
   commands: SlashCommand[]
@@ -59,9 +80,9 @@ export interface ChatState {
 export const initialChat: ChatState = {
   commands: [],
   errors: [],
-  lastTurn: null,
   model: null,
   pending: [],
+  queued: [],
   sessionId: null,
   status: 'starting',
   stopping: false,
@@ -193,16 +214,17 @@ function onAssistant(state: ChatState, message: Json): ChatState {
   const content = Array.isArray(message.content) ? message.content : []
   const known = state.turns.find((t) => t.id === id)
   if (!known) {
-    let blocks = content.map(blockOf).filter((b): b is Block => b !== null)
+    const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
     // A local command answers with a `<synthetic>` message: its output, not Claude speaking.
     const prev = state.turns.at(-1)
-    if (
-      message.model === '<synthetic>' &&
-      prev?.role === 'user' &&
-      prev.blocks[0]?.kind === 'command'
-    ) {
+    if (message.model === '<synthetic>') {
       const text = blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('\n\n')
-      blocks = [{ kind: 'output', text }]
+      const next = { ...state, model: modelSet(text) ?? state.model }
+      // A change picked outside the composer already says so in its note.
+      if (prev?.blocks[0]?.kind === 'note') return next
+      if (prev?.role === 'user' && prev.blocks[0]?.kind === 'command') {
+        return withTurn(next, id, (t) => ({ ...t, blocks: [{ kind: 'output', text }] }))
+      }
     }
     return withTurn(state, id, (t) => ({ ...t, blocks }))
   }
@@ -279,24 +301,35 @@ export function reduceLine(state: ChatState, line: string): ChatState {
           ? request.permission_suggestions
           : [],
         toolName: str(request.tool_name),
+        toolUseId: str(request.tool_use_id),
       }
       return { ...state, pending: [...state.pending, permission] }
     }
     case 'result': {
-      const lastTurn = {
+      const end = {
         costUsd: typeof m.total_cost_usd === 'number' ? m.total_cost_usd : 0,
         durationMs: typeof m.duration_ms === 'number' ? m.duration_ms : 0,
+        stopped: state.stopping,
       }
       // A turn the user stopped ends as `error_during_execution`: asked for, not a failure.
       const failed = !state.stopping && (m.subtype !== 'success' || m.is_error === true)
       const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : state.errors
-      return { ...state, errors, lastTurn, pending: [], status: 'idle', stopping: false }
+      const ended = withEnd(stopTools(state), state.turns.length, end)
+      const [next, ...queued] = state.queued
+      // The next queued prompt is Claude's next turn: it moves into the transcript.
+      if (next) {
+        const turns = [...ended.turns, next]
+        return { ...ended, errors, pending: [], queued, status: 'working', stopping: false, turns }
+      }
+      return { ...ended, errors, pending: [], status: 'idle', stopping: false }
     }
     case 'aimux_stderr': {
       return { ...state, errors: [...state.errors, str(m.text)].slice(-20) }
     }
     case 'aimux_exit': {
-      return { ...state, pending: [], status: 'exited', stopping: false }
+      // What was queued was never answered: it reads as the last prompts.
+      const turns = [...state.turns, ...state.queued]
+      return { ...state, pending: [], queued: [], status: 'exited', stopping: false, turns }
     }
     case 'aimux_sent': {
       // What a window wrote to Claude, replayed to the next window: its prompts and answers.
@@ -304,9 +337,7 @@ export function reduceLine(state: ChatState, line: string): ChatState {
       if (sent.type === 'control_response')
         return resolvePermission(state, str(obj(sent.response).request_id))
       const text = sent.type === 'user' ? promptText(obj(sent.message).content) : ''
-      return text === ''
-        ? state
-        : addUserTurn(state, text, str(sent.uuid) || `u${state.turns.length}`)
+      return text === '' ? state : sendTurn(state, text, str(sent.uuid) || `u${state.turns.length}`)
     }
     default: {
       return state
@@ -314,6 +345,38 @@ export function reduceLine(state: ChatState, line: string): ChatState {
   }
 }
 
+/** The turn is over: a tool call still without its result will never get one. */
+function stopTools(state: ChatState): ChatState {
+  const open = (b: Block) => b.kind === 'tool' && b.result === undefined && b.stopped !== true
+  if (!state.turns.some((t) => t.blocks.some(open))) return state
+  return {
+    ...state,
+    turns: state.turns.map((t) =>
+      t.blocks.some(open)
+        ? { ...t, blocks: t.blocks.map((b) => (open(b) ? { ...b, stopped: true } : b)) }
+        : t
+    ),
+  }
+}
+
+const isNote = (turn: Turn | undefined) => turn?.blocks[0]?.kind === 'note'
+
+/** Marks the exchange that ends before turn `upto` as over: on its last turn, notes aside. */
+function withEnd(state: ChatState, upto: number, end: TurnEnd): ChatState {
+  const at = state.turns.slice(0, upto).findLastIndex((t) => !isNote(t))
+  if (at === -1) return state
+  return { ...state, turns: state.turns.map((t, i) => (i === at ? { ...t, end } : t)) }
+}
+
+/** The model `/model` switched to, from what it printed ("Set model to Sonnet 5.5"). */
+export function modelSet(text: string): string | null {
+  const m = /^Set model to (.+)$/m.exec(text.replaceAll('*', ''))
+  const name = m?.[1]?.replace(/\s*\(.*\)\s*$/, '').trim() ?? ''
+  return name === '' ? null : name
+}
+
+// What Claude Code writes in the transcript when Esc stopped a turn.
+const INTERRUPTED = /^\[Request interrupted by user/
 const HARNESS_TEXT = /^<(command-|local-command-|system-reminder|bash-)/
 const COMMAND_NAME = /<command-name>\/?([^<]+)<\/command-name>/
 const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
@@ -332,7 +395,7 @@ function harnessTurn(state: ChatState, text: string, id: string): ChatState {
   const out = (STDOUT.exec(text)?.[1] ?? '').replaceAll(ANSI, '').trim()
   if (out === '') return state
   const turn: Turn = { blocks: [{ kind: 'output', text: out }], id, role: 'assistant' }
-  return { ...state, turns: [...state.turns, turn] }
+  return { ...state, model: modelSet(out) ?? state.model, turns: [...state.turns, turn] }
 }
 
 function promptText(content: unknown): string {
@@ -351,6 +414,16 @@ function promptText(content: unknown): string {
  */
 export function replayTranscript(lines: readonly string[]): ChatState {
   let state = initialChat
+  // The exchange being read: when its prompt was written, when its last line was, and
+  // whether Esc stopped it. Each ends where the next prompt starts; its cost is unknown.
+  let open = false
+  let start = Number.NaN
+  let last = Number.NaN
+  let stopped = false
+  const close = (s: ChatState, upto: number) => {
+    const durationMs = Number.isNaN(last - start) ? 0 : Math.max(0, last - start)
+    return open ? withEnd(s, upto, { costUsd: 0, durationMs, stopped }) : s
+  }
   for (const line of lines) {
     let m: Json
     try {
@@ -361,6 +434,7 @@ export function replayTranscript(lines: readonly string[]): ChatState {
     if (m.isSidechain === true || m.isMeta === true) continue
     const message = obj(m.message)
     const uuid = str(m.uuid) || `u${state.turns.length}`
+    const before = state.turns.length
     if (m.type === 'system' && m.subtype === 'local_command') {
       state = harnessTurn(state, str(m.content), uuid)
     } else if (m.type === 'assistant') {
@@ -370,11 +444,22 @@ export function replayTranscript(lines: readonly string[]): ChatState {
       state = withTurn(state, id, (t) => ({ ...t, blocks: [...t.blocks, ...blocks] }))
     } else if (m.type === 'user') {
       const text = promptText(message.content)
-      if (HARNESS_TEXT.test(text)) state = harnessTurn(state, text, uuid)
+      if (INTERRUPTED.test(text)) stopped = true
+      else if (HARNESS_TEXT.test(text)) state = harnessTurn(state, text, uuid)
       else if (text !== '') state = addUserTurn(state, text, uuid)
       state = onUser(state, message)
     }
+    const ts = Date.parse(str(m.timestamp))
+    if (state.turns.length > before && state.turns.at(-1)?.role === 'user') {
+      state = close(state, before)
+      open = true
+      start = ts
+      stopped = false
+    }
+    if (!Number.isNaN(ts)) last = ts
   }
+  // The process that wrote it is gone: what it left running was stopped.
+  state = close(stopTools(state), state.turns.length)
   return { ...state, sessionId: null, status: 'starting' }
 }
 
@@ -386,6 +471,32 @@ export function addUserTurn(state: ChatState, text: string, id: string): ChatSta
     ...state,
     status: 'working',
     turns: [...state.turns, { blocks: [block], id, role: 'user' }],
+  }
+}
+
+/** A prompt sent: in the transcript, or queued while Claude works on the one before. */
+export function sendTurn(state: ChatState, text: string, id: string): ChatState {
+  if (state.status !== 'working') return addUserTurn(state, text, id)
+  const turn = addUserTurn(state, text, id).turns.at(-1) as Turn
+  return { ...state, queued: [...state.queued, turn] }
+}
+
+/**
+ * A model or effort picked outside the composer: one faint line, no bubble. Claude's own
+ * answer to it (a `<synthetic>` output) is then dropped; a second change of the same kind
+ * replaces the line.
+ */
+export function addNote(state: ChatState, text: string, id: string): ChatState {
+  const kind = text.split(' → ')[0] ?? text
+  const last = state.turns.at(-1)
+  const block = last?.blocks[0]
+  const turns =
+    block?.kind === 'note' && block.text.startsWith(`${kind} → `)
+      ? state.turns.slice(0, -1)
+      : state.turns
+  return {
+    ...state,
+    turns: [...turns, { blocks: [{ kind: 'note', text }], id, role: 'assistant' }],
   }
 }
 
@@ -433,22 +544,254 @@ export function permissionLine(p: Permission, answer: 'allow' | 'always' | 'deny
 }
 
 /** One line saying what a tool call does, for its collapsed row. */
+const rel = (path: string, cwd: string) =>
+  path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path
+
 export function toolSummary(name: string, input: Record<string, unknown>, cwd: string): string {
-  const rel = (path: string) => (path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path)
   const pick = {
     Bash: str(input.command),
-    Edit: rel(str(input.file_path)),
+    Edit: rel(str(input.file_path), cwd),
     Glob: str(input.pattern),
     Grep: str(input.pattern),
-    MultiEdit: rel(str(input.file_path)),
-    NotebookEdit: rel(str(input.notebook_path)),
-    Read: rel(str(input.file_path)),
+    MultiEdit: rel(str(input.file_path), cwd),
+    NotebookEdit: rel(str(input.notebook_path), cwd),
+    Read: rel(str(input.file_path), cwd),
     Task: str(input.description),
     WebFetch: str(input.url),
     WebSearch: str(input.query),
-    Write: rel(str(input.file_path)),
+    Write: rel(str(input.file_path), cwd),
   }[name]
   if (pick !== undefined) return pick
   const first = Object.values(input).find((v) => typeof v === 'string')
   return typeof first === 'string' ? first : ''
+}
+
+/**
+ * Read's output, `cat -n` style (`    12→text` or `12\ttext`), as numbered lines; null when a
+ * line is not numbered (an error, a notice), which is then shown as it came.
+ */
+export function numberedLines(text: string): { n: string; text: string }[] | null {
+  const lines = text.replace(/\n$/, '').split('\n')
+  const out: { n: string; text: string }[] = []
+  for (const l of lines) {
+    const m = /^\s*(\d+)(?:\t|→)(.*)$/.exec(l)
+    if (!m) return null
+    out.push({ n: m[1] ?? '', text: m[2] ?? '' })
+  }
+  return out.length > 0 ? out : null
+}
+
+/** A failed command's output, its `exit code N` line taken out to be shown apart. */
+export function exitCode(text: string): { code: number | null; body: string } {
+  const m = /^(?:Error: )?exit code (\d+)$/im.exec(text)
+  if (!m) return { body: text, code: null }
+  const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim()
+  return { body, code: Number(m[1]) }
+}
+
+// The transcript as it reads: exchanges, their tool calls folded into one row.
+
+/** A block with a key that stays the same while it streams and once it is folded. */
+export interface Keyed {
+  key: string
+  block: Block
+}
+
+export type Item =
+  /** Shown as it is: the answer, a streaming message, a command's output, a note. */
+  | ({ kind: 'block' } & Keyed)
+  /** One row for a run of work. Its last `shown` blocks stay visible while it is folded. */
+  | { kind: 'group'; key: string; blocks: Keyed[]; shown: number }
+
+/** A prompt and every assistant turn up to the next one. */
+export interface Exchange {
+  key: string
+  user: Turn | null
+  /** Every assistant block, in order, for the footer's file chips. */
+  blocks: Block[]
+  items: Item[]
+  end: TurnEnd | null
+  live: boolean
+  /** What its Copy copies: the answer, or what a command printed. */
+  answer: string
+}
+
+const shownBlock = (b: Block) =>
+  b.kind !== 'command' && (b.kind !== 'thinking' || b.text.trim() !== '')
+
+/** Folds an exchange's blocks: runs of work become groups; `apart` blocks stay out. */
+function fold(blocks: Keyed[], apart: (k: Keyed, i: number) => boolean): Item[] {
+  const items: Item[] = []
+  let run: Keyed[] = []
+  const flush = () => {
+    const first = run[0]
+    if (first) items.push({ blocks: run, key: `g:${first.key}`, kind: 'group', shown: 0 })
+    run = []
+  }
+  for (const [i, k] of blocks.entries()) {
+    if (apart(k, i) || k.block.kind === 'output' || k.block.kind === 'note') {
+      flush()
+      items.push({ kind: 'block', ...k })
+    } else run.push(k)
+  }
+  flush()
+  return items
+}
+
+/**
+ * The collapse rule. Finished: the last message is the answer; what came before it folds
+ * into one row above it, what came after (a stopped turn's tools) into one row below.
+ * Live: everything folds as it goes, except the newest tool row (open, with its spinner)
+ * and the message being written after it.
+ */
+function itemsOf(blocks: Keyed[], live: boolean): Item[] {
+  if (!live) {
+    const answer = blocks.findLastIndex((k) => k.block.kind === 'text')
+    return fold(blocks, (_, i) => i === answer)
+  }
+  const tool = blocks.findLastIndex((k) => k.block.kind === 'tool')
+  const newest = blocks[tool]
+  const tail = blocks.slice(tool + 1).filter((k) => k.block.kind === 'text')
+  const items = fold(blocks.slice(0, Math.max(tool, 0)), () => false)
+  if (newest) {
+    const group = items.at(-1)
+    if (group?.kind === 'group')
+      items[items.length - 1] = { ...group, blocks: [...group.blocks, newest], shown: 1 }
+    else items.push({ blocks: [newest], key: `g:${newest.key}`, kind: 'group', shown: 1 })
+  }
+  return [...items, ...tail.map((k): Item => ({ kind: 'block', ...k }))]
+}
+
+/** A tool call still waiting: for its result, or for an answer to its permission. */
+const openTool = (b: Block, asked: ReadonlySet<string>) =>
+  b.kind === 'tool' && b.stopped !== true && (b.result === undefined || asked.has(b.id))
+
+/**
+ * The turns as exchanges. A note stands alone; `working` makes the last one live, and so
+ * does a tool still waiting (on its result, or on `asked`: the tool ids of pending questions).
+ */
+export function exchanges(
+  turns: readonly Turn[],
+  working: boolean,
+  asked: ReadonlySet<string> = new Set()
+): Exchange[] {
+  const runs: Turn[][] = []
+  for (const [i, turn] of turns.entries()) {
+    const run = runs.at(-1)
+    if (run && turn.role !== 'user' && !isNote(turn) && !isNote(turns[i - 1])) run.push(turn)
+    else runs.push([turn])
+  }
+  return runs.map((run, i) => {
+    const first = run[0] as Turn
+    const user = first.role === 'user' ? first : null
+    const said = run.filter((t) => t.role === 'assistant')
+    const keyed = said.flatMap((t) =>
+      t.blocks.flatMap((block, at) => (shownBlock(block) ? [{ block, key: `${t.id}:${at}` }] : []))
+    )
+    const end = run.findLast((t) => t.end !== undefined)?.end ?? null
+    const live =
+      (working && i === runs.length - 1 && end === null) ||
+      keyed.some((k) => openTool(k.block, asked))
+    const texts = (kind: Block['kind']) =>
+      keyed.flatMap((k) => (k.block.kind === kind && 'text' in k.block ? [k.block.text] : []))
+    const answer = texts('text').at(-1) ?? texts('output').join('\n\n')
+    return {
+      answer: answer.trim(),
+      blocks: keyed.map((k) => k.block),
+      end,
+      items: itemsOf(keyed, live),
+      key: first.id,
+      live,
+      user,
+    }
+  })
+}
+
+/** What a tool's row icon says it did. */
+export type ToolKind = 'read' | 'bash' | 'edit' | 'web' | 'agent' | 'thinking'
+
+export function toolKind(block: Block): ToolKind | null {
+  if (block.kind === 'thinking') return 'thinking'
+  if (block.kind !== 'tool') return null
+  const kinds: Record<string, ToolKind> = {
+    Agent: 'agent',
+    Bash: 'bash',
+    Edit: 'edit',
+    Glob: 'read',
+    Grep: 'read',
+    LS: 'read',
+    MultiEdit: 'edit',
+    NotebookEdit: 'edit',
+    Read: 'read',
+    Task: 'agent',
+    WebFetch: 'web',
+    WebSearch: 'web',
+    Write: 'edit',
+  }
+  return kinds[block.name] ?? null
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/** A group row's label ("17 tool calls, 3 messages"), failures, and up to 4 kind icons. */
+export function groupSummary(blocks: readonly Block[]) {
+  const tools = blocks.filter((b) => b.kind === 'tool')
+  const messages = blocks.filter((b) => b.kind === 'text').length
+  const parts = [
+    tools.length > 0 ? plural(tools.length, 'tool call') : '',
+    messages > 0 ? plural(messages, 'message') : '',
+  ].filter((p) => p !== '')
+  const kinds = [...new Set(blocks.map(toolKind).filter((k) => k !== null))].slice(0, 4)
+  return {
+    failed: tools.filter((b) => b.result?.isError === true).length,
+    kinds,
+    // Thinking alone counts as nothing: it still needs a word.
+    label: parts.length > 0 ? parts.join(', ') : 'Thought',
+  }
+}
+
+export interface ChangedFile {
+  /** Relative to the workspace when inside it. */
+  path: string
+  added: number
+  removed: number
+}
+
+const lineCount = (v: unknown) => {
+  const text = str(v)
+  return text === '' ? 0 : text.replace(/\n$/, '').split('\n').length
+}
+
+/** The files an exchange's Edit, Write, MultiEdit and NotebookEdit calls changed, by path. */
+export function changedFiles(blocks: readonly Block[], cwd: string): ChangedFile[] {
+  const files = new Map<string, ChangedFile>()
+  for (const b of blocks) {
+    if (b.kind !== 'tool' || b.result?.isError === true) continue
+    const { input, name } = b
+    let counts: [number, number] | null = null
+    if (name === 'Edit') counts = [lineCount(input.new_string), lineCount(input.old_string)]
+    else if (name === 'Write') counts = [lineCount(input.content), 0]
+    else if (name === 'NotebookEdit') counts = [lineCount(input.new_source), 0]
+    else if (name === 'MultiEdit' && Array.isArray(input.edits)) {
+      const edits = input.edits.map(obj)
+      counts = [
+        edits.reduce((n, e) => n + lineCount(e.new_string), 0),
+        edits.reduce((n, e) => n + lineCount(e.old_string), 0),
+      ]
+    }
+    const path = rel(str(input.file_path) || str(input.notebook_path), cwd)
+    if (counts === null || path === '') continue
+    const file = files.get(path) ?? { added: 0, path, removed: 0 }
+    files.set(path, { ...file, added: file.added + counts[0], removed: file.removed + counts[1] })
+  }
+  return [...files.values()]
+}
+
+/** "12s", "2m 4s", "1h 3m". */
+export function formatDuration(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
 }

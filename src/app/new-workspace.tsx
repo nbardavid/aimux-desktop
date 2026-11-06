@@ -1,9 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
-import { ChevronRightIcon, GitBranchIcon } from 'lucide-react'
+import { ChevronDownIcon, GitBranchIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Kbd } from '@/components/ui/kbd'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
 
@@ -109,7 +110,7 @@ export function NewWorkspace(props: Props) {
       <DialogContent
         aria-label="New workspace"
         initialFocus={field}
-        className="w-[min(720px,calc(100%-32px))] rounded-[14px] border-0 bg-[#f6f4f1] shadow-[0_0_0_1px_rgb(43_40_38/0.08),0_28px_72px_-24px_rgb(43_40_38/0.4)] duration-180"
+        className="w-[min(680px,calc(100%-32px))]"
         onKeyDown={(e) => {
           // ⇧⌘/ walks the model's efforts, as in Conductor.
           if (e.metaKey && e.shiftKey && (e.key === '/' || e.code === 'Slash')) {
@@ -118,23 +119,22 @@ export function NewWorkspace(props: Props) {
           }
         }}
       >
-        <div className="border-border flex h-[52px] items-center gap-2 border-b pr-3.5 pl-2.5">
+        <div className="border-border flex h-12 flex-none items-center gap-2 border-b px-2.5">
           <Menu>
-            <MenuTrigger className="group hover:bg-foreground/6 data-popup-open:bg-foreground/6 inline-flex h-8 items-center gap-2 rounded-[8px] pr-2 pl-[7px] text-[14px] font-semibold transition-colors duration-120">
+            <MenuTrigger className="group hover:bg-hover data-popup-open:bg-hover inline-flex h-8 items-center gap-2 rounded-lg pr-2 pl-[7px] text-sm font-medium transition-colors duration-120">
               {project && <ProjectAvatar name={project.name} />}
               {project?.name ?? 'Project'}
-              <ChevronRightIcon className="text-label size-3.5 flex-none transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-data-popup-open:rotate-90" />
+              <ChevronDownIcon className="text-label size-3.5 flex-none" />
             </MenuTrigger>
             <MenuContent
               aria-label="Projects"
               finalFocus={field}
-              className="max-h-[min(280px,var(--available-height))] min-w-[220px] shadow-[0_0_0_1px_rgb(43_40_38/0.06),0_12px_32px_-12px_rgb(43_40_38/0.28)] duration-140"
+              className="max-h-[min(280px,var(--available-height))] min-w-[220px]"
             >
               {props.projects.map((p) => (
                 <MenuItem
                   key={p.id}
                   className={cn(
-                    'h-8 gap-2.5 rounded-lg px-2',
                     p.id === projectId && 'bg-active data-highlighted:bg-active font-medium'
                   )}
                   onClick={() => setProjectId(p.id)}
@@ -148,7 +148,7 @@ export function NewWorkspace(props: Props) {
           <span className="min-w-0 flex-1" />
           {base !== null && (
             <Combo
-              className="text-muted-foreground -mr-1.5 h-7 pr-1.5 pl-2 font-mono text-[12px]"
+              className="text-muted-foreground h-7 pr-1.5 pl-2 font-mono text-xs font-normal"
               align="end"
               alignOffset={6}
               popupClassName="w-[280px]"
@@ -168,7 +168,7 @@ export function NewWorkspace(props: Props) {
         </div>
         <textarea
           ref={field}
-          className="text-foreground placeholder:text-label max-h-[50vh] min-h-[150px] resize-none border-0 bg-transparent px-[18px] py-4 text-[15px] leading-[1.55] outline-none select-text"
+          className="text-foreground placeholder:text-label max-h-[50vh] min-h-32 resize-none border-0 bg-transparent p-4 text-[15px] leading-6 outline-none select-text"
           value={prompt}
           placeholder="What do you want to work on?"
           disabled={busy}
@@ -180,22 +180,16 @@ export function NewWorkspace(props: Props) {
             }
           }}
         />
-        {error !== null && (
-          <div className="text-critical px-[18px] pb-2 text-[12.5px]">{error}</div>
-        )}
-        <div className="flex items-center gap-2.5 pt-2.5 pr-3 pb-3 pl-2.5">
+        {error !== null && <div className="text-critical-ink px-4 pb-2 text-sm">{error}</div>}
+        <div className="flex h-12 flex-none items-center gap-3 pr-2.5 pl-2">
           <ModelSelect value={props.selection} models={props.models} onChange={props.onSelection} />
           <span className="min-w-0 flex-1" />
-          <span className="text-faint text-[12px]">
-            {prompt.trim() === '' ? 'Starts without a prompt' : '⇧↵ new line'}
+          <span className="text-faint text-xs">
+            {prompt.trim() === '' ? 'Starts without a prompt' : '⇧↩ new line'}
           </span>
-          <Button className="h-8 pr-2.5 pl-3.5" disabled={busy} onClick={create}>
+          <Button size="sm" disabled={busy} onClick={create}>
             {busy ? 'Creating…' : 'Create'}
-            {!busy && (
-              <span className="grid h-5 min-w-5 place-items-center rounded-[5px] bg-white/14 text-[12px]">
-                ↵
-              </span>
-            )}
+            {!busy && <Kbd className="text-white/60">↩</Kbd>}
           </Button>
         </div>
       </DialogContent>

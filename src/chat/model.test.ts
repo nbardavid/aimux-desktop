@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  addNote,
   addUserTurn,
   type ChatState,
+  exitCode,
   initialChat,
+  modelSet,
+  numberedLines,
   parseCommands,
   type Permission,
   permissionLine,
@@ -115,28 +119,28 @@ describe('reduceLine', () => {
   })
 
   test('a permission request waits, the result clears it and ends the turn', () => {
-    const asked = feed([
-      {
-        request: {
-          input: { content: 'ok', file_path: '/w/b.txt' },
-          permission_suggestions: [{ mode: 'acceptEdits', type: 'setMode' }],
-          subtype: 'can_use_tool',
-          tool_name: 'Write',
+    const asked = feed(
+      [
+        {
+          request: {
+            input: { content: 'ok', file_path: '/w/b.txt' },
+            permission_suggestions: [{ mode: 'acceptEdits', type: 'setMode' }],
+            subtype: 'can_use_tool',
+            tool_name: 'Write',
+          },
+          request_id: 'r1',
+          type: 'control_request',
         },
-        request_id: 'r1',
-        type: 'control_request',
-      },
-    ])
+      ],
+      addUserTurn(initialChat, 'write it', 'u1')
+    )
     expect(asked.pending).toHaveLength(1)
     const done = feed(
       [{ duration_ms: 1200, subtype: 'success', total_cost_usd: 0.01, type: 'result' }],
       asked
     )
-    expect(done).toMatchObject({
-      lastTurn: { costUsd: 0.01, durationMs: 1200 },
-      pending: [],
-      status: 'idle',
-    })
+    expect(done).toMatchObject({ pending: [], status: 'idle' })
+    expect(done.turns.at(-1)?.end).toEqual({ costUsd: 0.01, durationMs: 1200, stopped: false })
   })
 
   test('a failed turn and the process exit are said', () => {
@@ -185,6 +189,7 @@ describe('permissionLine', () => {
     requestId: 'r1',
     suggestions: [{ x: 1 }],
     toolName: 'Write',
+    toolUseId: 't1',
   }
 
   test('allow passes the input back; always adds the suggestions', () => {
@@ -350,4 +355,123 @@ test('a stop in progress ends with the turn’s result, or with the process', ()
   expect(feed([{ type: 'aimux_exit' }], stopping).stopping).toBe(false)
   expect(feed([{ subtype: 'error_during_execution', type: 'result' }], stopping).errors).toEqual([])
   expect(feed([ev({ message: { id: 'm1' }, type: 'message_start' })], stopping).stopping).toBe(true)
+})
+
+describe('a turn that ends', () => {
+  const toolUse = (id: string) => ({
+    message: {
+      content: [{ id, input: { command: 'bun test' }, name: 'Bash', type: 'tool_use' }],
+      id: `m-${id}`,
+    },
+    type: 'assistant',
+  })
+  const toolOf = (s: ChatState, id: string) =>
+    s.turns.flatMap((t) => t.blocks).find((b) => b.kind === 'tool' && b.id === id)
+
+  test('stops every tool call still without a result', () => {
+    const working = { ...initialChat, status: 'working' as const, stopping: true }
+    const s = feed(
+      [
+        toolUse('t1'),
+        toolUse('t2'),
+        {
+          message: { content: [{ content: 'ok', tool_use_id: 't1', type: 'tool_result' }] },
+          type: 'user',
+        },
+        { subtype: 'error_during_execution', type: 'result' },
+      ],
+      working
+    )
+    expect(toolOf(s, 't1')).toMatchObject({ result: { text: 'ok' } })
+    expect(toolOf(s, 't1')).not.toHaveProperty('stopped')
+    expect(toolOf(s, 't2')).toMatchObject({ stopped: true })
+    expect(s.turns.at(-1)?.end).toEqual({ costUsd: 0, durationMs: 0, stopped: true })
+  })
+
+  test('a turn that finishes on its own is not "stopped"', () => {
+    const s = feed(
+      [{ duration_ms: 900, subtype: 'success', total_cost_usd: 0.002, type: 'result' }],
+      addUserTurn(initialChat, 'hi', 'u1')
+    )
+    expect(s.turns[0]?.end).toEqual({ costUsd: 0.002, durationMs: 900, stopped: false })
+  })
+
+  test('a transcript ends whatever its process left running', () => {
+    const line = (v: unknown) => JSON.stringify(v)
+    const s = replayTranscript([
+      line({ message: { content: 'go', role: 'user' }, type: 'user', uuid: 'u1' }),
+      line(toolUse('t9')),
+    ])
+    expect(toolOf(s, 't9')).toMatchObject({ stopped: true })
+  })
+})
+
+describe('the model a chat runs', () => {
+  const synthetic = (text: string) =>
+    JSON.stringify({
+      message: { content: [{ text, type: 'text' }], id: 'ms', model: '<synthetic>' },
+      type: 'assistant',
+    })
+
+  test('is read from what `/model` printed', () => {
+    expect(modelSet('Set model to Sonnet 5.5')).toBe('Sonnet 5.5')
+    expect(modelSet('Set model to **Default (Opus 5.5)**')).toBe('Default')
+    expect(modelSet('Context Usage')).toBeNull()
+    const typed = reduceLine(
+      addUserTurn(initialChat, '/model sonnet', 'u'),
+      synthetic('Set model to Sonnet 5.5')
+    )
+    expect(typed.model).toBe('Sonnet 5.5')
+    const replayed = replayTranscript([
+      JSON.stringify({
+        content: '<local-command-stdout>Set model to Haiku 5.5</local-command-stdout>',
+        subtype: 'local_command',
+        type: 'system',
+      }),
+    ])
+    expect(replayed.model).toBe('Haiku 5.5')
+  })
+
+  test('a pick outside the composer is one faint line, and Claude’s answer to it is dropped', () => {
+    let s = addNote(initialChat, 'Model → Sonnet 5.5', 'n1')
+    s = reduceLine(s, synthetic('Set model to Sonnet 5.5'))
+    s = feed([{ duration_ms: 40, subtype: 'success', total_cost_usd: 0, type: 'result' }], s)
+    expect(s.turns).toEqual([
+      { blocks: [{ kind: 'note', text: 'Model → Sonnet 5.5' }], id: 'n1', role: 'assistant' },
+    ])
+    expect(s.model).toBe('Sonnet 5.5')
+  })
+
+  test('a second change of the same kind replaces the line; another kind adds one', () => {
+    let s = addNote(initialChat, 'Intelligence → Low', 'n1')
+    s = addNote(s, 'Intelligence → High', 'n2')
+    s = addNote(s, 'Model → Haiku 5.5', 'n3')
+    expect(s.turns.map((t) => t.blocks[0])).toEqual([
+      { kind: 'note', text: 'Intelligence → High' },
+      { kind: 'note', text: 'Model → Haiku 5.5' },
+    ])
+  })
+})
+
+test('Read output becomes numbered lines; anything else stays as it came', () => {
+  expect(numberedLines('1\timport x\n2\t\n3\t  y')).toEqual([
+    { n: '1', text: 'import x' },
+    { n: '2', text: '' },
+    { n: '3', text: '  y' },
+  ])
+  expect(numberedLines('    9→a\n   10→b\n')).toEqual([
+    { n: '9', text: 'a' },
+    { n: '10', text: 'b' },
+  ])
+  expect(numberedLines('File does not exist.')).toBeNull()
+  expect(numberedLines('')).toBeNull()
+})
+
+test('a failed command keeps its output and gives its exit code apart', () => {
+  expect(exitCode('rg: unrecognized file type: tsx\nexit code 2')).toEqual({
+    body: 'rg: unrecognized file type: tsx',
+    code: 2,
+  })
+  expect(exitCode('Error: Exit code 1\nboom')).toEqual({ body: 'boom', code: 1 })
+  expect(exitCode('all good')).toEqual({ body: 'all good', code: null })
 })

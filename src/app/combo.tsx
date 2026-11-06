@@ -108,7 +108,7 @@ export function Combo({
       <ComboboxTrigger
         ref={trigger}
         className={cn(
-          'rounded-[8px] [&>svg:last-child]:transition-transform [&>svg:last-child]:duration-150 [&>svg:last-child]:ease-[cubic-bezier(0.2,0,0,1)] data-popup-open:[&>svg:last-child]:rotate-180',
+          'rounded-lg [&>svg:last-child]:transition-transform [&>svg:last-child]:duration-150 [&>svg:last-child]:ease-[cubic-bezier(0.2,0,0,1)] data-popup-open:[&>svg:last-child]:rotate-180',
           className
         )}
       >
@@ -121,10 +121,7 @@ export function Combo({
         aria-label={placeholder}
         finalFocus={finalFocus}
         style={{ maxHeight: room.height }}
-        className={cn(
-          'shadow-[0_0_0_1px_rgb(43_40_38/0.06),0_16px_40px_-14px_rgb(43_40_38/0.32)]',
-          popupClassName
-        )}
+        className={popupClassName}
       >
         <ComboboxSearch aria-label={placeholder} placeholder={placeholder} />
         <ComboboxList className="flex min-h-[60px] flex-col pt-0">
@@ -133,8 +130,8 @@ export function Combo({
               {q === '' && o.section !== undefined && o.section !== shown[i - 1]?.section && (
                 <div
                   className={cn(
-                    'text-label px-2.5 pb-1 text-[11px] font-medium',
-                    i === 0 ? 'pt-0.5' : 'pt-2'
+                    'text-label flex h-6 items-center px-2.5 text-xs font-medium',
+                    i > 0 && 'mt-1'
                   )}
                 >
                   {o.section}
@@ -142,14 +139,12 @@ export function Combo({
               )}
               <ComboboxItem value={o.value} className="data-selected:pr-8 pr-2.5">
                 <span className="flex-none font-medium whitespace-nowrap">{o.label}</span>
-                {o.hint !== undefined && (
-                  <ComboboxHint className="text-[12px]">{o.hint}</ComboboxHint>
-                )}
+                {o.hint !== undefined && <ComboboxHint>{o.hint}</ComboboxHint>}
               </ComboboxItem>
             </div>
           ))}
           {shown.length === 0 && (
-            <div className="text-faint px-3 py-8 text-center">Nothing matches “{query}”</div>
+            <div className="text-faint flex h-12 items-center px-2.5">No match for “{query}”</div>
           )}
         </ComboboxList>
         {footer}

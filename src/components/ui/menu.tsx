@@ -104,7 +104,7 @@ function MenuCheckboxItem({
       {...props}
     >
       {children}
-      <MenuPrimitive.CheckboxItemIndicator className="absolute right-2.5 flex">
+      <MenuPrimitive.CheckboxItemIndicator className="absolute right-2 flex">
         <CheckIcon className="text-foreground" />
       </MenuPrimitive.CheckboxItemIndicator>
     </MenuPrimitive.CheckboxItem>
@@ -129,7 +129,7 @@ function MenuRadioItem({
       {...props}
     >
       {children}
-      <MenuPrimitive.RadioItemIndicator className="absolute right-2.5 flex">
+      <MenuPrimitive.RadioItemIndicator className="absolute right-2 flex">
         <CheckIcon className="text-foreground" />
       </MenuPrimitive.RadioItemIndicator>
     </MenuPrimitive.RadioItem>

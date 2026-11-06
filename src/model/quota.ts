@@ -95,7 +95,7 @@ export function paceOf(
   const elapsed = windowSeconds - untilReset
   const delta = percent - (elapsed / windowSeconds) * 100
   const rounded = Math.round(delta)
-  const stage = stageOf(delta)
+  let stage = stageOf(delta)
   let label = 'On pace'
   if (stage !== 'onTrack') label = rounded > 0 ? `Behind (+${rounded}%)` : `Ahead (${rounded}%)`
   let rightText: string | null = null
@@ -103,6 +103,11 @@ export function paceOf(
     const toFull = percent > 0 ? ((100 - percent) * elapsed) / percent : Infinity
     rightText =
       toFull >= untilReset ? 'Lasts to reset' : `Runs out in ${formatRemaining(toFull) ?? '0m'}`
+    // Running out before the reset is never "on pace", however small the lead.
+    if (toFull < untilReset && stage === 'onTrack') {
+      stage = 'slightlyBehind'
+      label = 'Too fast'
+    }
   }
   return { delta, label, rightText, stage }
 }
@@ -169,4 +174,15 @@ export function claudeSnapshot(raw: RawClaudeUsage, now = Date.now()): UsageSnap
     tool: 'claude',
     windows,
   }
+}
+
+/** The window closest to its limit, across every tool: what the sidebar's chip shows. */
+export function tightest(cache: QuotaCache): UsageWindow | null {
+  let best: UsageWindow | null = null
+  for (const entry of Object.values(cache)) {
+    for (const w of entry?.snapshot.windows ?? []) {
+      if (w.percent !== null && (best === null || w.percent > (best.percent ?? 0))) best = w
+    }
+  }
+  return best
 }

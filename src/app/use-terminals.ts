@@ -8,6 +8,8 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 
 import type { HostTerm } from './use-host'
 
+import { appShortcut } from './navigation'
+
 export interface TerminalTab {
   id: string
   workspaceId: string
@@ -110,6 +112,8 @@ export function useTerminals() {
         scrollback: 10_000,
         theme: THEME,
       })
+      // The app's shortcuts (⌘W, ⌘1–9, ⌃Tab…) reach the window's listener, not the shell.
+      term.attachCustomKeyEventHandler((e) => !appShortcut(e))
       const fit = new FitAddon()
       term.loadAddon(fit)
       term.loadAddon(new WebLinksAddon((_e, uri) => void openUrl(uri)))

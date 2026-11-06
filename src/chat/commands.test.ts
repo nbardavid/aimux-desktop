@@ -5,9 +5,13 @@ import type { SlashCommand } from './model'
 import {
   APP_COMMANDS,
   availableCommands,
+  commandGroup,
+  commandParts,
   isAppCommand,
+  matchedAlias,
   parseCommand,
   rankCommands,
+  shortDescription,
 } from './commands'
 
 const c = (name: string, o: Partial<SlashCommand> = {}): SlashCommand => ({
@@ -96,4 +100,65 @@ test('among prefix matches: the app’s commands, then built-ins, then skills; s
 test('a name match comes before an alias match', () => {
   const list = [c('usage', { aliases: ['cost'] }), c('config')]
   expect(rankCommands(list, 'co').map((x) => x.name)).toEqual(['config', 'usage'])
+})
+
+test('an alias the query matched shows only when the name does not hold it', () => {
+  const usage = c('usage', { aliases: ['cost'] })
+  expect(matchedAlias(usage, 'co')).toBe('cost')
+  expect(matchedAlias(usage, 'us')).toBeUndefined()
+  expect(matchedAlias(usage, '')).toBeUndefined()
+  expect(matchedAlias(c('config'), 'co')).toBeUndefined()
+})
+
+test('the / menu groups: the app’s five as aimux, then all of Claude Code’s by name', () => {
+  const list = availableCommands(
+    [
+      c('ponytail', { builtin: false }),
+      c('compact'),
+      c('superpowers:writing-plans', { builtin: false }),
+      c('superpowers:brainstorming', { builtin: false }),
+    ],
+    []
+  )
+  // By the name as shown: `superpowers:brainstorming` is `/brainstorming`.
+  expect(list.map((x) => `${commandGroup(x)}:${x.name}`)).toEqual([
+    ...APP_COMMANDS.map((x) => `aimux:${x.name}`),
+    'Claude Code:superpowers:brainstorming',
+    'Claude Code:compact',
+    'Claude Code:ponytail',
+    'Claude Code:superpowers:writing-plans',
+  ])
+})
+
+test('a plugin’s name shows without its prefix, its plugin beside it', () => {
+  expect(commandParts('superpowers:brainstorming')).toEqual({
+    plugin: 'superpowers',
+    short: 'brainstorming',
+  })
+  expect(commandParts('compact')).toEqual({ plugin: '', short: 'compact' })
+})
+
+test('a description drops the "(plugin)" its chip already says', () => {
+  expect(shortDescription('(superpowers) You MUST use this. Really.', 'superpowers')).toBe(
+    'You MUST use this.'
+  )
+  expect(shortDescription('(superpowers) Kept without a chip.')).toBe(
+    '(superpowers) Kept without a chip.'
+  )
+  expect(shortDescription('(other) Kept for another plugin.', 'superpowers')).toBe(
+    '(other) Kept for another plugin.'
+  )
+})
+
+test('a description shows its first sentence, 80 characters at most', () => {
+  expect(shortDescription('Clear the chat. Then start over.')).toBe('Clear the chat.')
+  expect(shortDescription('Push a design system, e.g. Acme DS. More here.')).toBe(
+    'Push a design system, e.g. Acme DS.'
+  )
+  expect(shortDescription('One line\nand another')).toBe('One line')
+  const long = `Use this skill whenever you are about to create ANY chart, graph, plot, dashboard, or data visualization`
+  const cut = shortDescription(long)
+  expect(cut).toHaveLength(80)
+  expect(cut.endsWith('…')).toBe(true)
+  expect(shortDescription('Version 1.5 is out')).toBe('Version 1.5 is out')
 })

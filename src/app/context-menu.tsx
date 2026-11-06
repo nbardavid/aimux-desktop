@@ -2,15 +2,25 @@ import { Menu } from '@base-ui/react/menu'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { menuItemClass, menuPopupClass, menuSeparatorClass } from '@/lib/menu-styles'
+import {
+  menuItemClass,
+  menuPopupClass,
+  menuSeparatorClass,
+  menuShortcutClass,
+} from '@/lib/menu-styles'
 import { cn } from '@/lib/utils'
 
 export interface MenuAction {
   label: string
   run: () => void | Promise<void>
   danger?: boolean
-  /** Asked in place before running: what will happen, and the button that does it. */
-  confirm?: { text: string; button: string }
+  /** Its key, shown at the right as a plain glyph: `⌘W`. */
+  shortcut?: string
+  /**
+   * Asked in place before running: what will happen, and the button that does it. A
+   * `cautious` question focuses Cancel; its `warning` follows the text in red.
+   */
+  confirm?: { text: string; button: string; cautious?: boolean; warning?: string }
   /** Offered when `run` fails, e.g. deleting anyway what has uncommitted changes. */
   retry?: {
     when: (error: string) => boolean
@@ -62,9 +72,7 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
 
   const retry = asking?.retry && error !== null && asking.retry.when(error) ? asking.retry : null
   const errorLine = (
-    <div className="text-critical px-2 pt-1 pb-1.5 text-[12px] leading-[1.4] wrap-anywhere">
-      {error}
-    </div>
+    <div className="text-critical-ink px-2 pt-1 pb-1.5 text-xs wrap-anywhere">{error}</div>
   )
 
   return (
@@ -81,17 +89,29 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
           <Menu.Popup className={cn(menuPopupClass, 'max-w-[300px]')}>
             {asking?.confirm ? (
               <div className="flex flex-col gap-2.5 px-2 pt-2 pb-1.5">
-                <div>{retry ? retry.text : asking.confirm.text}</div>
+                <div>
+                  {retry ? retry.text : asking.confirm.text}
+                  {asking.confirm.warning !== undefined && (
+                    <span className="text-critical-ink">{asking.confirm.warning}</span>
+                  )}
+                </div>
                 {error !== null && !retry && errorLine}
                 <div className="flex justify-end gap-1.5">
-                  <Button variant="secondary" className={ASK_BUTTON} onClick={onClose}>
+                  {/* oxlint-disable-next-line jsx-a11y/no-autofocus -- the question is the only thing on screen */}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    autoFocus={asking.confirm.cautious === true}
+                    onClick={onClose}
+                  >
                     Cancel
                   </Button>
                   {/* oxlint-disable-next-line jsx-a11y/no-autofocus -- the question is the only thing on screen */}
                   <Button
                     variant="destructive"
-                    className={cn(ASK_BUTTON, DANGER_HOVER)}
-                    autoFocus
+                    size="sm"
+                    className={DANGER_HOVER}
+                    autoFocus={asking.confirm.cautious !== true}
                     disabled={busy}
                     onClick={() => perform(retry ? retry.run : asking.run)}
                   >
@@ -114,6 +134,9 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
                     onClick={() => pick(item)}
                   >
                     {item.label}
+                    {item.shortcut !== undefined && (
+                      <span className={menuShortcutClass}>{item.shortcut}</span>
+                    )}
                   </Menu.Item>
                 )
               )
@@ -126,7 +149,5 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState; onClose: () =>
   )
 }
 
-// `.ctx-actions .btn`: a notch smaller than the default button.
-const ASK_BUTTON = 'h-7 text-[12.5px]'
 // `.btn-danger:hover` darkens the red rather than fading it.
 const DANGER_HOVER = 'hover:bg-[color-mix(in_srgb,var(--critical)_88%,black)]'

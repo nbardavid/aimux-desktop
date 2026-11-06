@@ -4,7 +4,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 /**
- * The app's buttons, as `.btn-*` draws them today: flat fills, a 7px corner, no shadow,
+ * The app's buttons: flat fills, an 8px corner (`rounded-lg`), no shadow,
  * a press that shrinks a hair. Focus shows only from the keyboard: the base layer's inset tan
  * outline, like every other button.
  *
@@ -23,7 +23,7 @@ const buttonVariants = cva(
         'default': 'h-[30px] px-3',
         'icon': 'size-7',
         'icon-sm': "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3.5",
-        'sm': "h-7 px-2.5 text-[12.5px] [&_svg:not([class*='size-'])]:size-3.5",
+        'sm': "h-7 px-2.5 text-sm [&_svg:not([class*='size-'])]:size-3.5",
         'xs': "h-6 gap-1 rounded-md px-2 text-xs [&_svg:not([class*='size-'])]:size-3",
       },
       variant: {
@@ -33,7 +33,7 @@ const buttonVariants = cva(
           'text-faint hover:bg-hover hover:text-foreground aria-expanded:bg-hover aria-expanded:text-foreground',
         link: 'text-foreground decoration-tan underline-offset-2 hover:underline',
         outline: 'border-border bg-background hover:border-line-strong hover:bg-hover border',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-pill',
+        secondary: 'bg-secondary text-secondary-foreground hover:bg-active',
       },
     },
   }

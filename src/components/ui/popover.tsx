@@ -4,7 +4,8 @@ import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 
 import { cn } from '@/lib/utils'
 
-/** A sheet anchored to its trigger (the inbox, the quotas): white, hairline ring, soft shadow. */
+/** A sheet anchored to its trigger (the inbox, the quotas): white, hairline ring, soft shadow,
+ * and the menus' motion (menu-styles.ts). */
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
@@ -39,7 +40,7 @@ function PopoverContent({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            'bg-popover text-popover-foreground shadow-popover data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-closed:animate-out data-closed:fade-out-0 data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1 z-50 flex max-h-(--available-height) w-72 max-w-(--available-width) origin-(--transform-origin) flex-col overflow-y-auto rounded-xl p-3 text-sm duration-120 outline-none',
+            'bg-popover text-popover-foreground shadow-popover data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-open:duration-150 data-open:ease-out data-closed:animate-out data-closed:fade-out-0 data-closed:duration-110 data-closed:ease-in data-[side=bottom]:slide-in-from-top-[3px] data-[side=top]:slide-in-from-bottom-[3px] z-50 flex max-h-(--available-height) w-72 max-w-(--available-width) origin-(--transform-origin) flex-col overflow-y-auto rounded-xl p-3 text-sm outline-none',
             className
           )}
           data-slot="popover-content"

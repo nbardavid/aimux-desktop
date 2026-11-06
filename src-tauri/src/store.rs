@@ -57,6 +57,9 @@ pub struct ChatRecord {
     #[serde(default)]
     pub effort: String,
     pub created_at: u64,
+    /// When a turn last started or ended (ms): the sidebar's age. 0 in older catalogs.
+    #[serde(default)]
+    pub active_at: u64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -472,6 +475,35 @@ pub fn workspace_remove(store: State<'_, Store>, id: String, force: bool) -> Res
     })
 }
 
+/// A workspace's display name; its branch and folder keep their colour. An empty name gives
+/// the colour back.
+pub fn rename_workspace(c: &mut Catalog, id: &str, name: &str) -> Result<Workspace, String> {
+    let w = c
+        .workspaces
+        .iter_mut()
+        .find(|w| w.id == id)
+        .ok_or("unknown workspace")?;
+    let name = name.trim();
+    w.name = if name.is_empty() {
+        w.branch
+            .strip_prefix("aimux/")
+            .unwrap_or(&w.branch)
+            .to_string()
+    } else {
+        name.to_string()
+    };
+    Ok(w.clone())
+}
+
+#[tauri::command]
+pub fn workspace_rename(
+    store: State<'_, Store>,
+    id: String,
+    name: String,
+) -> Result<Workspace, String> {
+    edit(&store, |c| rename_workspace(c, &id, &name))
+}
+
 #[tauri::command]
 pub fn chat_save(store: State<'_, Store>, chat: ChatRecord) -> Result<(), String> {
     edit(&store, |c| {
@@ -706,6 +738,45 @@ mod tests {
         let head = git(&made.path, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
         assert_eq!(head.trim(), "aimux/basil");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rename_changes_the_name_only_and_empty_gives_the_colour_back() {
+        let mut c = Catalog {
+            workspaces: vec![Workspace {
+                base: "main".into(),
+                branch: "aimux/amber".into(),
+                created_at: 0,
+                id: "w".into(),
+                name: "amber".into(),
+                path: "/wt/amber".into(),
+                project_id: "p".into(),
+                setup: None,
+            }],
+            ..Catalog::default()
+        };
+        let w = rename_workspace(&mut c, "w", "  Billing webhooks ").unwrap();
+        assert_eq!(
+            (w.name.as_str(), w.branch.as_str(), w.path.as_str()),
+            ("Billing webhooks", "aimux/amber", "/wt/amber")
+        );
+        assert_eq!(rename_workspace(&mut c, "w", " ").unwrap().name, "amber");
+        assert!(rename_workspace(&mut c, "nope", "x").is_err());
+    }
+
+    #[test]
+    fn a_chat_keeps_its_activity_and_older_catalogs_read_as_zero() {
+        let chat: ChatRecord = serde_json::from_value(serde_json::json!({
+            "id": "c", "workspaceId": "w", "title": "t", "createdAt": 1, "activeAt": 42,
+        }))
+        .unwrap();
+        let back = serde_json::to_value(&chat).unwrap();
+        assert_eq!(back["activeAt"], 42);
+        let old: ChatRecord = serde_json::from_value(serde_json::json!({
+            "id": "c", "workspaceId": "w", "title": "t", "createdAt": 1,
+        }))
+        .unwrap();
+        assert_eq!(old.active_at, 0);
     }
 
     #[test]

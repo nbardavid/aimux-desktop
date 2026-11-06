@@ -88,6 +88,7 @@ pub fn run() {
             store::project_open,
             store::workspace_create,
             store::workspace_remove,
+            store::workspace_rename,
             store::chat_save,
             store::chat_forget,
             store::read_settings,
