@@ -1,3 +1,4 @@
+import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useRef, useState } from 'react'
 
@@ -6,7 +7,9 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 import { effectiveValue, type Row, SECTIONS, type SettingValue } from '../settings/schema'
+import { playSettingsSound } from './attention'
 import { previewCleanup } from './cleanup-effect'
+import { devBuild, type Update } from './update-button'
 
 type Stored = Record<string, SettingValue>
 
@@ -177,12 +180,79 @@ function RestartHost({
   )
 }
 
+/** What Settings › About says under the version, and whether it says it as an error. */
+export function updateStatus(update: Update, dev: boolean): { text: string; failed: boolean } {
+  if (dev) return { failed: false, text: 'This dev build never updates itself.' }
+  if (update.installing)
+    return { failed: false, text: 'Downloading; the window restarts when done.' }
+  if (update.error !== null) return { failed: true, text: update.error }
+  if (update.version !== null)
+    return {
+      failed: false,
+      text: `${update.version} is out. Updating restarts the window; chats and terminals keep running.`,
+    }
+  if (update.checking) return { failed: false, text: 'Checking for updates…' }
+  if (update.checkError !== null) return { failed: true, text: update.checkError }
+  if (update.checkedAt !== null) return { failed: false, text: 'Up to date.' }
+  return {
+    failed: false,
+    text: 'Checks at launch, when you come back to the window, and every hour.',
+  }
+}
+
+/** The version, its update state, and the one button that checks or installs. */
+function About({ update }: { update: Update }) {
+  const [version, setVersion] = useState<string | null>(null)
+  useEffect(() => {
+    void getVersion().then(setVersion, () => {})
+  }, [])
+  const status = updateStatus(update, devBuild)
+  let label = 'Check for updates'
+  if (update.installing) label = 'Updating…'
+  else if (update.version !== null) label = `Update to ${update.version}`
+  else if (update.checking) label = 'Checking…'
+  return (
+    <div className={rowsClass}>
+      <div className={rowClass}>
+        <div className={rowText}>
+          <span className="font-medium">{version === null ? 'aimux' : `aimux ${version}`}</span>
+          {/* The line cross-fades as the state moves on. */}
+          <span
+            key={status.text}
+            className={cn(
+              status.failed ? fieldError : rowHelp,
+              'animate-in fade-in duration-160 ease-out'
+            )}
+          >
+            {status.text}
+          </span>
+        </div>
+        <div className={rowControl}>
+          <Button
+            type="button"
+            variant={update.version === null ? 'outline' : 'default'}
+            disabled={devBuild || update.checking || update.installing}
+            onClick={update.version === null ? update.check : update.install}
+          >
+            <span key={label} className="animate-in fade-in duration-120 ease-out">
+              {label}
+            </span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Writes straight into settings.json; a new workspace reads it when it is made. */
 export function SettingsView({
   chats,
   onRestartHost,
   terminals,
+  update,
 }: {
+  /** The app's update, which About checks and installs. */
+  update: Update
   onRestartHost: () => Promise<void>
   /** Chats in a turn, which restarting the background process would pause. */
   chats: number
@@ -258,6 +328,9 @@ export function SettingsView({
                             // Picking an effect (again) shows it, over this page.
                             if (row.id === 'ui.cleanupEffect')
                               void previewCleanup(String(v), page.current)
+                            // Picking a sound or a volume plays it.
+                            if (row.id.startsWith('notifications.'))
+                              playSettingsSound({ ...stored, [row.id]: v })
                           }}
                         />
                       </div>
@@ -275,6 +348,10 @@ export function SettingsView({
         <section className="mt-7">
           <h2 className={groupTitle}>Background process</h2>
           <RestartHost chats={chats} terminals={terminals} onRestart={onRestartHost} />
+        </section>
+        <section className="mt-7">
+          <h2 className={groupTitle}>About</h2>
+          <About update={update} />
         </section>
       </div>
     </div>
