@@ -33,9 +33,10 @@ it sits beside the installed aimux without touching it. Checks:
 bun bump patch   # or minor, major, or an exact 0.3.0
 ```
 
-It computes the next version (semver), commits, tags and pushes; GitHub Actions builds, signs
-and publishes the release. Updates are signed with a key kept outside the repo (`~/.tauri/aimux-desktop.key`,
-and the `TAURI_SIGNING_PRIVATE_KEY` secret); installed apps refuse anything else.
+It computes the next version (semver), builds and signs the app on this Mac (Apple silicon),
+then commits, tags, pushes and publishes the GitHub release with `gh`. A failed build pushes
+nothing. Updates are signed with a key kept outside the repo (`~/.tauri/aimux-desktop.key`);
+installed apps refuse anything else.
 
 ## Origin
 
