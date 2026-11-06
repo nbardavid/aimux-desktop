@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { byProject, type Catalog, strongest, type Workspace } from './catalog'
+import { type Artifact, byProject, type Catalog, isNew, strongest, type Workspace } from './catalog'
 
 const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
   base: 'main',
@@ -28,4 +28,14 @@ test('a question beats work in progress beats a finished turn', () => {
   expect(strongest(['done', 'working', null])).toBe('working')
   expect(strongest(['done', 'waiting'])).toBe('waiting')
   expect(strongest([null])).toBe(null)
+})
+
+const a: Artifact = { at: 10, chatId: 'c', title: 'Flow', url: 'https://claude.ai/artifact/x' }
+
+test('an artifact is new until seen after its last publish', () => {
+  expect(isNew(a)).toBe(true)
+  expect(isNew({ ...a, seenAt: null })).toBe(true)
+  expect(isNew({ ...a, seenAt: 5 })).toBe(true)
+  expect(isNew({ ...a, seenAt: 10 })).toBe(false)
+  expect(isNew({ ...a, seenAt: 12 })).toBe(false)
 })

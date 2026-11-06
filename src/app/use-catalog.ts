@@ -123,6 +123,29 @@ export function useCatalog() {
     [reload]
   )
 
+  /** A publish seen in a chat; `live` (not replayed) also reopens a closed tab. */
+  const addArtifact = useCallback(
+    async (workspaceId: string, url: string, title: string, chatId: string, live: boolean) => {
+      await invoke('artifact_add', { chatId, live, title, url, workspaceId })
+      await reload()
+    },
+    [reload]
+  )
+  const closeArtifact = useCallback(
+    async (workspaceId: string, url: string) => {
+      await invoke('artifact_close', { url, workspaceId })
+      await reload()
+    },
+    [reload]
+  )
+  const seeArtifact = useCallback(
+    async (workspaceId: string, url: string) => {
+      await invoke('artifact_seen', { url, workspaceId })
+      await reload()
+    },
+    [reload]
+  )
+
   const saveChat = useCallback(
     (chat: ChatRecord) => void invoke('chat_save', { chat }).catch(() => {}),
     []
@@ -133,8 +156,10 @@ export function useCatalog() {
   )
 
   return {
+    addArtifact,
     addProject,
     catalog,
+    closeArtifact,
     createWorkspace,
     forgetChat,
     project,
@@ -144,6 +169,7 @@ export function useCatalog() {
     removeWorkspace,
     renameWorkspace,
     saveChat,
+    seeArtifact,
     select,
     status,
     workspace,

@@ -41,6 +41,25 @@ pub struct Workspace {
     pub created_at: u64,
     #[serde(default)]
     pub setup: Option<SetupRun>,
+    /// What its chats published with Claude Code's `Artifact` tool, as the panel's tabs.
+    #[serde(default)]
+    pub artifacts: Vec<Artifact>,
+}
+
+/// A published artifact: its claude.ai page, open as a tab of the right panel until closed.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Artifact {
+    pub url: String,
+    pub title: String,
+    pub chat_id: String,
+    /// When it was last published (ms): newer than `seen_at` reads as new.
+    pub at: u64,
+    #[serde(default)]
+    pub seen_at: Option<u64>,
+    /// Closed tabs are kept, so a replayed history doesn't bring them back.
+    #[serde(default)]
+    pub closed: bool,
 }
 
 /// A chat tab, enough to bring it back: Claude Code keeps the transcript under `session_id`.
@@ -435,6 +454,7 @@ pub fn make_worktree(
         path,
         project_id: project.id.clone(),
         setup: None,
+        artifacts: Vec::new(),
     })
 }
 
@@ -521,6 +541,108 @@ pub fn chat_forget(store: State<'_, Store>, id: String) -> Result<(), String> {
         c.chats.retain(|r| r.id != id);
         Ok(())
     })
+}
+
+fn workspace_artifacts<'a>(
+    c: &'a mut Catalog,
+    workspace_id: &str,
+) -> Result<&'a mut Vec<Artifact>, String> {
+    c.workspaces
+        .iter_mut()
+        .find(|w| w.id == workspace_id)
+        .map(|w| &mut w.artifacts)
+        .ok_or_else(|| "unknown workspace".to_string())
+}
+
+/// Records a publish. A known URL keeps one entry: its title follows (unless empty), and a
+/// `live` publish (not a replayed one) also dates it now and reopens a closed tab.
+pub fn add_artifact(
+    c: &mut Catalog,
+    workspace_id: &str,
+    url: &str,
+    title: &str,
+    chat_id: &str,
+    live: bool,
+    now: u64,
+) -> Result<(), String> {
+    let list = workspace_artifacts(c, workspace_id)?;
+    match list.iter_mut().find(|a| a.url == url) {
+        Some(a) => {
+            if !title.is_empty() {
+                a.title = title.to_string();
+            }
+            if live {
+                a.at = now;
+                a.closed = false;
+            }
+        }
+        None => list.push(Artifact {
+            url: url.to_string(),
+            title: title.to_string(),
+            chat_id: chat_id.to_string(),
+            at: now,
+            seen_at: None,
+            closed: false,
+        }),
+    }
+    Ok(())
+}
+
+pub fn close_artifact(c: &mut Catalog, workspace_id: &str, url: &str) -> Result<(), String> {
+    for a in workspace_artifacts(c, workspace_id)?
+        .iter_mut()
+        .filter(|a| a.url == url)
+    {
+        a.closed = true;
+    }
+    Ok(())
+}
+
+pub fn see_artifact(
+    c: &mut Catalog,
+    workspace_id: &str,
+    url: &str,
+    now: u64,
+) -> Result<(), String> {
+    for a in workspace_artifacts(c, workspace_id)?
+        .iter_mut()
+        .filter(|a| a.url == url)
+    {
+        a.seen_at = Some(now);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn artifact_add(
+    store: State<'_, Store>,
+    workspace_id: String,
+    url: String,
+    title: String,
+    chat_id: String,
+    live: bool,
+) -> Result<(), String> {
+    edit(&store, |c| {
+        add_artifact(c, &workspace_id, &url, &title, &chat_id, live, now())
+    })
+}
+
+#[tauri::command]
+pub fn artifact_close(
+    store: State<'_, Store>,
+    workspace_id: String,
+    url: String,
+) -> Result<(), String> {
+    edit(&store, |c| close_artifact(c, &workspace_id, &url))
+}
+
+#[tauri::command]
+pub fn artifact_seen(
+    store: State<'_, Store>,
+    workspace_id: String,
+    url: String,
+) -> Result<(), String> {
+    edit(&store, |c| see_artifact(c, &workspace_id, &url, now()))
 }
 
 fn settings_file() -> PathBuf {
@@ -625,6 +747,78 @@ pub fn setup_ran(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn one_workspace() -> Catalog {
+        serde_json::from_value(serde_json::json!({ "workspaces": [{
+            "id": "w", "projectId": "p", "name": "amber", "branch": "aimux/amber",
+            "base": "main", "path": "/wt/amber", "createdAt": 0
+        }]}))
+        .unwrap()
+    }
+
+    const URL: &str = "https://claude.ai/artifact/abc";
+
+    fn artifacts(c: &Catalog) -> &Vec<Artifact> {
+        &c.workspaces[0].artifacts
+    }
+
+    #[test]
+    fn artifacts_default_to_empty_in_old_catalogs() {
+        assert!(artifacts(&one_workspace()).is_empty());
+    }
+
+    #[test]
+    fn add_is_idempotent_by_url() {
+        let mut c = one_workspace();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", true, 10).unwrap();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", true, 20).unwrap();
+        assert_eq!(artifacts(&c).len(), 1);
+        assert_eq!(artifacts(&c)[0].at, 20);
+    }
+
+    #[test]
+    fn live_add_of_a_known_url_updates_at_title_and_reopens() {
+        let mut c = one_workspace();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", true, 10).unwrap();
+        close_artifact(&mut c, "w", URL).unwrap();
+        add_artifact(&mut c, "w", URL, "Flow v2", "c1", true, 30).unwrap();
+        let a = &artifacts(&c)[0];
+        assert_eq!((a.closed, a.at, a.title.as_str()), (false, 30, "Flow v2"));
+    }
+
+    #[test]
+    fn history_add_never_reopens() {
+        let mut c = one_workspace();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", true, 10).unwrap();
+        close_artifact(&mut c, "w", URL).unwrap();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", false, 30).unwrap();
+        let a = &artifacts(&c)[0];
+        assert_eq!((a.closed, a.at), (true, 10));
+    }
+
+    #[test]
+    fn empty_title_keeps_the_old_one() {
+        let mut c = one_workspace();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", true, 10).unwrap();
+        add_artifact(&mut c, "w", URL, "", "c1", true, 20).unwrap();
+        assert_eq!(artifacts(&c)[0].title, "Flow");
+    }
+
+    #[test]
+    fn seen_marks_not_new() {
+        let mut c = one_workspace();
+        add_artifact(&mut c, "w", URL, "Flow", "c1", true, 10).unwrap();
+        see_artifact(&mut c, "w", URL, 15).unwrap();
+        assert_eq!(artifacts(&c)[0].seen_at, Some(15));
+    }
+
+    #[test]
+    fn unknown_workspace_is_an_error() {
+        let mut c = one_workspace();
+        assert!(add_artifact(&mut c, "nope", URL, "", "c1", true, 1).is_err());
+        assert!(close_artifact(&mut c, "nope", URL).is_err());
+        assert!(see_artifact(&mut c, "nope", URL, 1).is_err());
+    }
 
     #[test]
     fn imports_projects_with_a_folder() {
@@ -752,6 +946,7 @@ mod tests {
                 path: "/wt/amber".into(),
                 project_id: "p".into(),
                 setup: None,
+                artifacts: Vec::new(),
             }],
             ..Catalog::default()
         };

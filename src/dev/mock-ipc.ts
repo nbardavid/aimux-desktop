@@ -326,6 +326,30 @@ function handle(cmd: string, args: Args): unknown {
     case 'chat_forget':
       store.chats = store.chats.filter((c) => c.id !== args.id)
       return null
+    case 'artifact_add': {
+      const w = store.workspaces.find((x) => x.id === args.workspaceId)
+      if (!w) throw new Error('unknown workspace')
+      const list = (w.artifacts ??= [])
+      const known = list.find((x) => x.url === args.url)
+      const title = str(args.title)
+      if (!known) list.push({ at: Date.now(), chatId: str(args.chatId), title, url: str(args.url) })
+      else {
+        if (title) known.title = title
+        if (args.live === true) Object.assign(known, { at: Date.now(), closed: false })
+      }
+      return null
+    }
+    case 'artifact_close':
+    case 'artifact_seen': {
+      const w = store.workspaces.find((x) => x.id === args.workspaceId)
+      if (!w) throw new Error('unknown workspace')
+      for (const x of w.artifacts ?? []) {
+        if (x.url !== args.url) continue
+        if (cmd === 'artifact_close') x.closed = true
+        else x.seenAt = Date.now()
+      }
+      return null
+    }
     case 'term_open': {
       const channel = args.onData as Channel
       terms.set(str(args.id), channel)

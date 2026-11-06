@@ -17,7 +17,24 @@ export interface Workspace {
   path: string
   createdAt: number
   setup?: { exitCode: number | null; ranAt: number } | null
+  /** What its chats published with Claude Code's `Artifact` tool: the right panel's tabs. */
+  artifacts?: Artifact[]
 }
+
+/** A published artifact: its claude.ai page, a tab of the right panel until closed. */
+export interface Artifact {
+  url: string
+  title: string
+  chatId: string
+  /** When it was last published (ms). */
+  at: number
+  seenAt?: number | null
+  /** Kept when closed, so a replayed history doesn't bring it back. */
+  closed?: boolean
+}
+
+/** Published again (or never opened) since it was last on screen. */
+export const isNew = (a: Artifact) => a.seenAt == null || a.seenAt < a.at
 
 export interface ChatRecord {
   id: string
