@@ -37,7 +37,8 @@ branding.
   - No commit message box: nobody commits by hand anymore. No "create PR": without a PR,
     "Ask for PR" sends the workspace's chat a prompt and Claude opens it with gh.
 - **Sidebar rows** lead with the workspace's task (its first chat's title, or the name the
-  user gave it) behind a branch icon, the colour word and age at the right. No colour bars.
+  user gave it) behind the agent's state (working spinner, waiting, done, idle dot), the
+  colour word and age at the right. No colour bars.
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
   rename. The composer is the one dialog.
 - **Closing the window loses nothing**: chats and terminals keep running in the host.
@@ -52,7 +53,8 @@ branding.
     ⌘B, ⌥⌘B, ⌘G, ⌘, settings;
   - no browser context menu;
   - a macOS menu that leaves ⌘W to the app.
-- **Updates**: the installed app checks GitHub releases at launch and every six hours; a
+- **Updates**: the installed app checks GitHub releases at launch, when the window comes
+  back to the front (at most every ten minutes) and every hour, and from Settings › About; a
   newer one shows an "Update to x.y.z" pill in the top bar. One click installs and restarts
   the window only. Updates are signed; a dev build never updates.
 - **Dev and prod are two apps**: the installed "aimux" is prod; `bun run dev` is "aimux Dev",

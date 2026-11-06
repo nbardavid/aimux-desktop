@@ -1,17 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from '@tauri-apps/plugin-notification'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 
+import { notify, playChosenSound } from './app/attention'
 import { ChatView } from './app/chat-view'
 import { cleanupOf } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
@@ -109,11 +105,6 @@ interface CommandPick {
   args: string
 }
 
-async function notify(body: string): Promise<void> {
-  const granted = (await isPermissionGranted()) || (await requestPermission()) === 'granted'
-  if (granted) sendNotification({ body, title: 'aimux' })
-}
-
 function sum(changes: FileChange[] | null | undefined): DiffStat {
   let add = 0
   let del = 0
@@ -184,6 +175,7 @@ export function App() {
       if (watching.current === chat.record.id) return
       const { project: p, workspace: w } = placeRef.current(chat.record.workspaceId)
       if (!p || !w) return
+      void playChosenSound()
       void (async () => {
         if (!(await getCurrentWindow().isFocused())) {
           await notify(
@@ -1045,6 +1037,7 @@ export function App() {
                 chats={chats.chats.filter((c) => c.state.status === 'working').length}
                 terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
                 onRestartHost={host.restart}
+                update={appUpdate}
               />
             )}
           </div>

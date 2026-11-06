@@ -75,6 +75,30 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    id: 'notifications',
+    label: 'Notifications',
+    rows: [
+      {
+        fallback: 'Plane',
+        help: 'Plays when a chat finishes or asks you something, unless you are looking at it. Pick one to hear it.',
+        id: 'notifications.sound',
+        kind: 'select',
+        label: 'Sound',
+        options: ['Plane', 'Bell', 'Ding', 'Off'],
+      },
+      {
+        fallback: 35,
+        help: "Percent of the sound's own level.",
+        id: 'notifications.volume',
+        kind: 'number',
+        label: 'Volume',
+        max: 100,
+        min: 0,
+        step: 5,
+      },
+    ],
+  },
+  {
     id: 'git',
     label: 'Workspaces',
     rows: [
@@ -95,6 +119,13 @@ export const SECTIONS: Section[] = [
     ],
   },
 ]
+
+/** The row behind a setting id; a typo is a bug, so it throws. */
+export function rowById(id: string): Row {
+  const row = SECTIONS.flatMap((section) => section.rows).find((r) => r.id === id)
+  if (row === undefined) throw new Error(`no setting ${id}`)
+  return row
+}
 
 /** What the app applies: a stored value of the right type, clamped to its range. */
 export function effectiveValue(row: Row, stored: SettingValue | undefined): SettingValue {

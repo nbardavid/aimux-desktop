@@ -2,7 +2,6 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   FolderOpenIcon,
-  GitBranchIcon,
   InboxIcon,
   PanelLeftIcon,
   PlusIcon,
@@ -18,7 +17,7 @@ import { cn } from '@/lib/utils'
 
 import type { Project, Signal, Workspace } from '../model/catalog'
 
-import { StatusDot } from './status-dot'
+import { dotClass, StatusDot } from './status-dot'
 import { RenameField } from './tab-bar'
 
 export interface DiffStat {
@@ -349,10 +348,11 @@ export function Sidebar(props: Props) {
 }
 
 /**
- * A workspace: a branch icon, its task (the first chat's title; a name the user chose
+ * A workspace: what its agent is doing (the working spinner, the waiting dot, the done dot
+ * while unread, an idle dot), its task (the first chat's title; a name the user chose
  * outranks it, and with neither, the colour word), bold while a finished turn is unread; at
- * the right its colour word and one of: the waiting dot, the working spinner, its age. On
- * hover, its menu button and, in a tooltip, its diff, branch and ⌘ number.
+ * the right its colour word and age. On hover, its menu button and, in a tooltip, its diff,
+ * branch and ⌘ number.
  */
 function WorkspaceRow(
   props: Props & { ws: Workspace; project: Project; number: number; now: number }
@@ -361,7 +361,9 @@ function WorkspaceRow(
   // Settings on screen: no row is where you are.
   const active =
     project.id === props.projectId && ws.id === props.workspaceId && props.page === null
-  const signal = active ? null : (props.signals[ws.id] ?? null)
+  // Working and waiting show on the row you are on too; what it finished, you are reading.
+  const reported = props.signals[ws.id] ?? null
+  const signal = active && reported === 'done' ? null : reported
   const unread = signal === 'done'
   const diff = props.diffs[ws.path]
   const facts = workspaceFacts(ws, props.chats ?? [])
@@ -373,18 +375,19 @@ function WorkspaceRow(
     e.preventDefault()
     props.onMenu({ kind: 'workspace', project, workspace: ws, ...at(e) })
   }
-  const status =
-    signal === 'waiting' || signal === 'working' ? (
-      <span className="flex h-4 w-[9px] items-center justify-center">
-        <StatusDot signal={signal} />
-      </span>
-    ) : (
-      ageLabel(facts.activeAt, now)
-    )
+  const status = ageLabel(facts.activeAt, now)
+  // Keyed by the signal, so a change cross-fades in place.
   const icon = (
-    <GitBranchIcon
-      className={cn('size-3.5 flex-none', active || unread ? 'text-foreground' : 'text-faint')}
-    />
+    <span
+      key={signal ?? 'idle'}
+      className="animate-in fade-in flex size-3.5 flex-none items-center justify-center duration-160 ease-out"
+    >
+      {signal === null ? (
+        <span className={dotClass('idle')} role="img" aria-label="Idle" />
+      ) : (
+        <StatusDot signal={signal} />
+      )}
+    </span>
   )
   const tip = [
     diff && diff.add + diff.del > 0 ? `+${diff.add} −${diff.del}` : null,
