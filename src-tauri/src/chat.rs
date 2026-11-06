@@ -36,19 +36,12 @@ pub fn claude_args(resume: Option<&str>, model: Option<&str>, effort: Option<&st
 }
 
 /// `claude` in `cwd` with every stdio piped.
-/// Claude Code's `Artifact` tool, on unless Settings › Chats › Artifacts is off. Claude Code
-/// would also open each new artifact in the default browser: the app's panel shows it instead.
-pub fn artifact_env(
-    settings: &serde_json::Map<String, serde_json::Value>,
-) -> Vec<(&'static str, &'static str)> {
-    if settings.get("chat.artifacts") == Some(&serde_json::Value::Bool(false)) {
-        return Vec::new();
-    }
-    vec![
-        ("CLAUDE_CODE_ARTIFACT", "1"),
-        ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0"),
-    ]
-}
+/// Claude Code's `Artifact` tool, always on. Claude Code would also open each new artifact in
+/// the default browser: the app's panel shows it instead.
+const ARTIFACT_ENV: [(&str, &str); 2] = [
+    ("CLAUDE_CODE_ARTIFACT", "1"),
+    ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0"),
+];
 
 pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
     let mut cmd = Command::new("claude");
@@ -64,7 +57,7 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
             cmd.env_remove(key);
         }
     }
-    cmd.envs(artifact_env(&crate::store::read_settings_map()));
+    cmd.envs(ARTIFACT_ENV);
     cmd.spawn().map_err(|e| format!("claude: {e}"))
 }
 
@@ -120,44 +113,60 @@ pub fn chat_history(session_id: String) -> Result<Vec<String>, String> {
         .map(|dir| dir.path().join(format!("{session_id}.jsonl")))
         .find(|f| f.exists())
         .ok_or("no transcript for this chat")?;
-    let raw = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
-    Ok(raw
+    let raw = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+    let mut lines: Vec<String> = raw
         .lines()
         .filter(|l| !l.trim().is_empty())
         .map(String::from)
-        .collect())
+        .collect();
+    lines.extend(agent_lines(&file.with_extension("").join("subagents")));
+    Ok(lines)
+}
+
+/// The sub-agents' transcripts Claude Code keeps beside a session's (`subagents/agent-*.jsonl`,
+/// each with a `.meta.json` naming the call that started it): every line tagged with that
+/// call's id as `aimuxAgent`.
+fn agent_lines(dir: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut lines = Vec::new();
+    for path in entries.flatten().map(|e| e.path()) {
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(agent) = name.strip_suffix(".meta.json") else { continue };
+        let meta: serde_json::Value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|m| serde_json::from_str(&m).ok())
+            .unwrap_or_default();
+        let Some(call) = meta["toolUseId"].as_str() else { continue };
+        let Ok(raw) = std::fs::read_to_string(dir.join(format!("{agent}.jsonl"))) else {
+            continue;
+        };
+        for line in raw.lines() {
+            if let Ok(serde_json::Value::Object(mut m)) = serde_json::from_str(line) {
+                m.insert("aimuxAgent".into(), call.into());
+                lines.push(serde_json::Value::Object(m).to_string());
+            }
+        }
+    }
+    lines
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn settings(json: &str) -> serde_json::Map<String, serde_json::Value> {
-        serde_json::from_str(json).unwrap()
-    }
-
     #[test]
-    fn artifact_env_on_by_default() {
-        assert_eq!(
-            artifact_env(&settings("{}")),
-            [
-                ("CLAUDE_CODE_ARTIFACT", "1"),
-                ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0")
-            ]
-        );
-    }
-
-    #[test]
-    fn artifact_env_off_when_disabled() {
-        assert!(artifact_env(&settings(r#"{"chat.artifacts": false}"#)).is_empty());
-    }
-
-    #[test]
-    fn artifact_env_ignores_non_bool() {
-        assert_eq!(
-            artifact_env(&settings(r#"{"chat.artifacts": "no"}"#)).len(),
-            2
-        );
+    fn agent_lines_tag_each_line_with_its_call() {
+        let dir = std::env::temp_dir().join(format!("aimux-agents-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("agent-a1.meta.json"), r#"{"toolUseId":"toolu_1"}"#).unwrap();
+        std::fs::write(dir.join("agent-a1.jsonl"), "{\"type\":\"user\"}\nnot json\n").unwrap();
+        std::fs::write(dir.join("agent-a2.jsonl"), "{\"type\":\"user\"}\n").unwrap();
+        let lines = agent_lines(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(lines, [r#"{"aimuxAgent":"toolu_1","type":"user"}"#]);
+        assert!(agent_lines(std::path::Path::new("/nope")).is_empty());
     }
 
     #[test]
