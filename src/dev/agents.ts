@@ -3,9 +3,14 @@
 import { PUBLISH_LINES } from './artifacts'
 
 const line = (value: unknown) => JSON.stringify(value)
-const assistant = (id: string, content: unknown[], parent: string | null = null) =>
+const assistant = (
+  id: string,
+  content: unknown[],
+  parent: string | null = null,
+  usage?: Record<string, number>
+) =>
   line({
-    message: { content, id, model: 'claude-opus-5-5', role: 'assistant' },
+    message: { content, id, model: 'claude-opus-5-5', role: 'assistant', usage },
     parent_tool_use_id: parent,
     type: 'assistant',
   })
@@ -64,14 +69,25 @@ export const AGENT_DONE_LINES = [
 
 /** A general-purpose agent still looking for flaky tests. */
 export const AGENT_RUNNING_LINES = [
-  assistant('m-agent-2', [
-    call(
-      'agent-flaky',
-      'Find flaky tests',
-      'general-purpose',
-      'Run the test suite three times and list every test whose result changes between runs.'
-    ),
-  ]),
+  assistant(
+    'm-agent-2',
+    [
+      call(
+        'agent-flaky',
+        'Find flaky tests',
+        'general-purpose',
+        'Run the test suite three times and list every test whose result changes between runs.'
+      ),
+    ],
+    null,
+    {
+      // The busy chat's context: 84% of 200k, the meter in amber.
+      cache_creation_input_tokens: 2400,
+      cache_read_input_tokens: 164_000,
+      input_tokens: 3,
+      output_tokens: 1600,
+    }
+  ),
   assistant(
     'm-sub-4',
     [tool('sub-grep', 'Grep', { path: 'src', pattern: 'setTimeout' })],

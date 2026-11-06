@@ -37,6 +37,7 @@ import {
 import { ModelSelect } from './agent-select'
 import { AgentBar, RunningAgents } from './agents'
 import { CommandHint, CommandMenu } from './command-menu'
+import { ContextMeter } from './context-meter'
 import { ImageStrip } from './image-strip'
 import { overlayShown } from './overlay'
 import { clipboardImages, readImage } from './pasted-images'
@@ -488,6 +489,11 @@ export function ChatView({
                 />
               )}
               <span className="min-w-0 flex-1" />
+              <ContextMeter
+                context={state.context}
+                model={state.model}
+                onSend={(command) => onSend(command, [])}
+              />
               {/* Where the keys go from anywhere; gone once they are here. */}
               {!off && (
                 <Kbd className="text-label mr-1.5 transition-opacity duration-120 ease-out group-focus-within/composer:opacity-0">

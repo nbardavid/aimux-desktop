@@ -6,6 +6,8 @@ import {
   artifactUrl,
   type Block,
   type ChatState,
+  contextUsed,
+  contextWindow,
   exitCode,
   initialChat,
   modelSet,
@@ -216,6 +218,53 @@ test("a replayed chat keeps each sub-agent's work, its unfinished tools stopped"
   ])
   expect(s.turns).toEqual([])
   expect(s.agents.t1?.[0]?.blocks[0]).toMatchObject({ name: 'Bash', stopped: true })
+})
+
+describe('the context window', () => {
+  const usage = {
+    cache_creation_input_tokens: 300,
+    cache_read_input_tokens: 90_000,
+    input_tokens: 2,
+    output_tokens: 500,
+  }
+  const answer = (id: string) => ({
+    message: { content: [{ text: 'ok', type: 'text' }], id, usage },
+    type: 'assistant',
+  })
+
+  test("the last answer's usage fills it; the turn's result gives its size", () => {
+    const s = feed([answer('m1')])
+    expect(s.context).toEqual({ added: 302, cached: 90_000, output: 500, window: null })
+    expect(s.context && contextUsed(s.context)).toBe(90_802)
+    const ended = feed(
+      [
+        {
+          modelUsage: { 'claude-opus-5-5': { contextWindow: 1_000_000 } },
+          subtype: 'success',
+          type: 'result',
+        },
+      ],
+      s
+    )
+    expect(ended.context?.window).toBe(1_000_000)
+    expect(feed([answer('m2')], ended).context?.window).toBe(1_000_000)
+  })
+
+  test("a sub-agent's usage is its own", () => {
+    expect(feed([{ ...answer('m1'), parent_tool_use_id: 't1' }]).context).toBeNull()
+  })
+
+  test('without a reported size: 1M for a [1m] model or past 200k, 200k otherwise', () => {
+    const c = { added: 0, cached: 1000, output: 0, window: null }
+    expect(contextWindow(c, 'claude-opus-5-5')).toBe(200_000)
+    expect(contextWindow(c, 'claude-opus-5-5[1m]')).toBe(1_000_000)
+    expect(contextWindow({ ...c, cached: 250_000 }, null)).toBe(1_000_000)
+  })
+
+  test('a replayed chat knows its context from the transcript', () => {
+    const s = replayTranscript([JSON.stringify(answer('m1'))])
+    expect(s.context?.cached).toBe(90_000)
+  })
 })
 
 describe('permissionLine', () => {

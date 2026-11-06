@@ -101,11 +101,61 @@ export interface ChatState {
    * Kept from full messages only: a sub-agent's text arrives whole, never streamed.
    */
   agents: Record<string, Turn[]>
+  /** How full the context window is, from the last answer's usage; null before any. */
+  context: Context | null
+}
+
+/** The context window: what the last request sent and got back, in tokens. */
+export interface Context {
+  /** Read from the prompt cache: the conversation so far, mostly. */
+  cached: number
+  /** Written to the cache, or sent uncached: what this turn added. */
+  added: number
+  /** The last answer. */
+  output: number
+  /** Its size, as Claude Code reports it at the end of a turn; null until then. */
+  window: number | null
+}
+
+/** Every token the context holds now. */
+export const contextUsed = (c: Context) => c.cached + c.added + c.output
+
+/**
+ * The window's size: as reported, else guessed from the model (`[1m]`) or from what it already
+ * holds (past 200k, it can only be the 1M one).
+ */
+export function contextWindow(c: Context, model: string | null): number {
+  if (c.window !== null && c.window > 0) return c.window
+  return model?.includes('[1m]') === true || contextUsed(c) > 200_000 ? 1_000_000 : 200_000
+}
+
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
+/** The context after an answer whose `usage` is given (unchanged without one). */
+function withUsage(state: ChatState, usage: unknown): ChatState {
+  const u = obj(usage)
+  if (u.input_tokens === undefined && u.cache_read_input_tokens === undefined) return state
+  const context: Context = {
+    added: num(u.input_tokens) + num(u.cache_creation_input_tokens),
+    cached: num(u.cache_read_input_tokens),
+    output: num(u.output_tokens),
+    window: state.context?.window ?? null,
+  }
+  return { ...state, context }
+}
+
+/** The window's size from a turn's `result` (`modelUsage`: the largest of its models'). */
+function withWindow(state: ChatState, modelUsage: unknown): ChatState {
+  const sizes = Object.values(obj(modelUsage)).map((u) => num(obj(u).contextWindow))
+  const window = Math.max(0, ...sizes)
+  if (window === 0 || state.context === null) return state
+  return { ...state, context: { ...state.context, window } }
 }
 
 export const initialChat: ChatState = {
   agents: {},
   commands: [],
+  context: null,
   errors: [],
   model: null,
   pending: [],
@@ -239,7 +289,8 @@ function onStreamEvent(state: ChatState, event: Json): ChatState {
   return state
 }
 
-function onAssistant(state: ChatState, message: Json): ChatState {
+function onAssistant(prior: ChatState, message: Json): ChatState {
+  const state = withUsage(prior, message.usage)
   const id = str(message.id)
   const content = Array.isArray(message.content) ? message.content : []
   const known = state.turns.find((t) => t.id === id)
@@ -378,7 +429,7 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       // A turn the user stopped ends as `error_during_execution`: asked for, not a failure.
       const failed = !state.stopping && (m.subtype !== 'success' || m.is_error === true)
       const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : state.errors
-      const ended = withEnd(stopTools(state), state.turns.length, end)
+      const ended = withEnd(stopTools(withWindow(state, m.modelUsage)), state.turns.length, end)
       if (!state.tracks && state.queued.length > 0) {
         // A Claude that never says when it takes them: its next turn, all together.
         let turns = ended.turns
@@ -554,7 +605,10 @@ export function replayTranscript(lines: readonly string[]): ChatState {
       const id = str(message.id)
       const content = Array.isArray(message.content) ? message.content : []
       const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
-      state = withTurn(state, id, (t) => ({ ...t, blocks: [...t.blocks, ...blocks] }))
+      state = withTurn(withUsage(state, message.usage), id, (t) => ({
+        ...t,
+        blocks: [...t.blocks, ...blocks],
+      }))
     } else if (m.type === 'user') {
       const text = promptText(message.content)
       if (INTERRUPTED.test(text)) stopped = true
