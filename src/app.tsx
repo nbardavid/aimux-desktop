@@ -171,6 +171,12 @@ export function App() {
   const chats = useChats({
     canStart: () => host.state.kind === 'ready',
     modelOf: (reported, current) => reportedModel(reported, current, models),
+    onArtifact: (chat, artifact, live) => {
+      const { record } = chat
+      void store
+        .addArtifact(record.workspaceId, artifact.url, artifact.title, record.id, live)
+        .catch(() => {})
+    },
     onAttention: (chat: ChatTab, kind) => {
       if (watching.current === chat.record.id) return
       const { project: p, workspace: w } = placeRef.current(chat.record.workspaceId)
