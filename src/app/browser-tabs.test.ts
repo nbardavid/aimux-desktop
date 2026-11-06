@@ -2,7 +2,15 @@ import { expect, test } from 'bun:test'
 
 import type { Artifact } from '../model/catalog'
 
-import { afterClose, browserId, browserTabs, shownView } from './browser-tabs'
+import {
+  afterClose,
+  browserId,
+  browserTabs,
+  pageCap,
+  republished,
+  shownView,
+  withPageTitles,
+} from './browser-tabs'
 
 const art = (url: string, at: number, closed = false): Artifact => ({
   at,
@@ -46,4 +54,30 @@ test('a page id is stable per url and fits a webview label', () => {
   expect(id).toMatch(/^[a-z0-9]{1,24}$/)
   expect(browserId('https://claude.ai/artifact/Q7qKRZLjujn7avFRs7C3Bv')).toBe(id)
   expect(browserId('https://claude.ai/artifact/other')).not.toBe(id)
+})
+
+test('a live publish of a known url is a republish (closed tabs count)', () => {
+  const list = [art('a', 1), art('b', 2, true)]
+  expect(republished(list, 'a')).toBe(true)
+  expect(republished(list, 'b')).toBe(true)
+  expect(republished(list, 'c')).toBe(false)
+  expect(republished(undefined, 'a')).toBe(false)
+})
+
+test("a tab shows Claude's title, else the page's current one, never stored", () => {
+  const titled = { ...art('a', 1), title: 'Flow' }
+  const untitled = { ...art('b', 1), title: '' }
+  const titles = { [browserId('a')]: 'Claude', [browserId('b')]: 'Release notes' }
+  expect(withPageTitles([titled, untitled], titles).map((a) => a.title)).toEqual([
+    'Flow',
+    'Release notes',
+  ])
+  expect(withPageTitles([untitled], {})[0]?.title).toBe('')
+})
+
+test('a page never leaves the chat less than 420px', () => {
+  // 1000px window, 221px of sidebar: 358px at most for the page.
+  expect(pageCap(1000, 221)).toBe(358)
+  expect(pageCap(1440, 0)).toBe(1019)
+  expect(pageCap(600, 300)).toBe(0)
 })

@@ -4,7 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Published } from '../chat/model'
 
 import { type Catalog, isNew } from '../model/catalog'
-import { afterClose, browserTabs, isBrowser, type PanelView, shownView } from './browser-tabs'
+import {
+  afterClose,
+  browserTabs,
+  isBrowser,
+  type PanelView,
+  republished,
+  shownView,
+} from './browser-tabs'
+import { reloadPage } from './use-browser'
 
 interface Options {
   catalog: Catalog
@@ -59,7 +67,10 @@ export function useArtifacts(o: Options) {
   /** A chat published `artifact`: listed; a live one on the workspace on screen comes forward. */
   const published = useCallback(
     (wsId: string, chatId: string, artifact: Published, live: boolean) => {
-      const { addArtifact } = latest.current
+      const { addArtifact, catalog } = latest.current
+      const known = catalog.workspaces.find((w) => w.id === wsId)?.artifacts
+      // A new version of a page already open: it reloads.
+      if (live && republished(known, artifact.url)) reloadPage(artifact.url)
       void addArtifact(wsId, artifact.url, artifact.title, chatId, live)
         .then(() => {
           if (!live || latest.current.workspaceId !== wsId) return
@@ -82,14 +93,5 @@ export function useArtifacts(o: Options) {
     [o, tabs]
   )
 
-  /** A page Claude gave no title loaded one: its tab keeps it. */
-  const retitle = useCallback(
-    (url: string, title: string) => {
-      const id = o.workspaceId
-      if (id !== undefined) void o.addArtifact(id, url, title, '', false).catch(() => {})
-    },
-    [o]
-  )
-
-  return { close, published, retitle, setView, tabs, view }
+  return { close, published, setView, tabs, view }
 }

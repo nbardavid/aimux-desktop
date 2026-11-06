@@ -2,6 +2,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -95,19 +96,39 @@ export function Slide({
   const [wide, setWide] = useState(open)
   const [sliding, setSliding] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+  // Told in the same layout pass, so a native view over the panel never sees a first frame
+  // that still reads as settled.
+  const report = useRef(onSliding)
+  report.current = onSliding
+  const slide = useCallback((on: boolean) => {
+    setSliding(on)
+    report.current?.(on)
+  }, [])
+  const openRef = useRef(open)
+  openRef.current = open
+  const settle = useCallback(() => {
+    slide(false)
+    if (!openRef.current) setMounted(false)
+  }, [slide])
   useLayoutEffect(() => {
     if (open && !mounted) setMounted(true)
     else if (open && !wide) {
       // Its zero width is laid out first, so the change from it transitions.
       box.current?.getBoundingClientRect()
       setWide(true)
-      setSliding(!still())
+      slide(!still())
     } else if (!open && wide) {
       setWide(false)
-      setSliding(!still())
+      slide(!still())
       if (still()) setMounted(false)
     }
-  }, [open, mounted, wide])
+  }, [open, mounted, wide, slide])
+  // A slide whose transition never ends (a splitter grabbed mid-way cancels it) still settles.
+  useEffect(() => {
+    if (!sliding) return
+    const done = setTimeout(settle, 300)
+    return () => clearTimeout(done)
+  }, [sliding, settle])
   // The width on screen: a new key first marks the box sliding, then moves the width, so the
   // change transitions. A width that ends up the same fires no transitionend: the timer ends it.
   const [applied, setApplied] = useState(width)
@@ -119,15 +140,10 @@ export function Slide({
       return
     }
     key.current = widthKey
-    setSliding(true)
+    slide(true)
     const frame = requestAnimationFrame(() => setApplied(width))
-    const done = setTimeout(() => setSliding(false), 260)
-    return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(done)
-    }
-  }, [width, widthKey, open, wide])
-  useEffect(() => onSliding?.(sliding), [sliding, onSliding])
+    return () => cancelAnimationFrame(frame)
+  }, [width, widthKey, open, wide, slide])
   if (!mounted) return null
   return (
     <div
@@ -135,11 +151,8 @@ export function Slide({
       className="flex min-h-0 flex-none overflow-hidden data-sliding:transition-[width] data-sliding:duration-200 data-sliding:ease-in-out in-[.resizing]:transition-none motion-reduce:transition-none"
       style={{ width: wide ? applied : 0 }}
       data-sliding={sliding || undefined}
-      onTransitionEnd={(e) => {
-        if (e.target !== e.currentTarget) return
-        setSliding(false)
-        if (!open) setMounted(false)
-      }}
+      onTransitionEnd={(e) => e.target === e.currentTarget && settle()}
+      onTransitionCancel={(e) => e.target === e.currentTarget && settle()}
     >
       {children}
     </div>

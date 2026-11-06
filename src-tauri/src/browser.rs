@@ -11,6 +11,7 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Url, WebviewBuilder,
     WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_opener::OpenerExt;
 
 /// Pages kept alive at once; past that, the least recently shown is closed (and made again
 /// when its tab comes back).
@@ -50,9 +51,31 @@ fn user_agent() -> String {
     safari_user_agent(&plist_string(&xml, "CFBundleShortVersionString").unwrap_or_default())
 }
 
-/// Only web pages load: no `file:`, no `tauri:`, no `javascript:`.
+/// What a page may load: the web, and the `about:`, `blob:` and `data:` frames pages build
+/// themselves. Never `file:`, `javascript:`, or the app itself (its own origins and the dev
+/// server's), which Tauri would treat as local and let call the app's commands.
 pub fn allowed(url: &Url) -> bool {
-    matches!(url.scheme(), "http" | "https")
+    let app = url.scheme() == "tauri"
+        || url.host_str() == Some("tauri.localhost")
+        || (url.host_str() == Some("localhost") && url.port() == Some(1420));
+    !app && matches!(url.scheme(), "http" | "https" | "about" | "blob" | "data")
+}
+
+/// Sign-in flows that need a popup of their own (`window.opener`); every other new window
+/// goes to the default browser.
+pub fn opens_as_popup(url: &Url) -> bool {
+    match url.host_str() {
+        Some("accounts.google.com" | "appleid.apple.com") => true,
+        Some("claude.ai") => ["/login", "/oauth", "/auth"]
+            .iter()
+            .any(|p| url.path().starts_with(p)),
+        _ => false,
+    }
+}
+
+/// A panel page's webview (not a sign-in popup's).
+pub fn is_page(label: &str) -> bool {
+    label.starts_with("browser-") && !label.starts_with("browser-popup-")
 }
 
 /// The webview label for a page id the app chose (`[a-z0-9-]`, 1 to 40 characters).
@@ -83,9 +106,13 @@ impl Bounds {
     }
 }
 
-/// The live pages: label and the URL each was opened on, least recently shown first.
+/// The live pages (label and the URL each was opened on, least recently shown first), and a
+/// lock held across a whole show or hide-all so one never lands in the middle of the other.
 #[derive(Default)]
-pub struct Browsers(Mutex<Vec<(String, String)>>);
+pub struct Browsers {
+    live: Mutex<Vec<(String, String)>>,
+    order: Mutex<()>,
+}
 
 #[derive(Clone, Serialize)]
 struct Title {
@@ -104,20 +131,45 @@ fn id_of(label: &str) -> String {
 
 static POPUPS: AtomicU32 = AtomicU32::new(0);
 
-/// A sign-in popup (Google's): a small window of its own, so `window.opener` works.
-fn popup(
+/// What `window.close()` becomes in a popup: wry ignores the real one.
+const CLOSE_SENTINEL: &str = "aimux-close";
+
+/// A new window a page asks for: sign-in gets a small popup of its own (so `window.opener`
+/// works); any other web link opens in the default browser; anything else is refused.
+fn new_window(
     app: &AppHandle,
     url: &Url,
     features: tauri::webview::NewWindowFeatures,
 ) -> NewWindowResponse<tauri::Wry> {
+    if !matches!(url.scheme(), "http" | "https") || !allowed(url) {
+        return NewWindowResponse::Deny;
+    }
+    if !opens_as_popup(url) {
+        let _ = app.opener().open_url(url.as_str(), None::<&str>);
+        return NewWindowResponse::Deny;
+    }
     let label = format!("browser-popup-{}", POPUPS.fetch_add(1, Ordering::Relaxed));
     let blank = WebviewUrl::External("about:blank".parse().expect("about:blank"));
-    match WebviewWindowBuilder::new(app, label, blank)
+    let closer = app.clone();
+    let own = label.clone();
+    let built = WebviewWindowBuilder::new(app, label, blank)
         .window_features(features)
         .user_agent(&user_agent())
         .title(url.host_str().unwrap_or("Sign in"))
-        .build()
-    {
+        .initialization_script(format!(
+            "window.close = () => {{ location.href = '{CLOSE_SENTINEL}://now' }}"
+        ))
+        .on_navigation(move |to| {
+            if to.scheme() != CLOSE_SENTINEL {
+                return allowed(to);
+            }
+            if let Some(window) = closer.get_webview_window(&own) {
+                let _ = window.close();
+            }
+            false
+        })
+        .build();
+    match built {
         Ok(window) => NewWindowResponse::Create { window },
         Err(_) => NewWindowResponse::Deny,
     }
@@ -141,7 +193,9 @@ fn create(app: &AppHandle, label: &str, url: Url, bounds: Bounds) -> Result<(), 
                 let _ = loads.emit_to("main", "browser-loaded", Loaded { id });
             }
         })
-        .on_new_window(move |url, features| popup(&popups, &url, features));
+        .on_new_window(move |url, features| new_window(&popups, &url, features))
+        // Made while you work elsewhere: it must not bring the app forward.
+        .focused(false);
     window
         .add_child(
             builder,
@@ -153,7 +207,7 @@ fn create(app: &AppHandle, label: &str, url: Url, bounds: Bounds) -> Result<(), 
 }
 
 fn live(browsers: &Browsers) -> std::sync::MutexGuard<'_, Vec<(String, String)>> {
-    browsers.0.lock().unwrap_or_else(|e| e.into_inner())
+    browsers.live.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Shows page `id` on `url` at `bounds`, making it if needed. Never takes the keyboard.
@@ -167,9 +221,10 @@ pub fn browser_show(
 ) -> Result<(), String> {
     let label = label_for(&id).ok_or("bad page id")?;
     let parsed: Url = url.parse().map_err(|_| "bad url")?;
-    if !allowed(&parsed) {
+    if !matches!(parsed.scheme(), "http" | "https") || !allowed(&parsed) {
         return Err("only web pages open here".into());
     }
+    let _order = browsers.order.lock().unwrap_or_else(|e| e.into_inner());
     let opened_on = live(&browsers)
         .iter()
         .find(|(l, _)| *l == label)
@@ -217,11 +272,12 @@ pub fn browser_hide(app: AppHandle, id: String) -> Result<(), String> {
     }
 }
 
+/// Hides every page, the one still being made included (Tauri knows it before `live` does).
 #[tauri::command(async)]
 pub fn browser_hide_all(app: AppHandle, browsers: State<'_, Browsers>) -> Result<(), String> {
-    let labels: Vec<String> = live(&browsers).iter().map(|(l, _)| l.clone()).collect();
-    for label in labels {
-        if let Some(webview) = app.get_webview(&label) {
+    let _order = browsers.order.lock().unwrap_or_else(|e| e.into_inner());
+    for (label, webview) in app.webviews() {
+        if is_page(&label) {
             webview.hide().map_err(|e| e.to_string())?;
         }
     }
@@ -294,6 +350,50 @@ mod tests {
     }
 
     #[test]
+    fn frames_may_use_about_blob_and_data() {
+        for url in [
+            "about:blank",
+            "about:srcdoc",
+            "blob:https://claude.ai/1-2",
+            "data:text/html,x",
+        ] {
+            assert!(allowed(&url.parse().unwrap()), "{url}");
+        }
+    }
+
+    #[test]
+    fn the_app_itself_never_loads_in_a_page() {
+        for url in [
+            "tauri://localhost/",
+            "http://tauri.localhost/",
+            "http://localhost:1420/x",
+        ] {
+            assert!(!allowed(&url.parse().unwrap()), "{url}");
+        }
+        assert!(allowed(&"http://localhost:3000/".parse().unwrap()));
+    }
+
+    #[test]
+    fn only_sign_in_opens_a_popup() {
+        for (url, popup) in [
+            ("https://accounts.google.com/o/oauth2/v2/auth?x=1", true),
+            ("https://appleid.apple.com/auth/authorize", true),
+            ("https://claude.ai/login?x", true),
+            ("https://example.com/docs", false),
+            ("https://claude.ai/artifact/abc", false),
+        ] {
+            assert_eq!(opens_as_popup(&url.parse().unwrap()), popup, "{url}");
+        }
+    }
+
+    #[test]
+    fn page_labels_are_recognised() {
+        assert!(is_page("browser-abc"));
+        assert!(!is_page("browser-popup-3"));
+        assert!(!is_page("main"));
+    }
+
+    #[test]
     fn only_web_urls_load() {
         for (url, ok) in [
             ("https://claude.ai/artifact/x", true),
@@ -301,7 +401,6 @@ mod tests {
             ("file:///etc/passwd", false),
             ("tauri://localhost/", false),
             ("javascript:alert(1)", false),
-            ("about:blank", false),
         ] {
             assert_eq!(allowed(&url.parse().unwrap()), ok, "{url}");
         }

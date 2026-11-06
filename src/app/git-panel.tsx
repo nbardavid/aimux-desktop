@@ -17,6 +17,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import type { BranchState, FileChange } from './use-git'
@@ -439,26 +440,39 @@ function PageTab({
   onSelect: () => void
 }) {
   const title = artifact.title || 'Artifact'
+  // A portaled tooltip, opening upward: the tab row scrolls (it would clip a CSS one), and
+  // below it lies the page, which hides while anything floats over it.
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      data-tip={`${title} · ${artifact.url.replace(/^https:\/\//, '')}`}
-      className={cn(
-        'animate-in fade-in slide-in-from-left-[4px] flex h-7 flex-none items-center gap-1.5 rounded-md px-2 text-sm whitespace-nowrap transition-colors duration-160 ease-out',
-        active ? 'bg-muted text-foreground font-medium' : 'text-faint hover:text-muted-foreground'
-      )}
-      onClick={onSelect}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        onMenu({ x: e.clientX, y: e.clientY })
-      }}
-    >
-      <GlobeIcon className="size-3.5 flex-none" />
-      <span className="max-w-40 truncate">{title}</span>
-      {isNew(artifact) && !active && <Dot tone="done" label="New" />}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            role="tab"
+            aria-selected={active}
+            className={cn(
+              'animate-in fade-in slide-in-from-left-[4px] flex h-7 flex-none items-center gap-1.5 rounded-md px-2 text-sm whitespace-nowrap transition-colors duration-160 ease-out',
+              active
+                ? 'bg-muted text-foreground font-medium'
+                : 'text-faint hover:text-muted-foreground'
+            )}
+            onClick={onSelect}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              onMenu({ x: e.clientX, y: e.clientY })
+            }}
+          />
+        }
+      >
+        <GlobeIcon className="size-3.5 flex-none" />
+        <span className="max-w-40 truncate">{title}</span>
+        {isNew(artifact) && !active && <Dot tone="done" label="New" />}
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-md">
+        <span className="truncate">{title}</span>
+        <span className="text-white/60 truncate">{artifact.url.replace(/^https:\/\//, '')}</span>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

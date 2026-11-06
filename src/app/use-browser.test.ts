@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { browserShown, covers } from './use-browser'
+import { browserShown, covers, serial } from './use-browser'
 
 const on = {
   covered: false,
@@ -29,4 +29,25 @@ test('a floating surface covers the page only where they cross', () => {
   expect(covers([{ bottom: 120, left: 900, right: 1000, top: 100 }], page)).toBe(false)
   expect(covers([{ bottom: 0, left: 0, right: 0, top: 0 }], page)).toBe(false)
   expect(covers([], page)).toBe(false)
+})
+
+test('page commands run one after another, and a cancelled one is skipped', async () => {
+  const done: string[] = []
+  const run = serial()
+  let open: () => void = () => {}
+  const gate = new Promise<void>((resolve) => (open = resolve))
+  run(async () => {
+    await gate
+    done.push('hide')
+  })
+  const { cancel } = run(async () => {
+    done.push('show')
+  })
+  run(async () => {
+    done.push('hide again')
+  })
+  cancel()
+  open()
+  await run(async () => {}).done
+  expect(done).toEqual(['hide', 'hide again'])
 })

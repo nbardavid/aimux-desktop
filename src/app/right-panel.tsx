@@ -1,10 +1,10 @@
 // The right panel: the git panel's lists, or a page (an artifact) at its own wider width.
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
 import type { MenuState } from './context-menu'
 import type { useArtifacts } from './use-artifacts'
 
-import { browserId, isBrowser } from './browser-tabs'
+import { isBrowser, pageCap, withPageTitles } from './browser-tabs'
 import { BrowserView, nativePages, PageStandIn } from './browser-view'
 import { GitPanel, type GitPanelProps, spinner } from './git-panel'
 import { Slide, Splitter } from './splitter'
@@ -16,6 +16,8 @@ import {
   gitWidthNow,
   type Layout,
   LIMITS,
+  SIDE_WIDTH,
+  sideWidthNow,
 } from './use-layout'
 
 type Owned = 'width' | 'tabs' | 'view' | 'onView' | 'onTabMenu' | 'browser'
@@ -37,23 +39,30 @@ export function RightPanel({
   /** The workspace's git panel, or undefined with no workspace. */
   panel: Omit<GitPanelProps, Owned> | undefined
 }) {
-  const placeholder = useRef<HTMLDivElement>(null)
+  // Held in state: the effects that lay the page over it run again once it mounts.
+  const [placeholder, setPlaceholder] = useState<HTMLDivElement | null>(null)
+  const [titles, setTitles] = useState<Record<string, string>>({})
+  usePageTitles((id, title) => setTitles((t) => ({ ...t, [id]: title })))
+  const tabs = withPageTitles(artifacts.tabs, titles)
   const { view } = artifacts
-  const page = isBrowser(view) ? artifacts.tabs.find((a) => a.url === view.browser) : undefined
+  const page = isBrowser(view) ? tabs.find((a) => a.url === view.browser) : undefined
+
+  // A page never leaves the chat less than its minimum, whatever was dragged or the window does.
+  const side = layout.sideWidth === null ? SIDE_WIDTH : `${layout.sideWidth}px`
+  const sideNow = layout.sideOpen ? (layout.sideWidth ?? sideWidthNow()) + 1 : 0
   const dragged = page ? layout.browserWidth : layout.gitWidth
   const fallback = page ? BROWSER_WIDTH : GIT_WIDTH
-  const width = dragged === null ? fallback : `${dragged}px`
-  const [min, max] = page ? LIMITS.browser : LIMITS.git
+  const wanted = dragged === null ? fallback : `${dragged}px`
+  const room = layout.sideOpen ? `calc(100vw - ${side} - 422px)` : 'calc(100vw - 421px)'
+  const width = page ? `min(${wanted}, ${room})` : wanted
+  const [min, max] = page
+    ? [LIMITS.browser[0], Math.min(LIMITS.browser[1], pageCap(window.innerWidth, sideNow))]
+    : LIMITS.git
 
   const [sliding, setSliding] = useState(false)
   const covered = useCovered(placeholder)
   const shown = browserShown({ covered, mode: 'normal', panelOpen: open, sliding, view })
   const loaded = useBrowser(page?.url, placeholder, shown && page !== undefined)
-  const { retitle, tabs } = artifacts
-  usePageTitles((id, title) => {
-    const tab = tabs.find((a) => browserId(a.url) === id)
-    if (tab && tab.title === '' && title !== '') retitle(tab.url, title)
-  })
   let cover = null
   if (!nativePages && page) cover = <PageStandIn artifact={page} />
   else if (!loaded) cover = <div className="grid h-full place-items-center">{spinner}</div>
@@ -79,14 +88,14 @@ export function RightPanel({
           <GitPanel
             {...panel}
             width={width}
-            tabs={artifacts.tabs}
+            tabs={tabs}
             view={view}
             onView={artifacts.setView}
             onTabMenu={(url, at) =>
               onMenu({ ...at, items: [{ label: 'Close', run: () => artifacts.close(url) }] })
             }
             browser={
-              page && <BrowserView artifact={page} placeholder={placeholder} cover={cover} />
+              page && <BrowserView artifact={page} placeholder={setPlaceholder} cover={cover} />
             }
           />
         </>

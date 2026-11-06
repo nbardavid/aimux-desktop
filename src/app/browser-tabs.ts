@@ -37,3 +37,24 @@ export function browserId(url: string): string {
   }
   return hash.toString(16)
 }
+
+/** A live publish of a URL the workspace already had: its page reloads. */
+export function republished(artifacts: readonly Artifact[] | undefined, url: string): boolean {
+  return (artifacts ?? []).some((a) => a.url === url)
+}
+
+/** Tabs titled by Claude, else by their page's current title (kept in memory, by page id). */
+export function withPageTitles(
+  tabs: readonly Artifact[],
+  titles: Readonly<Record<string, string>>
+): Artifact[] {
+  return tabs.map((a) => (a.title === '' ? { ...a, title: titles[browserId(a.url)] ?? '' } : a))
+}
+
+/** The chat keeps at least this much beside a page (its 1px splitter included). */
+const CHAT_MIN = 421
+
+/** The widest a page may be: the window, less the sidebar, less the chat's minimum. */
+export function pageCap(windowWidth: number, side: number): number {
+  return Math.max(0, windowWidth - side - CHAT_MIN)
+}
