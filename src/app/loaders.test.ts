@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 
-import { braille, frameAt, LOADER_NAMES, LOADERS } from './loaders'
+import { loadersFrom } from './loader-choice'
+import {
+  braille,
+  DEFAULT_LOADERS,
+  fitsSetting,
+  frameAt,
+  litDots,
+  LOADER_NAMES,
+  LOADERS,
+  STATUS_LOADERS,
+  stillFrame,
+} from './loaders'
 
 describe('braille', () => {
   test('lights the dots asked for, two columns per glyph', () => {
@@ -44,5 +55,42 @@ describe('loaders', () => {
     const { frames, interval } = LOADERS.helix
     expect(frameAt('helix', 0)).toBe(frames[0] as string)
     expect(frameAt('helix', interval * (frames.length + 1))).toBe(frames[1] as string)
+  })
+})
+
+describe('status loaders', () => {
+  test('litDots reads back the dots braille lit', () => {
+    const lit = [
+      [0, 0],
+      [3, 1],
+      [2, 3],
+    ] as const
+    expect(litDots(braille(4, lit))).toEqual([
+      [0, 0],
+      [3, 1],
+      [2, 3],
+    ])
+    expect(litDots('⠀⠀')).toEqual([])
+  })
+
+  test('a status loader is at most two glyphs: a square of dots, never wider', () => {
+    for (const loader of STATUS_LOADERS)
+      expect(LOADERS[loader].frames[0]?.length).toBeLessThanOrEqual(2)
+    expect(STATUS_LOADERS).toContain(DEFAULT_LOADERS.status)
+  })
+
+  test('the status setting takes only a square loader; anything else is the default', () => {
+    expect(fitsSetting('status', 'snake')).toBe(true)
+    expect(fitsSetting('status', 'helix')).toBe(false)
+    expect(fitsSetting('working', 'helix')).toBe(true)
+    expect(loadersFrom({ 'ui.statusLoader': 'helix' }).status).toBe(DEFAULT_LOADERS.status)
+    expect(loadersFrom({ 'ui.statusLoader': 'orbit' }).status).toBe('orbit')
+    expect(loadersFrom({}).status).toBe('diagswipe')
+  })
+
+  test('a still loader holds its fullest frame, never a blank one', () => {
+    expect(stillFrame('diagswipe')).toBe('⣿⣿')
+    for (const loader of STATUS_LOADERS)
+      expect(litDots(stillFrame(loader)).length).toBeGreaterThan(0)
   })
 })

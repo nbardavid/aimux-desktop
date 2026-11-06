@@ -2,7 +2,8 @@ import { cn } from '@/lib/utils'
 
 import type { Signal } from '../model/catalog'
 
-import { BrailleSpinner } from './braille-spinner'
+import { BrailleDots } from './braille-spinner'
+import { useLoaderChoice } from './loader-choice'
 
 const LABEL: Record<Signal, string> = {
   done: 'Done',
@@ -10,7 +11,7 @@ const LABEL: Record<Signal, string> = {
   working: 'Working',
 }
 
-// The `breathe` and `pop` keyframes live in styles.css; `working` is a braille orbit.
+// The `breathe` and `pop` keyframes live in styles.css; `working` is a braille loader.
 const TONE = {
   done: 'bg-good animate-[pop_0.3s_cubic-bezier(0.2,0,0,1)]',
   failing: 'bg-critical',
@@ -25,15 +26,20 @@ export type Tone = keyof typeof TONE
 export const dotClass = (tone: Exclude<Tone, 'working'>, className?: string) =>
   cn('size-[7px] flex-none rounded-full', TONE[tone], className)
 
-/** A status dot, or for `working` a braille orbit in the same 9px slot. */
+/** The braille loader Settings › Appearance picked for statuses, drawn as ink dots. */
+function Working(a11y: { 'aria-label'?: string; 'role'?: string }) {
+  const { status } = useLoaderChoice()
+  return (
+    <span {...a11y} className="text-foreground grid size-[11px] flex-none place-items-center">
+      <BrailleDots loader={status} />
+    </span>
+  )
+}
+
+/** A status dot, or for `working` the status loader, 11px square. */
 export function Dot({ label, tone }: { tone: Tone; label?: string }) {
   const a11y = label === undefined ? {} : { 'aria-label': label, 'role': 'img' }
-  if (tone === 'working')
-    return (
-      <span {...a11y} className="text-faint grid h-[9px] w-[9px] flex-none place-items-center">
-        <BrailleSpinner loader="orbit" className="text-[13px]" />
-      </span>
-    )
+  if (tone === 'working') return <Working {...a11y} />
   return <span {...a11y} className={dotClass(tone)} />
 }
 

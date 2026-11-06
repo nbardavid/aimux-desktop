@@ -327,6 +327,19 @@ body.resizing * {
   }
 }
 
+/* A sidebar row's tint as its workspace finishes or waits: a swell, a hold, then it settles
+   to the row's own faint opacity. */
+@keyframes tint {
+  from {
+    opacity: 0;
+  }
+
+  20%,
+  45% {
+    opacity: 1;
+  }
+}
+
 @keyframes rise {
   from {
     opacity: 0;
