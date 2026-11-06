@@ -63,7 +63,7 @@ Conductor's in-app browser (0.62), which later also opens a dev server.
   included). Tauri injects its bridge object into every webview it makes, so the object is
   there; what keeps the page out is Tauri's own refusal of commands from a remote origin no
   capability lists (`webview/mod.rs`), the same model Tauri uses for any remote content.
-  *(Builder check; my call: refusal is the boundary, as in Conductor.)* As a second fence,
+  _(Builder check; my call: refusal is the boundary, as in Conductor.)_ As a second fence,
   `capabilities/default.json` moves from `windows: ["main"]` to `webviews: ["main"]`, so a
   child webview of the main window never matches it.
 - No TCP listener (CLAUDE.md hard rule). Outbound HTTPS from the browser is fine.
@@ -78,14 +78,14 @@ Conductor's in-app browser (0.62), which later also opens a dev server.
 `CLAUDE_CODE_ARTIFACT_AUTO_OPEN=0` (after its loop that strips inherited `CLAUDE_CODE_*`
 variables). Without the second one Claude Code opens each new artifact in the default
 browser itself (`?via=auto_preview`): every publish would show twice, and a chat running with
-the window closed would pop Safari. *(Builder check.)*
+the window closed would pop Safari. _(Builder check.)_
 
 Both are behind a setting, **Settings › Chats › Artifacts** (`chat.artifacts`, a toggle, on
 by default; help: "Claude can publish visual explanations to your claude.ai account; they
 open beside the chat. Needs a Team or Enterprise plan."). The host reads `settings.json` when
 it spawns a chat (it is the same binary, `store.rs` `read_settings_map`), so a change applies
-to the next chat started. *(My call: the app is open source, the tool is a Team/Enterprise
-beta, and it publishes to claude.ai on its own; the owner keeps it on.)* This runs in the host. **No `HOST_PROTOCOL`
+to the next chat started. _(My call: the app is open source, the tool is a Team/Enterprise
+beta, and it publishes to claude.ai on its own; the owner keeps it on.)_ This runs in the host. **No `HOST_PROTOCOL`
 bump** (a bump restarts the host on update and closes terminals): chats started by an older
 host simply have no `Artifact` tool until the host restarts (Settings › Restart, or the next
 protocol bump). The webview needs no flag: it reacts to what the stream shows.

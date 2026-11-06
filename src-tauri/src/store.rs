@@ -527,7 +527,7 @@ fn settings_file() -> PathBuf {
     data_dir().join("settings.json")
 }
 
-fn read_settings_map() -> Map<String, Value> {
+pub(crate) fn read_settings_map() -> Map<String, Value> {
     std::fs::read_to_string(settings_file())
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())

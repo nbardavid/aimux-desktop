@@ -34,12 +34,14 @@
 ### Task 1: Turn the tool on, behind a setting
 
 **Files:**
+
 - Modify: `src-tauri/src/chat.rs` (`spawn_claude`), `src-tauri/src/store.rs` (make `read_settings_map` `pub(crate)`)
 - Modify: `src/settings/schema.ts` (new section `chat`, label `Chats`, before `git`)
 - Modify: `src-tauri/capabilities/default.json` (`"windows": ["main"]` → `"webviews": ["main"]`)
 - Test: `src-tauri/src/chat.rs` tests module; `src/settings/schema.test.ts`
 
 **Interfaces:**
+
 - Produces: `pub fn artifact_env(settings: &serde_json::Map<String, Value>) -> Vec<(&'static str, &'static str)>` in `chat.rs`; setting id `chat.artifacts`.
 
 - [ ] **Step 1: Failing tests.** Rust: `artifact_env_on_by_default` (empty map → `[("CLAUDE_CODE_ARTIFACT","1"),("CLAUDE_CODE_ARTIFACT_AUTO_OPEN","0")]`), `artifact_env_off_when_disabled` (`{"chat.artifacts": false}` → empty), `artifact_env_ignores_non_bool` (`"no"` → on). TS: `rowById('chat.artifacts')` is a toggle with fallback `true`.
@@ -51,11 +53,13 @@
 ### Task 2: Artifacts in the catalog
 
 **Files:**
+
 - Modify: `src-tauri/src/store.rs` (struct, field, pure fns, commands), `src-tauri/src/lib.rs` (register commands)
 - Modify: `src/model/catalog.ts` (types), `src/app/use-catalog.ts` (methods), `src/dev/mock-ipc.ts` (same commands)
 - Test: `src-tauri/src/store.rs` tests module
 
 **Interfaces:**
+
 - Produces (Rust): `pub struct Artifact { url: String, title: String, chat_id: String, at: u64, seen_at: Option<u64>, closed: bool }` (camelCase serde, `#[serde(default)]` on optional/bool fields); `Workspace.artifacts: Vec<Artifact>` with `#[serde(default)]`; pure `fn add_artifact(c: &mut Catalog, workspace_id: &str, url: &str, title: &str, chat_id: &str, live: bool, now: u64) -> Result<(), String>`, `fn close_artifact(c, workspace_id, url)`, `fn see_artifact(c, workspace_id, url, now)`; commands `artifact_add(workspace_id, url, title, chat_id, live)`, `artifact_close(workspace_id, url)`, `artifact_seen(workspace_id, url)`.
 - Produces (TS): `interface Artifact { url: string; title: string; chatId: string; at: number; seenAt?: number | null; closed?: boolean }`; `Workspace.artifacts?: Artifact[]`; `useCatalog()` gains `addArtifact(workspaceId, url, title, chatId, live): Promise<void>`, `closeArtifact(workspaceId, url)`, `seeArtifact(workspaceId, url)` (each invokes then `reload()`); `export const isNew = (a: Artifact) => a.seenAt == null || a.seenAt < a.at` in `catalog.ts`.
 
@@ -68,10 +72,12 @@
 ### Task 3: Spotting a publish
 
 **Files:**
+
 - Modify: `src/chat/model.ts` (helpers next to `changedFiles`), `src/app/use-chats.ts` (hook)
 - Test: `src/chat/model.test.ts`, `src/app/use-chats.test.ts`
 
 **Interfaces:**
+
 - Produces: `export interface Published { url: string; title: string; toolId: string }`; `export function artifactUrl(text: string): string | null`; `export function publishedArtifacts(blocks: Block[]): Published[]` (in block order, deduped by URL keeping the last title); `UseChatsOptions.onArtifact: (chat: ChatTab, artifact: Published, live: boolean) => void`.
 
 - [ ] **Step 1: Failing tests.** `artifactUrl` finds both URL shapes inside `Published /tmp/x.html at https://claude.ai/artifact/Q7qKRZLjujn7avFRs7C3Bv (Version 1, …)` and returns null for plain text. `publishedArtifacts`: a publish block (no `action`, `file_path`, `title: 'Flow'`, result with URL) → `[{ url, title: 'Flow', toolId }]`; `ignores calls without a published URL` (`quickstart`, an `isError` result, a result-less block, `action: 'list'`); `action: 'open'` with a URL result counts; `republish yields the same url once`; no `title` → `''`. In `use-chats.test.ts`: a live line completing a publish calls `onArtifact(…, live=true)` once; replayed lines and `wake`'s history call it with `live=false`.
@@ -83,11 +89,13 @@
 ### Task 4: The browser in Rust
 
 **Files:**
+
 - Create: `src-tauri/src/browser.rs`
 - Modify: `src-tauri/Cargo.toml` (`tauri` features `["unstable"]`), `src-tauri/src/lib.rs` (module, `.manage(browser::Browsers::default())`, commands)
 - Test: `src-tauri/src/browser.rs` tests module
 
 **Interfaces:**
+
 - Produces: `#[derive(Deserialize)] pub struct Bounds { x: f64, y: f64, width: f64, height: f64 }` (logical px); commands `browser_show(id: String, url: String, bounds: Bounds)`, `browser_bounds(id, bounds)`, `browser_hide(id)`, `browser_hide_all()`, `browser_back(id)`, `browser_reload(id)`, `browser_close(id)`, `browser_close_many(ids: Vec<String>)`; event `browser-title` with payload `{ id: String, title: String }` and `browser-loaded` `{ id }` emitted to the main webview. `id` is chosen by the webview (Task 6: the artifact URL hashed to `[a-z0-9]{1,24}`), the webview label is `browser-<id>`.
 - Pure helpers: `pub fn safari_user_agent(webkit: &str, safari: &str) -> String` (`Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/<webkit> (KHTML, like Gecko) Version/<safari> Safari/<webkit>`); `pub fn allowed(url: &Url) -> bool` (http/https only); `pub fn label_for(id: &str) -> Option<String>` (rejects ids outside `[a-z0-9-]{1,40}`).
 
@@ -100,11 +108,13 @@
 ### Task 5: The panel's browser tabs
 
 **Files:**
+
 - Create: `src/app/browser-tabs.ts` (pure helpers), `src/app/browser-view.tsx` (address bar + placeholder)
 - Modify: `src/app/git-panel.tsx` (view union, tab row, body), `src/app/use-layout.ts` (`browserWidth`), `src/app.tsx` (wiring), `src/dev/fixtures.ts`, `src/dev/mock-ipc.ts` (`?artifacts`, a publishing chat)
 - Test: `src/app/browser-tabs.test.ts`, `src/app/use-layout` tests if present
 
 **Interfaces:**
+
 - Consumes: `Artifact`, `isNew`, `useCatalog` methods (Task 2); `onArtifact` (Task 3).
 - Produces: `export type PanelView = 'changes' | 'checks' | { browser: string }`; `export function browserTabs(artifacts: Artifact[] | undefined): Artifact[]` (open ones, newest `at` first); `export function afterClose(view: PanelView, tabs: Artifact[], closedUrl: string): PanelView` (next tab to the right, else left, else `'changes'`); `GitPanel` props gain `artifacts: Artifact[]`, `view: PanelView`, `onView(view)`, `onCloseArtifact(url)`, `browser: ReactNode` (the body when a browser tab is the view); `Layout.browserWidth: number | null`, `LIMITS.browser`, `BROWSER_WIDTH = 'clamp(420px, 45vw, 1100px)'`.
 
@@ -117,11 +127,13 @@
 ### Task 6: Keeping the native view in place and out of the way
 
 **Files:**
+
 - Create: `src/app/use-browser.ts` (sync hook), `src/app/overlays.ts` (counter)
 - Modify: `src/app/browser-view.tsx`, `src/app/splitter.tsx` (`Slide` reports `sliding`), `src/app.tsx`, the floating surfaces (`components/ui/menu.tsx`, `context-menu.tsx`, the app's `context-menu.tsx`, `picker.tsx`, `new-workspace.tsx` dialog, `toast.tsx`, tooltips) to hold an overlay while open
 - Test: `src/app/use-browser.test.ts`, `src/app/overlays.test.ts`
 
 **Interfaces:**
+
 - Produces: `overlays.ts`: `export function holdOverlay(): () => void` (returns the release), `export function subscribeOverlays(fn: (open: boolean) => void): () => void`, `export function useOverlayHold(open: boolean): void`; `use-browser.ts`: `export function browserShown(s: { mode: 'normal' | 'git' | 'settings'; panelOpen: boolean; view: PanelView; overlays: boolean; sliding: boolean }): boolean`; `export function browserId(url: string): string` (stable FNV-1a hex of the URL); `export function useBrowser(view: PanelView, placeholder: RefObject<HTMLDivElement>, shown: boolean): void` (show/hide/bounds via the Task 4 commands, rAF-throttled `ResizeObserver` + window resize); `closeWorkspaceBrowsers(urls: string[])` calling `browser_close_many`.
 
 - [ ] **Step 1: Failing tests.** `browserShown` table: shown only for `mode 'normal'`, panel open, browser view, no overlay, not sliding; each other row false. `holdOverlay`: two holds → open; one release → still open; both → closed; double release is harmless. `browserId` is stable and matches `[a-z0-9]{1,24}`.
@@ -133,6 +145,7 @@
 ### Task 7: Docs and the real-app hand-off
 
 **Files:**
+
 - Modify: `CLAUDE.md` (one product line under the panel/tabs decisions)
 
 - [ ] **Step 1:** Add: "**Artifacts** Claude publishes (Claude Code's own `Artifact` tool, Settings › Chats) open in the right panel's browser, one tab each, logged in to claude.ai once; they never take the keyboard."
