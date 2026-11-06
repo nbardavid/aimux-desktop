@@ -9,6 +9,8 @@ import {
   useState,
 } from 'react'
 
+import { cn } from '@/lib/utils'
+
 interface Props {
   label: string
   value: number
@@ -17,6 +19,8 @@ interface Props {
   /** +1 when dragging right grows the panel (the sidebar), -1 when it shrinks it (the git panel). */
   direction: 1 | -1
   onChange: (width: number) => void
+  /** While it is held: a native view beside it would take the pointer, so it steps aside. */
+  onDragging?: (dragging: boolean) => void
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, Math.round(v)))
@@ -27,8 +31,11 @@ function drawn(splitter: HTMLElement, direction: 1 | -1, value: number) {
   return panel?.getBoundingClientRect().width ?? value
 }
 
-/** A 1 px line with a wider grab area; drag it, or focus it and use the arrows. */
-export function Splitter({ direction, label, max, min, onChange, value }: Props) {
+/**
+ * A 1 px line with a wider grab area, wider on the side it pushes into (the panel's own side
+ * may be a native page, which takes the pointer); drag it, or focus it and use the arrows.
+ */
+export function Splitter({ direction, label, max, min, onChange, onDragging, value }: Props) {
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     const start = e.clientX
@@ -41,8 +48,10 @@ export function Splitter({ direction, label, max, min, onChange, value }: Props)
       target.removeEventListener('pointermove', move)
       target.removeEventListener('pointerup', up)
       document.body.classList.remove('resizing')
+      onDragging?.(false)
     }
     document.body.classList.add('resizing')
+    onDragging?.(true)
     target.addEventListener('pointermove', move)
     target.addEventListener('pointerup', up)
   }
@@ -54,7 +63,12 @@ export function Splitter({ direction, label, max, min, onChange, value }: Props)
   }
   return (
     <div
-      className="bg-border hover:bg-line-strong active:bg-line-strong focus-visible:bg-line-strong relative z-2 w-px flex-none cursor-col-resize transition-[background-color] duration-150 before:absolute before:inset-y-0 before:-inset-x-1 focus-visible:outline-none"
+      className={cn(
+        'bg-border hover:bg-line-strong active:bg-line-strong focus-visible:bg-line-strong relative z-2 w-px flex-none cursor-col-resize transition-[background-color] duration-150 before:absolute before:inset-y-0 focus-visible:outline-none',
+        direction === 1
+          ? 'before:-right-2.5 before:-left-1.5'
+          : 'before:-left-2.5 before:-right-1.5'
+      )}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}

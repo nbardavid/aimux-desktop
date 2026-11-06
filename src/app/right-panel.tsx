@@ -60,8 +60,10 @@ export function RightPanel({
     : LIMITS.git
 
   const [sliding, setSliding] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const covered = useCovered(placeholder)
-  const shown = browserShown({ covered, mode: 'normal', panelOpen: open, sliding, view })
+  const settled = !sliding && !dragging
+  const shown = browserShown({ covered, mode: 'normal', panelOpen: open, sliding: !settled, view })
   const loaded = useBrowser(page?.url, placeholder, shown && page !== undefined)
   let cover = null
   if (!nativePages && page) cover = <PageStandIn artifact={page} />
@@ -84,6 +86,7 @@ export function RightPanel({
             max={max}
             direction={-1}
             onChange={(w) => update(page ? { browserWidth: w } : { gitWidth: w })}
+            onDragging={setDragging}
           />
           <GitPanel
             {...panel}
