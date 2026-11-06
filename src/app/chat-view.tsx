@@ -15,7 +15,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
 import { isAppCommand, parseCommand, rankCommands } from '../chat/commands'
-import { type ChatState, type Permission, type SlashCommand, toolSummary } from '../chat/model'
+import {
+  type ChatState,
+  type Permission,
+  questionsOf,
+  type SlashCommand,
+  toolSummary,
+} from '../chat/model'
 import {
   agentCommand,
   agentLabel,
@@ -26,7 +32,8 @@ import {
 import { ModelSelect } from './agent-select'
 import { CommandHint, CommandMenu } from './command-menu'
 import { overlayShown } from './overlay'
-import { QueuedTurn, Transcript } from './transcript'
+import { QuestionCard } from './question-card'
+import { QueuedPrompts, Transcript } from './transcript'
 
 interface Props {
   /** The chat's id: a new one is a chat navigated to, whose composer takes the focus. */
@@ -45,7 +52,12 @@ interface Props {
   onSend: (text: string) => void
   /** One of the app's own commands (`/resume`, `/clear`…), typed or picked. */
   onCommand: (name: string, args: string) => void
-  onAnswer: (permission: Permission, choice: 'allow' | 'always' | 'deny') => void
+  /** `answers`: AskUserQuestion's picks, keyed by question. */
+  onAnswer: (
+    permission: Permission,
+    choice: 'allow' | 'always' | 'deny',
+    answers?: Record<string, string>
+  ) => void
   onInterrupt: () => void
   /** Under the empty chat's question, in place of how the chat works. */
   intro?: ReactNode
@@ -170,6 +182,7 @@ export function ChatView({
   const field = useRef<HTMLTextAreaElement>(null)
   const working = state.status === 'working' || state.status === 'starting'
   const permission = state.pending[0]
+  const questions = permission ? questionsOf(permission) : null
   // Nothing can be typed: Claude has stopped, or an old host holds the chat.
   const off = blocked || state.status === 'exited'
 
@@ -186,7 +199,8 @@ export function ChatView({
   // (⌘↩ Allow, ⇧⌘↩ Always allow, ⌘⌫ Deny), ⇧⌘/ for the effort, Esc to stop, and ⌘L, from
   // anywhere in the window, to type here (a terminal lets it through: appShortcut).
   // While the turn is being stopped, its question can no longer be answered.
-  const answerable = state.stopping ? undefined : permission
+  // A question answers with its picks, from its own card's keys: ⌘↩ never allows it blank.
+  const answerable = state.stopping || questions ? undefined : permission
   const keys = useRef({
     agent,
     answerable,
@@ -323,7 +337,16 @@ export function ChatView({
         {above}
         {/* The column's 720px and 16px either side: 752px of composer. */}
         <div className="relative mx-auto flex w-full max-w-[784px] flex-col gap-2 px-4 pb-4">
-          {permission !== undefined && (
+          {permission !== undefined && questions !== null && (
+            <QuestionCard
+              key={permission.requestId}
+              permission={permission}
+              questions={questions}
+              disabled={state.stopping}
+              onAnswer={(choice, answers) => onAnswer(permission, choice, answers)}
+            />
+          )}
+          {permission !== undefined && questions === null && (
             <PermissionCard
               cwd={cwd}
               permission={permission}
@@ -331,9 +354,7 @@ export function ChatView({
               onAnswer={onAnswer}
             />
           )}
-          {state.queued.map((turn) => (
-            <QueuedTurn key={turn.id} turn={turn} />
-          ))}
+          <QueuedPrompts turns={state.queued} />
           {/* The `/` menu floats over the composer: the composer itself never moves. */}
           <div
             data-composer

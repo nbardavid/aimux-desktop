@@ -36,6 +36,7 @@ import {
   NOTES_ASK,
   previewAnswer,
   PRS,
+  QUESTION_ASK,
   quotaCache,
   SESSIONS,
   SETTINGS,
@@ -105,10 +106,19 @@ const asked = new Map<string, { chatId: string; toolId: string; prompt: string }
 if (!flags.has('empty-inbox'))
   asked.set('perm-tests', { chatId: 'chat-menus', prompt: 'the tests', toolId: 'tool-test' })
 /** What the host replays of a chat; `?empty-inbox` leaves its question out. */
-const replayOf = (id: string) =>
-  (HOSTED_LINES[id] ?? []).filter(
-    (l) => !flags.has('empty-inbox') || !l.includes('"subtype":"can_use_tool"')
+const replayOf = (id: string) => {
+  const lines = (HOSTED_LINES[id] ?? []).filter(
+    (l) =>
+      !(flags.has('empty-inbox') || flags.has('question')) ||
+      !l.includes('"subtype":"can_use_tool"')
   )
+  // `?question`: the busy chat's ask is AskUserQuestion's, before it goes live.
+  return flags.has('question') && id === 'chat-menus'
+    ? [...lines.slice(0, -1), ...QUESTION_ASK, ...lines.slice(-1)]
+    : lines
+}
+if (flags.has('question'))
+  asked.set('perm-question', { chatId: 'chat-menus', prompt: 'a question', toolId: 'tool-ask' })
 let replies = 0
 
 /** Lines spread over `ms`, as Claude writes them. */
@@ -128,8 +138,12 @@ function stop(chatId: string) {
 
 /** Chats in a turn (a reply being written, or a question waiting). */
 const working = new Set<string>(flags.has('empty-inbox') ? [] : ['chat-menus'])
-/** Prompts sent during a turn: Claude Code takes the next one once the turn's result is out. */
-const queued = new Map<string, string[]>()
+interface Prompt {
+  text: string
+  uuid: string
+}
+/** Prompts sent during a turn: once its result is out, Claude Code takes them all as one. */
+const queued = new Map<string, Prompt[]>()
 
 /** A turn's lines over `ms`, its `result` last; then the next queued prompt starts. */
 function turn(chatId: string, lines: string[], ms = 2000) {
@@ -139,10 +153,21 @@ function turn(chatId: string, lines: string[], ms = 2000) {
 
 function nextTurn(chatId: string) {
   working.delete(chatId)
-  const [next, ...rest] = queued.get(chatId) ?? []
-  queued.set(chatId, rest)
-  if (next !== undefined) answerPrompt(chatId, next)
+  const waiting = queued.get(chatId) ?? []
+  // Every text prompt goes in together; a command waits for its own turn, after them.
+  const command = (p: Prompt) => p.text.startsWith('/')
+  const texts = waiting.filter((p) => !command(p))
+  const next = texts.length > 0 ? texts : waiting.slice(0, 1)
+  queued.set(
+    chatId,
+    waiting.filter((p) => !next.includes(p))
+  )
+  if (next.length > 0) answerPrompt(chatId, next)
 }
+
+/** What Claude Code says as it starts a prompt. */
+const startedLine = (p: Prompt) =>
+  JSON.stringify({ command_uuid: p.uuid, state: 'started', type: 'command_lifecycle' })
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
@@ -173,12 +198,14 @@ const MODEL_NAMES = new Map(
   ])
 )
 
-function answerPrompt(chatId: string, text: string) {
+function answerPrompt(chatId: string, prompts: Prompt[]) {
   if (working.has(chatId)) {
-    queued.set(chatId, [...(queued.get(chatId) ?? []), text])
+    queued.set(chatId, [...(queued.get(chatId) ?? []), ...prompts])
     return
   }
   working.add(chatId)
+  later(chats.get(chatId), prompts.map(startedLine))
+  const text = prompts.map((p) => p.text).join('\n\n')
   const model = /^\/model\s+(\S+)/.exec(text)?.[1]
   const effort = /^\/effort\s+(\S+)/.exec(text)?.[1]
   if (model !== undefined) {
@@ -202,32 +229,45 @@ function chatSend(args: Args) {
   const id = str(args.id)
   const message = JSON.parse(str(args.line)) as {
     type?: string
+    uuid?: string
     request_id?: string
     request?: { subtype?: string }
     message?: { content?: { text?: string }[] }
-    response?: { request_id?: string; response?: { behavior?: string } }
+    response?: {
+      request_id?: string
+      response?: { behavior?: string; updatedInput?: { answers?: Record<string, string> } }
+    }
   }
   const channel = chats.get(id)
   if (message.type === 'control_request' && message.request?.subtype === 'initialize')
     later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
   else if (message.type === 'control_request' && message.request?.subtype === 'interrupt') {
+    const busy = working.has(id)
     stop(id)
     for (const [key, a] of asked) if (a.chatId === id) asked.delete(key)
-    // Esc ends the turn; what was queued behind it still runs.
-    turn(id, interrupted(str(message.request_id)), 4000)
+    // Esc ends the turn; what was queued behind it still runs. With nothing running,
+    // Claude only acknowledges it.
+    const [ack, end] = interrupted(str(message.request_id))
+    if (busy) turn(id, [ack ?? '', end ?? ''], 4000)
+    else later(channel, [ack])
   } else if (message.type === 'control_response') {
     const requestId = str(message.response?.request_id)
     const ask = asked.get(requestId)
     if (!ask) return
     asked.delete(requestId)
     const allowed = message.response?.response?.behavior === 'allow'
-    const after = allowed ? 'The tests pass: 86 of 86.' : 'Understood, I will not run them.'
+    const answers = message.response?.response?.updatedInput?.answers
+    let after = allowed ? 'The tests pass: 86 of 86.' : 'Understood, I will not run them.'
+    if (answers) after = `Going with ${Object.values(answers).join('; ')}.`
     turn(id, [
       toolDone(ask.toolId, allowed),
       ...streamedReply(`m-${crypto.randomUUID()}`, after),
       turnEnd(0.0031, 4200),
     ])
-  } else if (message.type === 'user') answerPrompt(id, message.message?.content?.[0]?.text ?? '')
+  } else if (message.type === 'user') {
+    const text = message.message?.content?.[0]?.text ?? ''
+    answerPrompt(id, [{ text, uuid: message.uuid ?? crypto.randomUUID() }])
+  }
 }
 
 /** The transcript Claude Code keeps of a session: a fixture's, or what its host replays. */

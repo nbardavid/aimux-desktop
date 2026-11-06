@@ -320,6 +320,45 @@ const MENUS = [
   LIVE,
 ]
 
+/** `?question`: the busy chat asks with AskUserQuestion instead of running the tests. */
+const QUESTIONS = [
+  {
+    header: 'Scope',
+    multiSelect: false,
+    options: [
+      { description: 'Only the files this branch touched.', label: 'Changed files' },
+      { description: 'Slower, catches what the menus broke elsewhere.', label: 'Whole suite' },
+    ],
+    question: 'Which tests should I run?',
+  },
+  {
+    header: 'Fixes',
+    multiSelect: true,
+    options: [
+      { description: 'Commit nothing, list what fails.', label: 'Report only' },
+      { description: 'Patch what fails in the menus.', label: 'Fix menus' },
+      { description: 'Patch the snapshot files too.', label: 'Update snapshots' },
+    ],
+    question: 'What may I change?',
+  },
+]
+export const QUESTION_ASK = [
+  assistant('m-menus-ask', [
+    { id: 'tool-ask', input: { questions: QUESTIONS }, name: 'AskUserQuestion', type: 'tool_use' },
+  ]),
+  line({
+    request: {
+      input: { questions: QUESTIONS },
+      permission_suggestions: [],
+      subtype: 'can_use_tool',
+      tool_name: 'AskUserQuestion',
+      tool_use_id: 'tool-ask',
+    },
+    request_id: 'perm-question',
+    type: 'control_request',
+  }),
+]
+
 /** A chat that finished while nobody looked: `done` in the sidebar and the inbox. */
 const NOTES = [
   initAnswer('chat-notes'),

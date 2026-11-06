@@ -239,35 +239,97 @@ describe('a prompt sent while Claude works', () => {
     type: 'result',
   })
 
-  test('waits above the composer; answers stay under their own prompt', () => {
-    let s = reduceLine(
-      initialChat,
-      JSON.stringify({ session_id: 's', subtype: 'init', type: 'system' })
-    )
-    s = sendTurn(s, 'Run the tests', 'u1')
-    expect(s.queued).toEqual([])
-    s = reduceLine(s, say('m1', 'Running them.'))
-    s = sendTurn(s, 'also check lint', 'u2')
+  /** What Claude Code says as it starts a prompt. */
+  const took = (uuid: string) =>
+    JSON.stringify({ command_uuid: uuid, state: 'started', type: 'command_lifecycle' })
+  const ack = (requestId: string) =>
+    JSON.stringify({
+      response: { request_id: requestId, response: { still_queued: [] }, subtype: 'success' },
+      type: 'control_response',
+    })
+  const working = () => {
+    const init = JSON.stringify({ session_id: 's', subtype: 'init', type: 'system' })
+    const s = sendTurn(reduceLine(initialChat, init), 'Run the tests', 'u1')
+    return reduceLine(reduceLine(s, took('u1')), say('m1', 'Running them.'))
+  }
+
+  test('wait above the composer until Claude takes them, then read as one prompt', () => {
+    let s = sendTurn(working(), 'also check lint', 'u2')
     s = sendTurn(s, 'and format', 'u3')
     expect(s.queued.map((t) => t.id)).toEqual(['u2', 'u3'])
     expect(s.turns.map((t) => t.id)).toEqual(['u1', 'm1'])
     s = reduceLine(s, say('m1b', 'All 86 pass.'))
-    // The turn's result: the first queued prompt is Claude's next turn.
+    // The result alone moves nothing: Claude has not taken them yet.
     s = reduceLine(s, result)
     expect(s.status).toBe('working')
-    expect(s.queued.map((t) => t.id)).toEqual(['u3'])
-    s = reduceLine(s, say('m2', 'Lint is clean.'))
-    s = reduceLine(s, result)
-    s = reduceLine(s, say('m3', 'Formatted.'))
+    expect(s.queued).toHaveLength(2)
+    s = reduceLine(s, took('u2'))
+    s = reduceLine(s, took('u3'))
+    expect(s.queued).toEqual([])
+    expect(s.turns.at(-1)?.blocks).toEqual([
+      { kind: 'text', text: 'also check lint\n\nand format' },
+    ])
+    s = reduceLine(s, say('m2', 'Lint is clean, formatted.'))
     s = reduceLine(s, result)
     expect(s.status).toBe('idle')
-    expect(s.queued).toEqual([])
     const exs = exchanges(s.turns, false)
     expect(exs.map((e) => [e.user?.id, e.answer])).toEqual([
       ['u1', 'All 86 pass.'],
-      ['u2', 'Lint is clean.'],
-      ['u3', 'Formatted.'],
+      ['u2', 'Lint is clean, formatted.'],
     ])
+  })
+
+  test('taken mid-turn, at a tool call: the turn answers them, one result ends it', () => {
+    let s = sendTurn(working(), 'say APPLE', 'u2')
+    s = reduceLine(s, took('u2'))
+    expect(s.turns.map((t) => t.id)).toEqual(['u1', 'm1', 'u2'])
+    s = reduceLine(s, say('m2', 'APPLE'))
+    s = reduceLine(s, result)
+    expect(s.status).toBe('idle')
+    expect(s.queued).toEqual([])
+  })
+
+  test('a slash command stays its own prompt', () => {
+    let s = sendTurn(working(), '/context', 'u2')
+    s = sendTurn(s, 'say BANANA', 'u3')
+    s = reduceLine(s, took('u3'))
+    expect(s.queued.map((t) => t.id)).toEqual(['u2'])
+    s = reduceLine(s, result)
+    expect(s.status).toBe('working')
+    s = reduceLine(s, took('u2'))
+    expect(s.turns.at(-1)?.blocks[0]?.kind).toBe('command')
+  })
+
+  test('a stop with nothing running ends on its acknowledgement, not a result', () => {
+    // A prompt shown as running that Claude never ran: Esc must not hang on "Stopping…".
+    let s = { ...working(), running: false, stopping: true }
+    s = sendTurn(s, 'never taken', 'u2')
+    s = reduceLine(s, ack('stop-1'))
+    expect(s.stopping).toBe(false)
+    expect(s.status).toBe('idle')
+    expect(s.queued).toEqual([])
+    expect(s.turns.at(-1)?.id).toBe('u2')
+  })
+
+  test('a stop with a turn running waits for its result', () => {
+    let s = { ...working(), stopping: true }
+    s = reduceLine(s, ack('stop-1'))
+    expect(s.stopping).toBe(true)
+    s = reduceLine(s, JSON.stringify({ subtype: 'error_during_execution', type: 'result' }))
+    expect(s.stopping).toBe(false)
+    expect(s.status).toBe('idle')
+    expect(s.errors).toEqual([])
+  })
+
+  test('a Claude that never reports its prompts takes them all at its result', () => {
+    let s = sendTurn({ ...initialChat, status: 'idle' }, 'one', 'u1')
+    s = sendTurn(s, 'two', 'u2')
+    s = sendTurn(s, 'three', 'u3')
+    s = reduceLine(s, say('m1', 'Done.'))
+    s = reduceLine(s, result)
+    expect(s.status).toBe('working')
+    expect(s.queued).toEqual([])
+    expect(s.turns.at(-1)?.blocks).toEqual([{ kind: 'text', text: 'two\n\nthree' }])
   })
 
   test('a Claude that exits leaves the queued prompts in the transcript', () => {
