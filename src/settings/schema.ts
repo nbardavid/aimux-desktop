@@ -1,6 +1,6 @@
 // The app's settings, kept in settings.json next to its catalog. Only what the app reads.
 
-import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS } from '../app/loaders'
+import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS, STATUS_LOADERS } from '../app/loaders'
 
 export type SettingValue = boolean | number | string
 
@@ -31,8 +31,8 @@ export type Row =
       help: string
       fallback: string
       options: string[]
-      /** `loader`: each option plays, in a grid under the label. */
-      preview?: 'loader'
+      /** Each option plays, in a grid under the label: as text (`loader`) or as dots (`dots`). */
+      preview?: 'loader' | 'dots'
     }
 
 export interface Section {
@@ -53,6 +53,15 @@ export const SECTIONS: Section[] = [
         kind: 'select',
         label: 'Clean up effect',
         options: ['Dust', 'Brush', 'Glint', 'None'],
+      },
+      {
+        fallback: DEFAULT_LOADERS.status,
+        help: 'What shows wherever something works: the sidebar, tabs, tool rows.',
+        id: LOADER_SETTINGS.status,
+        kind: 'select',
+        label: 'Status loader',
+        options: STATUS_LOADERS,
+        preview: 'dots',
       },
       {
         fallback: DEFAULT_LOADERS.working,

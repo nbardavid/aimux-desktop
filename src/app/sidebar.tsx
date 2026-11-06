@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 
 import type { Project, Signal, Workspace } from '../model/catalog'
 
-import { dotClass, StatusDot } from './status-dot'
+import { StatusDot } from './status-dot'
 import { RenameField } from './tab-bar'
 
 export interface DiffStat {
@@ -347,9 +347,32 @@ export function Sidebar(props: Props) {
   )
 }
 
+/** How long after a row first draws its signal counts as found rather than new. */
+const SETTLE_MS = 1500
+
 /**
- * A workspace: what its agent is doing (the working spinner, the waiting dot, the done dot
- * while unread, an idle dot), its task (the first chat's title; a name the user chose
+ * The aimux TUI's row tint: a workspace that finished or waits for you lights up once in its
+ * colour, then keeps a faint wash from the left edge while it stays so. `flash` is read when
+ * the tint appears: a row already finished or waiting when the sidebar drew it doesn't flash.
+ */
+function RowTint({ flash, signal }: { signal: 'done' | 'waiting'; flash: boolean }) {
+  const [play] = useState(flash)
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute inset-0 -z-10 rounded-md opacity-30',
+        'bg-[linear-gradient(90deg,color-mix(in_srgb,var(--tone)_40%,transparent),transparent_60%)]',
+        signal === 'done' ? '[--tone:var(--good)]' : '[--tone:var(--warn)]',
+        play && 'animate-[tint_0.7s_cubic-bezier(0.2,0,0,1)]'
+      )}
+    />
+  )
+}
+
+/**
+ * A workspace: what its agent is doing (the working loader, the waiting dot, the done dot
+ * while unread, nothing while idle) over its tint, its task (the first chat's title; a name the user chose
  * outranks it, and with neither, the colour word), bold while a finished turn is unread; at
  * the right its colour word and age. On hover, its menu button and, in a tooltip, its diff,
  * branch and ⌘ number.
@@ -365,6 +388,13 @@ function WorkspaceRow(
   const reported = props.signals[ws.id] ?? null
   const signal = active && reported === 'done' ? null : reported
   const unread = signal === 'done'
+  // The signals settle while the chats load and replay: what a row shows then, it shows
+  // without a flash. A tint that comes after has news to tell.
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(true), SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [])
   const diff = props.diffs[ws.path]
   const facts = workspaceFacts(ws, props.chats ?? [])
   const renaming = ws.id === props.renamingId
@@ -382,11 +412,7 @@ function WorkspaceRow(
       key={signal ?? 'idle'}
       className="animate-in fade-in flex size-3.5 flex-none items-center justify-center duration-160 ease-out"
     >
-      {signal === null ? (
-        <span className={dotClass('idle')} role="img" aria-label="Idle" />
-      ) : (
-        <StatusDot signal={signal} />
-      )}
+      {signal !== null && <StatusDot signal={signal} />}
     </span>
   )
   const tip = [
@@ -398,11 +424,14 @@ function WorkspaceRow(
   return (
     <div
       className={cn(
-        'group/row text-muted-foreground relative rounded-md text-sm transition-[background-color] duration-120 [--row:var(--sidebar)]',
+        'group/row text-muted-foreground relative isolate rounded-md text-sm transition-[background-color] duration-120 [--row:var(--sidebar)]',
         active ? 'bg-active [--row:var(--active)]' : 'hover:bg-hover hover:[--row:var(--hover)]'
       )}
       onContextMenu={menu}
     >
+      {(signal === 'done' || signal === 'waiting') && (
+        <RowTint key={signal} signal={signal} flash={settled} />
+      )}
       {renaming ? (
         // In place of the row's button: a field inside a button would click it.
         <div className={row}>
