@@ -38,46 +38,68 @@ function Intelligence({ models, onChange, value }: Props) {
           {value.effort === '' ? 'Auto' : effortLabel(value.effort)}
         </span>
       </div>
-      {/* One segment per level, inked up to the chosen one, its name right under it. */}
+      {/*
+        A slider whose stops sit at the centre of each level's name: the track runs from the
+        first name's centre to the last's, a dot marks every stop, the knob snaps between them.
+        A native range, invisible, on top, gives drag, keys and accessibility.
+      */}
       <div
-        role="radiogroup"
-        aria-label="Intelligence"
-        className="grid gap-1"
+        className="relative grid"
         style={{ gridTemplateColumns: `repeat(${levels.length}, minmax(0, 1fr))` }}
-        // The list owns the arrows; here they step the level.
-        onKeyDown={(e) => {
-          const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key]
-          e.stopPropagation()
-          if (step === undefined) return
-          e.preventDefault()
-          set(Math.min(levels.length - 1, Math.max(0, at + step)))
-        }}
       >
+        {/* The container: a recessed well the knob travels in, nothing else inked. */}
+        <div className="bg-chrome pointer-events-none absolute inset-x-0 top-0 h-7 rounded-lg shadow-[inset_0_0_0_1px_rgb(43_40_38/0.06)]">
+          <div
+            className="absolute inset-y-0"
+            style={{ left: `${50 / levels.length}%`, right: `${50 / levels.length}%` }}
+          >
+            {levels.map((level, i) => (
+              <span
+                key={level}
+                className={cn(
+                  'absolute top-1/2 h-1.5 w-px -translate-1/2 rounded-full transition-opacity duration-200',
+                  'bg-foreground/20',
+                  i === at && 'opacity-0'
+                )}
+                style={{ left: `${(i / (levels.length - 1)) * 100}%` }}
+              />
+            ))}
+            <span
+              className="bg-foreground absolute top-1/2 h-5 w-2.5 -translate-1/2 rounded-[4px] shadow-[0_1px_2px_rgb(43_40_38/0.25)] transition-[left] duration-200 ease-out"
+              style={{ left: `${(at / (levels.length - 1)) * 100}%` }}
+            />
+          </div>
+        </div>
+        <input
+          type="range"
+          className="absolute top-0 m-0 h-7 cursor-pointer opacity-0"
+          // The knob's travel: from the first stop to the last, so a drag lands where it points.
+          style={{
+            left: `calc(${50 / levels.length}% - 8px)`,
+            width: `calc(${100 - 100 / levels.length}% + 16px)`,
+          }}
+          min={0}
+          max={levels.length - 1}
+          step={1}
+          value={at}
+          aria-label="Intelligence"
+          aria-valuetext={short(value.effort)}
+          onChange={(e) => set(Number(e.target.value))}
+          // The list owns the arrows; on the slider they move the slider.
+          onKeyDown={(e) => e.stopPropagation()}
+        />
         {levels.map((level, i) => (
           <button
             type="button"
-            role="radio"
-            aria-checked={i === at}
-            tabIndex={i === at ? 0 : -1}
             key={level}
-            className="group flex cursor-pointer flex-col items-stretch gap-1.5 rounded-sm pt-1 focus-visible:outline-none"
+            tabIndex={-1}
+            className={cn(
+              'mt-9 text-center text-xs transition-colors duration-120 ease-out',
+              i === at ? 'text-foreground font-medium' : 'text-faint hover:text-foreground'
+            )}
             onClick={() => set(i)}
           >
-            <span
-              className={cn(
-                'h-1 rounded-full transition-colors duration-150 ease-out',
-                i <= at ? 'bg-foreground' : 'bg-border group-hover:bg-faint',
-                'group-focus-visible:ring-ring/50 group-focus-visible:ring-2'
-              )}
-            />
-            <span
-              className={cn(
-                'text-center text-xs transition-colors duration-120 ease-out',
-                i === at ? 'text-foreground font-medium' : 'text-faint group-hover:text-foreground'
-              )}
-            >
-              {short(level)}
-            </span>
+            {short(level)}
           </button>
         ))}
       </div>
