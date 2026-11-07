@@ -145,6 +145,12 @@ export function useChats(hooks: Hooks) {
         for (const artifact of newPublishes(blocksOf(c.state), blocksOf(state))) {
           queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
         }
+        // Just compacted: measure what is left, so the meter drops at once.
+        const emptied = c.state.context !== null || c.state.usage !== null
+        if (emptied && state.context === null && state.usage === null && !replaying) {
+          const ask = contextUsageLine(`${USAGE}${crypto.randomUUID()}`)
+          queueMicrotask(() => void invoke('chat_send', { id, line: ask }))
+        }
         return next
       })
     },
