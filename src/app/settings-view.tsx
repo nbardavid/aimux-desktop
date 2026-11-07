@@ -12,6 +12,7 @@ import { BrailleDots, BrailleSpinner } from './braille-spinner'
 import { previewCleanup } from './cleanup-effect'
 import { noteLoaderSetting } from './loader-choice'
 import { isLoader, LOADER_LABELS } from './loaders'
+import { noteTerminalSetting } from './terminal-font'
 import { devBuild, type Update } from './update-button'
 
 type Stored = Record<string, SettingValue>
@@ -304,6 +305,7 @@ export function SettingsView({
     invoke('write_setting', { id, value })
       .then(() => {
         noteLoaderSetting(id, value)
+        noteTerminalSetting(id, value)
         setStored((state) => {
           const next = { ...state }
           if (value === null) delete next[id]

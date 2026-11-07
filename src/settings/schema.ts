@@ -108,6 +108,30 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    id: 'terminal',
+    label: 'Terminal',
+    rows: [
+      {
+        fallback: '',
+        help: 'A font installed on this Mac, by its name (a Nerd Font for icons). Empty: Geist Mono.',
+        id: 'terminal.fontFamily',
+        kind: 'text',
+        label: 'Font',
+        placeholder: 'JetBrainsMono Nerd Font',
+      },
+      {
+        fallback: 12.5,
+        help: 'In points.',
+        id: 'terminal.fontSize',
+        kind: 'number',
+        label: 'Font size',
+        max: 24,
+        min: 9,
+        step: 0.5,
+      },
+    ],
+  },
+  {
     id: 'git',
     label: 'Workspaces',
     rows: [
