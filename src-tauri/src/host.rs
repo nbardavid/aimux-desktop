@@ -827,8 +827,15 @@ mod tests {
             r#"{"op":"term_open","id":"t2","start":{"cwd":"/tmp","cols":80,"rows":24,"command":"sleep 0.3; echo done-late","workspaceId":"w","title":"T","tag":"setup"}}"#,
         );
         drop(a);
-        std::thread::sleep(Duration::from_millis(800));
-        let list = request(&sock, r#"{"op":"list"}"#);
+        // The shell reads the user's rc files first (`-i`): give it time, without a fixed wait.
+        let mut list = request(&sock, r#"{"op":"list"}"#);
+        for _ in 0..100 {
+            if list["terms"][0]["ended"] == true {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            list = request(&sock, r#"{"op":"list"}"#);
+        }
         assert_eq!(list["terms"][0]["ended"], true);
         assert_eq!(list["terms"][0]["tag"], "setup");
         let mut b = open(&sock, r#"{"op":"term_open","id":"t2"}"#);

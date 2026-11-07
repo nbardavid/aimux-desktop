@@ -39,7 +39,9 @@ pub fn spawn(cwd: &str, cols: u16, rows: u16, command: Option<&str>) -> Result<S
         Some(command) => {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
             let mut cmd = CommandBuilder::new(shell);
-            cmd.args(["-l", "-c", command]);
+            // Interactive too (`-i`): the shell reads ~/.zshrc, where tools put themselves on
+            // the PATH (bun, nvm…), so a command finds what the user's terminal finds.
+            cmd.args(["-l", "-i", "-c", command]);
             cmd
         }
         None => CommandBuilder::new_default_prog(),
