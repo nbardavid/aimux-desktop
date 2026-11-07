@@ -35,7 +35,7 @@ import { TopBar } from './app/top-bar'
 import { UpdateButton, useUpdate } from './app/update-button'
 import { useArtifacts } from './app/use-artifacts'
 import { useCatalog } from './app/use-catalog'
-import { chatSignal, type ChatTab, useChats } from './app/use-chats'
+import { chatSignal, type ChatTab, turnsEnded, useChats } from './app/use-chats'
 import { type FileChange, useGit } from './app/use-git'
 import { HOST_BLOCKED, useHost } from './app/use-host'
 import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
@@ -289,7 +289,8 @@ export function App() {
   }, [active?.id, chats, mode])
 
   const paths = useMemo(() => catalog.workspaces.map((w) => w.path), [catalog.workspaces])
-  const git = useGit(ws?.path, paths)
+  const settled = useMemo(() => turnsEnded(chats.chats, ws?.id), [chats.chats, ws?.id])
+  const git = useGit(ws?.path, paths, settled)
   const quotas = useQuotas()
   const { layout, update } = useLayout()
   const artifacts = useArtifacts({

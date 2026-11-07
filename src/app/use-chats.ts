@@ -456,3 +456,9 @@ export function useChats(hooks: Hooks) {
     ]
   )
 }
+
+/** Turns ended by a workspace's chats: the PR is read again after each (Claude may open it). */
+export const turnsEnded = (chats: readonly ChatTab[], workspaceId: string | undefined) =>
+  chats
+    .filter((c) => c.record.workspaceId === workspaceId)
+    .reduce((n, c) => n + c.state.turns.filter((t) => t.end !== undefined).length, 0)
