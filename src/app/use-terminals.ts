@@ -9,6 +9,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { HostTerm } from './use-host'
 
 import { appShortcut } from './navigation'
+import { onTerminalFont, terminalFont } from './terminal-font'
 
 export interface TerminalTab {
   id: string
@@ -29,6 +30,8 @@ interface Live {
   /** Settles once the background host has the shell: input waits for it. */
   ready: Promise<unknown>
   opened: boolean
+  /** Stops following Settings › Terminal's font. */
+  unfollow: () => void
 }
 
 // Light, to sit on the window's paper; ANSI colours chosen to read on white.
@@ -97,6 +100,7 @@ export function useTerminals() {
     setTabs((list) => list.filter((t) => t.id !== id))
     if (!entry) return
     void entry.ready.then(async () => invoke('term_kill', { id })).catch(() => {})
+    entry.unfollow()
     entry.term.dispose()
   }, [])
 
@@ -105,8 +109,8 @@ export function useTerminals() {
       const term = new Terminal({
         allowProposedApi: true,
         cursorBlink: true,
-        fontFamily: '"Geist Mono", ui-monospace, Menlo, monospace',
-        fontSize: 12.5,
+        fontFamily: terminalFont().family,
+        fontSize: terminalFont().size,
         lineHeight: 1.25,
         macOptionIsMeta: true,
         scrollback: 10_000,
@@ -153,7 +157,13 @@ export function useTerminals() {
       )
       term.onTitleChange((next) => next.trim() !== '' && edit(id, { title: next.trim() }))
 
-      live.current.set(id, { fit, host, opened: false, ready, term })
+      // Settings › Terminal changed: the font follows, the grid refits to it.
+      const unfollow = onTerminalFont((font) => {
+        term.options.fontFamily = font.family
+        term.options.fontSize = font.size
+        if (term.element?.isConnected === true) fit.fit()
+      })
+      live.current.set(id, { fit, host, opened: false, ready, term, unfollow })
       const tab: TerminalTab = { createdAt: Date.now(), id, tag, title, workspaceId }
       if (exited !== undefined) tab.exited = exited
       setTabs((list) => [...list, tab])
@@ -196,7 +206,7 @@ export function useTerminals() {
    * Shows a tab's terminal inside `el` and keeps it fitted; the returned function takes it
    * out again. The emulator outlives that: switching tabs keeps the scrollback.
    */
-  const attach = useCallback((id: string, el: HTMLElement) => {
+  const attach = useCallback((id: string, el: HTMLElement, focus = true) => {
     const entry = live.current.get(id)
     if (!entry) return () => {}
     el.append(entry.host)
@@ -218,7 +228,7 @@ export function useTerminals() {
     const observer = new ResizeObserver(refit)
     observer.observe(el)
     refit()
-    entry.term.focus()
+    if (focus) entry.term.focus()
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()

@@ -96,6 +96,10 @@ const chats = new Map<string, Channel>()
 const resumes = new Map<string, string | null>()
 const startModels = new Map<string, string>()
 const terms = new Map<string, Channel>()
+/** Each project's run command, once set here. */
+const runCommands = new Map<string, string>()
+const RUN_OUTPUT =
+  '$ bun run dev\r\n\r\n  \x1b[32mVITE\x1b[0m v7.1.2  ready in 412 ms\r\n\r\n  ➜  Local:   \x1b[36mhttp://localhost:1420/\x1b[0m\r\n'
 const unknown = new Set<string>()
 
 /** After the call resolves, as the host's lines arrive. */
@@ -361,8 +365,11 @@ function handle(cmd: string, args: Args): unknown {
     case 'term_open': {
       const channel = args.onData as Channel
       terms.set(str(args.id), channel)
-      const start = args.start as { command?: string | null } | null
-      if (typeof start?.command === 'string') {
+      const start = args.start as { command?: string | null; tag?: string | null } | null
+      if (start?.tag === 'run') {
+        // A dev server: it says where it listens, and keeps running.
+        later(channel, [RUN_OUTPUT])
+      } else if (typeof start?.command === 'string') {
         // A setup script: it prints as it goes, and ends after a while.
         const exit = args.onExit as Channel
         for (const [i, l] of SETUP_RUN.entries()) {
@@ -443,6 +450,13 @@ function handle(cmd: string, args: Args): unknown {
       return BRANCHES
     case 'claude_sessions':
       return SESSIONS
+    case 'run_command':
+      return (
+        runCommands.get(str(args.projectId)) ?? (args.projectId === 'p-aimux' ? 'bun run dev' : '')
+      )
+    case 'set_run_command':
+      runCommands.set(str(args.projectId), str(args.command).trim())
+      return null
     case 'setup_status':
       return { exists: args.projectId === 'p-aimux', path: '.aimux/setup.sh' }
     case 'ensure_setup_script':
