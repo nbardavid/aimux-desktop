@@ -861,8 +861,9 @@ export const Transcript = memo(function Transcript({
 
   return (
     <div className="@container relative flex min-h-0 flex-1 flex-col">
+      {/* Everything in the chat reads as text (I-beam, selectable); its buttons keep the hand. */}
       <div
-        className="min-h-0 flex-1 overflow-auto"
+        className="min-h-0 flex-1 cursor-text overflow-auto select-text"
         ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget

@@ -245,7 +245,7 @@
     box-sizing: border-box;
   }
 
-  /* Prose reads as text: the I-beam over it, and it selects. */
+  /* Prose reads as text wherever it shows (an output card outside the chat too). */
   .md {
     cursor: text;
     -webkit-user-select: text;
