@@ -717,7 +717,7 @@ function LiveLine({ cwd, state, watch }: { cwd: string; state: ChatState; watch:
   const elapsed = useElapsed(state.startedAt)
   const loaders = useLoaderChoice()
   const stoppable = !watch && state.status === 'working' && !state.stopping
-  return (
+  const line = (
     <div className="flex h-7 min-w-0 items-center gap-2.5 text-base">
       <BrailleSpinner
         loader={verb === 'Thinking' ? loaders.thinking : loaders.working}
@@ -735,6 +735,20 @@ function LiveLine({ cwd, state, watch }: { cwd: string; state: ChatState; watch:
           <Kbd className="text-label">esc</Kbd> to stop
         </span>
       )}
+    </div>
+  )
+  if (!state.compacting) return line
+  // No progress is reported, only that it runs: an indeterminate bar, under the line.
+  return (
+    <div className="flex flex-col gap-1.5">
+      {line}
+      <div
+        role="progressbar"
+        aria-label="Compacting the conversation"
+        className="bg-chrome ml-[26px] h-1 w-48 overflow-hidden rounded-full"
+      >
+        <div className="bg-foreground/60 h-full w-2/5 animate-[sweep_1.4s_ease-in-out_infinite] rounded-full motion-reduce:animate-none" />
+      </div>
     </div>
   )
 }

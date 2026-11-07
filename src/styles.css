@@ -353,6 +353,15 @@ body.resizing * {
   }
 }
 
+/* An indeterminate bar's segment: in from the left, out at the right. */
+@keyframes sweep {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 250% 0;
+  }
+}
 @keyframes shimmer {
   from {
     background-position: 100% 0;
