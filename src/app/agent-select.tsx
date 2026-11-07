@@ -1,4 +1,4 @@
-import type { CSSProperties, RefObject } from 'react'
+import type { RefObject } from 'react'
 
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
@@ -23,14 +23,6 @@ const short = (effort: string) => {
   return effort === 'xhigh' ? 'X-High' : effortLabel(effort)
 }
 
-// A 4px track inked up to the value (`--fill`), and a white knob with a hairline ring.
-const RANGE = [
-  'm-0 mt-0.5 h-[18px] w-full cursor-pointer appearance-none bg-transparent focus-visible:outline-none',
-  '[&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-[2px] [&::-webkit-slider-runnable-track]:bg-[linear-gradient(to_right,var(--foreground)_var(--fill),var(--border)_var(--fill))]',
-  '[&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgb(43_40_38/0.18),0_1px_3px_rgb(43_40_38/0.2)] [&::-webkit-slider-thumb]:transition-[scale] [&::-webkit-slider-thumb]:duration-120',
-  'active:[&::-webkit-slider-thumb]:scale-110 focus-visible:[&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgb(43_40_38/0.18),0_0_0_4px_rgb(194_156_135/0.35)]',
-].join(' ')
-
 /** How hard the model thinks, as one slider from Auto to the model's highest effort. */
 function Intelligence({ models, onChange, value }: Props) {
   const current = models.find((m) => m.value === value.model)
@@ -46,32 +38,46 @@ function Intelligence({ models, onChange, value }: Props) {
           {value.effort === '' ? 'Auto' : effortLabel(value.effort)}
         </span>
       </div>
-      <input
-        type="range"
-        className={RANGE}
-        min={0}
-        max={levels.length - 1}
-        step={1}
-        value={at}
+      {/* One segment per level, inked up to the chosen one, its name right under it. */}
+      <div
+        role="radiogroup"
         aria-label="Intelligence"
-        aria-valuetext={short(value.effort)}
-        style={{ '--fill': `${(at / (levels.length - 1)) * 100}%` } as CSSProperties}
-        onChange={(e) => set(Number(e.target.value))}
-        // The list owns the arrows; on the slider they move the slider.
-        onKeyDown={(e) => e.stopPropagation()}
-      />
-      <div className="-mx-1 flex justify-between">
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${levels.length}, minmax(0, 1fr))` }}
+        // The list owns the arrows; here they step the level.
+        onKeyDown={(e) => {
+          const step = { ArrowLeft: -1, ArrowRight: 1 }[e.key]
+          e.stopPropagation()
+          if (step === undefined) return
+          e.preventDefault()
+          set(Math.min(levels.length - 1, Math.max(0, at + step)))
+        }}
+      >
         {levels.map((level, i) => (
           <button
             type="button"
+            role="radio"
+            aria-checked={i === at}
+            tabIndex={i === at ? 0 : -1}
             key={level}
-            className={cn(
-              'text-faint hover:text-foreground rounded-sm px-1 py-0.5 text-xs transition-[color] duration-120 ease-out',
-              i === at && 'text-foreground font-medium'
-            )}
+            className="group flex cursor-pointer flex-col items-stretch gap-1.5 rounded-sm pt-1 focus-visible:outline-none"
             onClick={() => set(i)}
           >
-            {short(level)}
+            <span
+              className={cn(
+                'h-1 rounded-full transition-colors duration-150 ease-out',
+                i <= at ? 'bg-foreground' : 'bg-border group-hover:bg-faint',
+                'group-focus-visible:ring-ring/50 group-focus-visible:ring-2'
+              )}
+            />
+            <span
+              className={cn(
+                'text-center text-xs transition-colors duration-120 ease-out',
+                i === at ? 'text-foreground font-medium' : 'text-faint group-hover:text-foreground'
+              )}
+            >
+              {short(level)}
+            </span>
           </button>
         ))}
       </div>
