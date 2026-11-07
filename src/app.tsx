@@ -12,6 +12,7 @@ import { browserId } from './app/browser-tabs'
 import { ChatView } from './app/chat-view'
 import { cleanupOf } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
+import { Dock } from './app/dock'
 import { GitMode } from './app/git-mode'
 import { HostBar } from './app/host-bar'
 import { Inbox } from './app/inbox'
@@ -25,7 +26,6 @@ import { resumeTarget, type Session } from './app/resume'
 import { ResumePicker } from './app/resume-picker'
 import { RightPanel } from './app/right-panel'
 import { SettingsView } from './app/settings-view'
-import { SetupSection } from './app/setup-section'
 import { type DiffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
 import { Slide, Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
@@ -41,8 +41,8 @@ import { HOST_BLOCKED, useHost } from './app/use-host'
 import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
 import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
-import { useSetup } from './app/use-setup'
 import { useTerminals } from './app/use-terminals'
+import { DOCK_TAGS } from './app/workspace-dock'
 import { availableCommands } from './chat/commands'
 import { type ChatState, type Image, initialChat, toolSummary } from './chat/model'
 import { uncommittedRefusal } from './git/pr'
@@ -235,7 +235,10 @@ export function App() {
   }, [catalog, chats, host.state, setupRan, status.kind, terminals])
 
   const wsChats = chats.chats.filter((c) => c.record.workspaceId === ws?.id)
-  const wsTerms = terminals.tabs.filter((t) => t.workspaceId === ws?.id)
+  const wsAllTerms = terminals.tabs.filter((t) => t.workspaceId === ws?.id)
+  // Setup, Run and the dock's own terminals live in the panel's dock, not in the tabs.
+  const dockTerms = wsAllTerms.filter((t) => t.tag !== undefined && DOCK_TAGS.has(t.tag))
+  const wsTerms = wsAllTerms.filter((t) => t.tag === undefined || !DOCK_TAGS.has(t.tag))
   const tabItems: (TabItem & { at: number })[] = [
     ...wsChats.map((c) => ({
       at: c.record.createdAt,
@@ -253,8 +256,6 @@ export function App() {
     })),
   ].toSorted((a, b) => a.at - b.at)
   const active = tabItems.find((t) => t.id === activeByWs[ws?.id ?? '']) ?? tabItems[0]
-  /** The workspace's last setup run still in a tab. */
-  const setupTab = wsTerms.findLast((t) => t.tag === 'setup')
   const chat = active?.chat === true ? wsChats.find((c) => c.record.id === active.id) : undefined
   const term = active?.chat === false ? wsTerms.find((t) => t.id === active.id) : undefined
   // Where you are, for ⌘P's Recent: the chat on screen, else the workspace. Kept per window.
@@ -305,7 +306,6 @@ export function App() {
     workspaceId: ws?.id,
   })
   publish.current = artifacts.published
-  const setup = useSetup(projectId)
   const changes = ws === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
     () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, sum(c)])),
@@ -440,7 +440,7 @@ export function App() {
     else selectTab(ws.id, terminals.create({ cwd: ws.path, workspaceId: ws.id }))
   }
 
-  /** The project's setup script in a tab of `w`; how it ended is kept for the git panel. */
+  /** The project's setup script in `w`'s dock; how it ended is kept for the git panel. */
   const runSetup = async (w: Workspace) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
     const script = await invoke<string>('ensure_setup_script', { projectId: w.projectId })
@@ -733,26 +733,6 @@ export function App() {
     }
   }
 
-  const setupAction = async (what: 'edit' | 'run' | 'chat') => {
-    if (ws === undefined) return
-    try {
-      if (what === 'edit') await invoke('edit_setup_script', { projectId: ws.projectId })
-      else if (what === 'run') selectTab(ws.id, await runSetup(ws))
-      else {
-        const script = await invoke<string>('ensure_setup_script', { projectId: ws.projectId })
-        newChat(ws, SETUP_PROMPT(script))
-      }
-      void setup.refresh()
-    } catch (error) {
-      const failed = {
-        chat: "Couldn't create the setup script",
-        edit: "Couldn't open the setup script",
-        run: "Couldn't run the setup script",
-      }[what]
-      fail(failed)(error)
-    }
-  }
-
   const openFile = (file: FileChange) => {
     setGitFile(file)
     setMode('git')
@@ -1012,15 +992,16 @@ export function App() {
                       path: ws.path,
                       pr: git.pr,
                       setup: (
-                        <SetupSection
-                          status={setup.status}
-                          workspace={ws}
+                        <Dock
+                          ws={ws}
                           projectName={project?.name ?? ''}
-                          run={setupTab ? { running: setupTab.exited === undefined } : null}
-                          onShowRun={() => setupTab && selectTab(ws.id, setupTab.id)}
-                          onEdit={() => void setupAction('edit')}
-                          onRun={() => void setupAction('run')}
-                          onAgent={() => void setupAction('chat')}
+                          terms={dockTerms}
+                          terminals={terminals}
+                          hostReady={host.state.kind === 'ready'}
+                          onBlocked={(title) => setNotice({ text: HOST_BLOCKED, title })}
+                          fail={fail}
+                          runSetup={runSetup}
+                          onWriteSetup={(script) => newChat(ws, SETUP_PROMPT(script))}
                         />
                       ),
                     }

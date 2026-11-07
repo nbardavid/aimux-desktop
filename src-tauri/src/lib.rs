@@ -102,6 +102,8 @@ pub fn run() {
             store::ensure_setup_script,
             store::edit_setup_script,
             store::setup_ran,
+            store::run_command,
+            store::set_run_command,
             quota::read_quota_cache,
             quota::write_quota_cache,
             quota::fetch_claude_usage,

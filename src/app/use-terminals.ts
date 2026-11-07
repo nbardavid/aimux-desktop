@@ -196,7 +196,7 @@ export function useTerminals() {
    * Shows a tab's terminal inside `el` and keeps it fitted; the returned function takes it
    * out again. The emulator outlives that: switching tabs keeps the scrollback.
    */
-  const attach = useCallback((id: string, el: HTMLElement) => {
+  const attach = useCallback((id: string, el: HTMLElement, focus = true) => {
     const entry = live.current.get(id)
     if (!entry) return () => {}
     el.append(entry.host)
@@ -218,7 +218,7 @@ export function useTerminals() {
     const observer = new ResizeObserver(refit)
     observer.observe(el)
     refit()
-    entry.term.focus()
+    if (focus) entry.term.focus()
     return () => {
       cancelAnimationFrame(frame)
       observer.disconnect()

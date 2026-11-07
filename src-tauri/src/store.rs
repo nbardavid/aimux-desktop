@@ -727,6 +727,35 @@ pub fn edit_setup_script(project_id: String) -> Result<(), String> {
         .map(|_| ())
 }
 
+/// The project's run command (`projects/<id>/run`): what Run starts in a workspace.
+fn run_path(project_id: &str) -> Result<PathBuf, String> {
+    Ok(setup_path(project_id)?.with_file_name("run"))
+}
+
+/// The project's run command, "" when none is set.
+#[tauri::command]
+pub fn run_command(project_id: String) -> Result<String, String> {
+    match std::fs::read_to_string(run_path(&project_id)?) {
+        Ok(text) => Ok(text.trim().to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Saves the project's run command; an empty one removes it.
+#[tauri::command]
+pub fn set_run_command(project_id: String, command: String) -> Result<(), String> {
+    let path = run_path(&project_id)?;
+    let command = command.trim();
+    if command.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        };
+    }
+    write_atomic(&path, &format!("{command}\n"))
+}
+
 #[tauri::command]
 pub fn setup_ran(
     store: State<'_, Store>,
