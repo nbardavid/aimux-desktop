@@ -168,7 +168,8 @@ export function ContextMeter({
   const [open, setOpen] = useState(false)
   if (context === null && usage === null) return null
   const used = context ? contextUsed(context) : (usage?.total ?? 0)
-  const size = context ? contextWindow(context, model) : (usage?.max ?? 200_000)
+  // Claude Code's own measure knows the window best; a turn's result can under-report it.
+  const size = usage?.max ?? (context ? contextWindow(context, model) : 200_000)
   const share = Math.min(1, used / size)
   const tone = contextTone(share)
   const percent = Math.round(share * 100)
@@ -177,8 +178,6 @@ export function ContextMeter({
     setOpen(false)
     onSend(command)
   }
-  const shownUsed = usage?.total ?? used
-  const shownSize = usage?.max ?? size
   let rank = 0
   const colored = rows?.map((row) => ({
     color: swatch(row, row.kind === 'loaded' ? rank++ : 0),
@@ -206,8 +205,7 @@ export function ContextMeter({
         <div className="flex items-baseline justify-between">
           <span className="font-medium">Context</span>
           <span className="text-faint text-xs tabular-nums">
-            {fine(shownUsed)} of {tokens(shownSize)} ·{' '}
-            {Math.round((shownUsed / (shownSize || 1)) * 100)}%
+            {fine(used)} of {tokens(size)} · {percent}%
           </span>
         </div>
         <div className="bg-chrome flex h-1.5 overflow-hidden rounded-full">

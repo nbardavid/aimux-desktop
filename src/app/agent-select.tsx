@@ -1,4 +1,4 @@
-import type { CSSProperties, RefObject } from 'react'
+import type { RefObject } from 'react'
 
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
@@ -23,14 +23,6 @@ const short = (effort: string) => {
   return effort === 'xhigh' ? 'X-High' : effortLabel(effort)
 }
 
-// A 4px track inked up to the value (`--fill`), and a white knob with a hairline ring.
-const RANGE = [
-  'm-0 mt-0.5 h-[18px] w-full cursor-pointer appearance-none bg-transparent focus-visible:outline-none',
-  '[&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-[2px] [&::-webkit-slider-runnable-track]:bg-[linear-gradient(to_right,var(--foreground)_var(--fill),var(--border)_var(--fill))]',
-  '[&::-webkit-slider-thumb]:-mt-1.5 [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgb(43_40_38/0.18),0_1px_3px_rgb(43_40_38/0.2)] [&::-webkit-slider-thumb]:transition-[scale] [&::-webkit-slider-thumb]:duration-120',
-  'active:[&::-webkit-slider-thumb]:scale-110 focus-visible:[&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgb(43_40_38/0.18),0_0_0_4px_rgb(194_156_135/0.35)]',
-].join(' ')
-
 /** How hard the model thinks, as one slider from Auto to the model's highest effort. */
 function Intelligence({ models, onChange, value }: Props) {
   const current = models.find((m) => m.value === value.model)
@@ -46,28 +38,64 @@ function Intelligence({ models, onChange, value }: Props) {
           {value.effort === '' ? 'Auto' : effortLabel(value.effort)}
         </span>
       </div>
-      <input
-        type="range"
-        className={RANGE}
-        min={0}
-        max={levels.length - 1}
-        step={1}
-        value={at}
-        aria-label="Intelligence"
-        aria-valuetext={short(value.effort)}
-        style={{ '--fill': `${(at / (levels.length - 1)) * 100}%` } as CSSProperties}
-        onChange={(e) => set(Number(e.target.value))}
-        // The list owns the arrows; on the slider they move the slider.
-        onKeyDown={(e) => e.stopPropagation()}
-      />
-      <div className="-mx-1 flex justify-between">
+      {/*
+        A slider whose stops sit at the centre of each level's name: the track runs from the
+        first name's centre to the last's, a dot marks every stop, the knob snaps between them.
+        A native range, invisible, on top, gives drag, keys and accessibility.
+      */}
+      <div
+        className="relative grid"
+        style={{ gridTemplateColumns: `repeat(${levels.length}, minmax(0, 1fr))` }}
+      >
+        {/* The container: a recessed well the knob travels in, nothing else inked. */}
+        <div className="bg-chrome pointer-events-none absolute inset-x-0 top-0 h-7 rounded-lg shadow-[inset_0_0_0_1px_rgb(43_40_38/0.06)]">
+          <div
+            className="absolute inset-y-0"
+            style={{ left: `${50 / levels.length}%`, right: `${50 / levels.length}%` }}
+          >
+            {levels.map((level, i) => (
+              <span
+                key={level}
+                className={cn(
+                  'absolute top-1/2 h-1.5 w-px -translate-1/2 rounded-full transition-opacity duration-200',
+                  'bg-foreground/20',
+                  i === at && 'opacity-0'
+                )}
+                style={{ left: `${(i / (levels.length - 1)) * 100}%` }}
+              />
+            ))}
+            <span
+              className="bg-foreground absolute top-1/2 h-5 w-2.5 -translate-1/2 rounded-[4px] shadow-[0_1px_2px_rgb(43_40_38/0.25)] transition-[left] duration-200 ease-out"
+              style={{ left: `${(at / (levels.length - 1)) * 100}%` }}
+            />
+          </div>
+        </div>
+        <input
+          type="range"
+          className="absolute top-0 m-0 h-7 cursor-pointer opacity-0"
+          // The knob's travel: from the first stop to the last, so a drag lands where it points.
+          style={{
+            left: `calc(${50 / levels.length}% - 8px)`,
+            width: `calc(${100 - 100 / levels.length}% + 16px)`,
+          }}
+          min={0}
+          max={levels.length - 1}
+          step={1}
+          value={at}
+          aria-label="Intelligence"
+          aria-valuetext={short(value.effort)}
+          onChange={(e) => set(Number(e.target.value))}
+          // The list owns the arrows; on the slider they move the slider.
+          onKeyDown={(e) => e.stopPropagation()}
+        />
         {levels.map((level, i) => (
           <button
             type="button"
             key={level}
+            tabIndex={-1}
             className={cn(
-              'text-faint hover:text-foreground rounded-sm px-1 py-0.5 text-xs transition-[color] duration-120 ease-out',
-              i === at && 'text-foreground font-medium'
+              'mt-9 text-center text-xs transition-colors duration-120 ease-out',
+              i === at ? 'text-foreground font-medium' : 'text-faint hover:text-foreground'
             )}
             onClick={() => set(i)}
           >

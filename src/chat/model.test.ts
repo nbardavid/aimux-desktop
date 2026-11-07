@@ -316,6 +316,35 @@ describe('the context window', () => {
     const s = replayTranscript([JSON.stringify(answer('m1'))])
     expect(s.context?.cached).toBe(90_000)
   })
+
+  const usageAnswer = {
+    response: {
+      request_id: 'usage-2',
+      response: { categories: [], maxTokens: 1_000_000, totalTokens: 70_900 },
+      subtype: 'success',
+    },
+    type: 'control_response',
+  }
+
+  test('a compaction forgets the context it emptied, until something measures it again', () => {
+    const boundary = { compact_metadata: { pre_tokens: 165_815 }, subtype: 'compact_boundary' }
+    const s = feed([answer('m1'), usageAnswer, { ...boundary, type: 'system' }])
+    expect(s.context).toBeNull()
+    expect(s.usage).toBeNull()
+    const replayed = replayTranscript(
+      [answer('m1'), { ...boundary, type: 'system' }].map((l) => JSON.stringify(l))
+    )
+    expect(replayed.context).toBeNull()
+  })
+
+  test("Claude Code's breakdown is the context's measure until the next answer", () => {
+    const s = feed([answer('m1'), usageAnswer])
+    expect(s.context && contextUsed(s.context)).toBe(70_900)
+    expect(s.context?.window).toBe(1_000_000)
+    const next = feed([answer('m2')], s)
+    expect(next.context && contextUsed(next.context)).toBe(90_802)
+    expect(next.context?.window).toBe(1_000_000)
+  })
 })
 
 describe('permissionLine', () => {

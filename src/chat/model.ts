@@ -150,6 +150,12 @@ function withUsage(state: ChatState, usage: unknown): ChatState {
   return { ...state, context }
 }
 
+/**
+ * The conversation was just compacted: what the context held is gone, and its new size is
+ * unknown until Claude Code measures it (`get_context_usage`) or the next answer reports it.
+ */
+const compacted = (state: ChatState): ChatState => ({ ...state, context: null, usage: null })
+
 /** The window's size from a turn's `result` (`modelUsage`: the largest of its models'). */
 function withWindow(state: ChatState, modelUsage: unknown): ChatState {
   const sizes = Object.values(obj(modelUsage)).map((u) => num(obj(u).contextWindow))
@@ -379,6 +385,7 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       }
       if (m.subtype === 'status' && m.status === 'requesting')
         return { ...state, status: 'working' }
+      if (m.subtype === 'compact_boundary') return compacted(state)
       return state
     }
     case 'control_response': {
@@ -394,7 +401,10 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       const answer = obj(response.response)
       if (str(response.request_id).startsWith(USAGE)) {
         const usage = parseUsage(answer)
-        return usage ? { ...state, usage } : state
+        if (!usage) return state
+        // Measured just now: the meter shows it until the next answer measures again.
+        const context = { added: usage.total, cached: 0, output: 0, window: usage.max }
+        return { ...state, context, usage }
       }
       // The answer to `initialize`: Claude is ready before its first turn says so.
       const next = Array.isArray(answer.commands)
@@ -612,6 +622,8 @@ export function replayTranscript(lines: readonly string[]): ChatState {
     const before = state.turns.length
     if (m.type === 'system' && m.subtype === 'local_command') {
       state = harnessTurn(state, str(m.content), uuid)
+    } else if (m.type === 'system' && m.subtype === 'compact_boundary') {
+      state = compacted(state)
     } else if (m.type === 'assistant') {
       const id = str(message.id)
       const content = Array.isArray(message.content) ? message.content : []
