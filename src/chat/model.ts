@@ -3,6 +3,9 @@
 // cannot give (a tool's parsed input, or a turn that was never streamed).
 
 import { parseCommand } from './commands'
+import { type ContextUsage, parseUsage, USAGE } from './context-usage'
+
+export { type ContextUsage, contextUsageLine, USAGE } from './context-usage'
 
 export type Block =
   | { kind: 'text'; text: string }
@@ -103,6 +106,8 @@ export interface ChatState {
   agents: Record<string, Turn[]>
   /** How full the context window is, from the last answer's usage; null before any. */
   context: Context | null
+  /** Claude Code's own breakdown of the context, as `get_context_usage` last answered. */
+  usage: ContextUsage | null
 }
 
 /** The context window: what the last request sent and got back, in tokens. */
@@ -134,13 +139,14 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0
 /** The context after an answer whose `usage` is given (unchanged without one). */
 function withUsage(state: ChatState, usage: unknown): ChatState {
   const u = obj(usage)
-  if (u.input_tokens === undefined && u.cache_read_input_tokens === undefined) return state
   const context: Context = {
     added: num(u.input_tokens) + num(u.cache_creation_input_tokens),
     cached: num(u.cache_read_input_tokens),
     output: num(u.output_tokens),
     window: state.context?.window ?? null,
   }
+  // None, or all zeros (a local command's answer): nothing was sent, the context is unchanged.
+  if (contextUsed(context) === 0) return state
   return { ...state, context }
 }
 
@@ -167,6 +173,7 @@ export const initialChat: ChatState = {
   stopping: false,
   tracks: false,
   turns: [],
+  usage: null,
 }
 
 type Json = Record<string, unknown>
@@ -384,8 +391,12 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         for (const turn of state.queued) turns = joinPrompt(turns, turn)
         return { ...state, pending: [], queued: [], status: 'idle', stopping: false, turns }
       }
-      // The answer to `initialize`: Claude is ready before its first turn says so.
       const answer = obj(response.response)
+      if (str(response.request_id).startsWith(USAGE)) {
+        const usage = parseUsage(answer)
+        return usage ? { ...state, usage } : state
+      }
+      // The answer to `initialize`: Claude is ready before its first turn says so.
       const next = Array.isArray(answer.commands)
         ? { ...state, commands: parseCommands(answer.commands) }
         : state
@@ -883,6 +894,15 @@ const shownBlock = (b: Block) =>
 export const isAgentCall = (b: Block): b is Block & { kind: 'tool' } =>
   b.kind === 'tool' && (b.name === 'Agent' || b.name === 'Task')
 
+const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit', 'Write'])
+
+/** A call that writes a file: it shows as its own badge, never folded with the rest. */
+export const isFileEdit = (b: Block): b is Block & { kind: 'tool' } =>
+  b.kind === 'tool' && FILE_TOOLS.has(b.name)
+
+/** Agent calls and file writes stand apart from the folded work. */
+const standsApart = (b: Block) => isAgentCall(b) || isFileEdit(b)
+
 /** A sub-agent, as its card and its own chat show it. */
 export interface AgentRun {
   call: Block & { kind: 'tool' }
@@ -938,7 +958,7 @@ function fold(blocks: Keyed[], apart: (k: Keyed, i: number) => boolean): Item[] 
   for (const [i, k] of blocks.entries()) {
     if (
       apart(k, i) ||
-      isAgentCall(k.block) ||
+      standsApart(k.block) ||
       k.block.kind === 'output' ||
       k.block.kind === 'note'
     ) {
@@ -965,7 +985,7 @@ function itemsOf(blocks: Keyed[], live: boolean, asked: ReadonlySet<string>): It
   const newest = blocks[tool]
   const tail = blocks.slice(tool + 1).filter((k) => k.block.kind === 'text')
   const items = fold(blocks.slice(0, Math.max(tool, 0)), () => false)
-  if (newest && isAgentCall(newest.block)) items.push({ kind: 'block', ...newest })
+  if (newest && standsApart(newest.block)) items.push({ kind: 'block', ...newest })
   else if (newest) {
     // The live line says what it does; a question about it shows it, to answer it.
     const shown = newest.block.kind === 'tool' && asked.has(newest.block.id) ? 1 : 0

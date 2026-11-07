@@ -6,6 +6,7 @@ import {
   artifactUrl,
   type Block,
   type ChatState,
+  contextUsageLine,
   contextUsed,
   contextWindow,
   exitCode,
@@ -259,6 +260,56 @@ describe('the context window', () => {
     expect(contextWindow(c, 'claude-opus-5-5')).toBe(200_000)
     expect(contextWindow(c, 'claude-opus-5-5[1m]')).toBe(1_000_000)
     expect(contextWindow({ ...c, cached: 250_000 }, null)).toBe(1_000_000)
+  })
+
+  test('an answer whose usage is all zeros (a local command) keeps the context', () => {
+    const zero = {
+      message: {
+        content: [{ text: 'x', type: 'text' }],
+        id: 'm9',
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+      type: 'assistant',
+    }
+    expect(feed([answer('m1'), zero]).context?.cached).toBe(90_000)
+  })
+
+  test("Claude Code's own breakdown, asked for with get_context_usage, is kept", () => {
+    expect(JSON.parse(contextUsageLine('usage-1'))).toEqual({
+      request: { subtype: 'get_context_usage' },
+      request_id: 'usage-1',
+      type: 'control_request',
+    })
+    const s = feed([
+      {
+        response: {
+          request_id: 'usage-1',
+          response: {
+            categories: [
+              { color: 'promptBorder', name: 'System prompt', tokens: 2800 },
+              { color: 'inactive', isDeferred: true, name: 'MCP tools (deferred)', tokens: 63_400 },
+              { color: 'inactive', name: 'Free space', tokens: 915_600 },
+            ],
+            maxTokens: 1_000_000,
+            mcpTools: [{ isLoaded: false, name: 'mcp__a__click', serverName: 'a', tokens: 300 }],
+            percentage: 5,
+            totalTokens: 51_400,
+          },
+          subtype: 'success',
+        },
+        type: 'control_response',
+      },
+    ])
+    expect(s.usage).toEqual({
+      categories: [
+        { deferred: false, name: 'System prompt', tokens: 2800 },
+        { deferred: true, name: 'MCP tools (deferred)', tokens: 63_400 },
+        { deferred: false, name: 'Free space', tokens: 915_600 },
+      ],
+      max: 1_000_000,
+      mcpTools: [{ loaded: false, name: 'mcp__a__click', server: 'a', tokens: 300 }],
+      total: 51_400,
+    })
   })
 
   test('a replayed chat knows its context from the transcript', () => {
