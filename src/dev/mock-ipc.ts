@@ -17,6 +17,7 @@ import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import type { FileChange } from '../app/use-git'
 import type { Catalog, Workspace } from '../model/catalog'
 
+import { usageAnswer } from './context-usage'
 import { fakeArtifacts } from './fake-artifacts'
 import {
   asTranscript,
@@ -246,6 +247,8 @@ function chatSend(args: Args) {
   const channel = chats.get(id)
   if (message.type === 'control_request' && message.request?.subtype === 'initialize')
     later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
+  else if (message.type === 'control_request' && message.request?.subtype === 'get_context_usage')
+    later(channel, [usageAnswer(str(message.request_id))])
   else if (message.type === 'control_request' && message.request?.subtype === 'interrupt') {
     const busy = working.has(id)
     stop(id)

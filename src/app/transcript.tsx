@@ -7,6 +7,7 @@ import {
   FileCodeIcon,
   FileImageIcon,
   FileTextIcon,
+  PencilIcon,
 } from 'lucide-react'
 import { memo, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
@@ -29,6 +30,7 @@ import {
   formatDuration,
   groupSummary,
   isAgentCall,
+  isFileEdit,
   type Item,
   type Keyed,
   liveStep,
@@ -182,25 +184,98 @@ function OutputCard({ collapsed = false, text }: { text: string; collapsed?: boo
 
 const TOOL_OUT = `my-1 max-h-[320px] overflow-auto rounded-lg border bg-chrome px-3 py-2.5 font-mono text-xs leading-[18px] whitespace-pre-wrap wrap-anywhere ${OPENING}`
 
+/** What a file write changed, line by line: removed lines, then added ones, edit by edit. */
+function diffOf(name: string, input: Record<string, unknown>) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : null)
+  const lines = (text: string, added: boolean) =>
+    text
+      .replace(/\n$/, '')
+      .split('\n')
+      .map((t) => ({ added, text: t }))
+  const pair = (e: Record<string, unknown>) => {
+    const before = str(e.old_string)
+    const after = str(e.new_string)
+    return before === null || after === null ? [] : [...lines(before, false), ...lines(after, true)]
+  }
+  if (name === 'Edit') return pair(input)
+  if (name === 'MultiEdit' && Array.isArray(input.edits))
+    return input.edits.flatMap((e) =>
+      typeof e === 'object' && e !== null ? pair(e as Record<string, unknown>) : []
+    )
+  const content = name === 'Write' ? str(input.content) : str(input.new_source)
+  return content === null ? null : lines(content, true)
+}
+
+/**
+ * A file Claude wrote, as a badge: its name and what changed. A click unfolds the diff under
+ * it, drawn on the first opening only.
+ */
+const FileEditBadge = memo(function FileEditBadge({
+  block,
+  cwd,
+}: {
+  block: Block & { kind: 'tool' }
+  cwd: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [opened, setOpened] = useState(false)
+  const path = toolSummary(block.name, block.input, cwd)
+  const slash = path.lastIndexOf('/')
+  const counts = changedFiles([block], cwd)[0]
+  const failed = block.result?.isError === true
+  const writing = block.result === undefined && block.stopped !== true
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        aria-expanded={open}
+        className={cn(
+          'group/badge hover:border-line-strong hover:bg-hover flex h-7 w-max max-w-full items-center gap-2 rounded-md border px-2 text-sm transition-colors duration-120',
+          open && 'bg-hover border-line-strong'
+        )}
+        onClick={() => {
+          setOpened(true)
+          setOpen((o) => !o)
+        }}
+      >
+        {writing ? (
+          <Dot tone="working" />
+        ) : (
+          <PencilIcon className="text-faint size-3.5 flex-none" />
+        )}
+        <span className="text-foreground truncate font-mono text-xs" title={path}>
+          {path.slice(slash + 1)}
+        </span>
+        {failed && <span className="text-critical-ink text-xs">failed</span>}
+        {!failed && counts && (
+          <span className="flex-none font-mono text-xs tabular-nums">
+            {counts.added > 0 && <span className="text-good-ink">+{counts.added}</span>}
+            {counts.added > 0 && counts.removed > 0 && ' '}
+            {counts.removed > 0 && <span className="text-critical-ink">−{counts.removed}</span>}
+          </span>
+        )}
+        <ChevronRightIcon
+          className={cn(
+            'text-label group-hover/badge:text-muted-foreground size-3 flex-none transition-[rotate,color] duration-180 ease-in-out',
+            open && 'rotate-90'
+          )}
+        />
+      </button>
+      <Collapse open={open}>{opened && <ToolBody block={block} />}</Collapse>
+    </div>
+  )
+})
+
 function ToolBody({ block }: { block: Block & { kind: 'tool' } }) {
   const { input, name, result } = block
-  if (
-    name === 'Edit' &&
-    typeof input.old_string === 'string' &&
-    typeof input.new_string === 'string'
-  ) {
+  const diff = diffOf(name, input)
+  if (diff) {
     return (
       <pre className={TOOL_OUT}>
-        {input.old_string.split('\n').map((line, i) => (
+        {diff.map((line, i) => (
           // oxlint-disable-next-line react/no-array-index-key -- lines are positional
-          <div key={`d${i}`} className="bg-critical/8">
-            − {line}
-          </div>
-        ))}
-        {input.new_string.split('\n').map((line, i) => (
-          // oxlint-disable-next-line react/no-array-index-key -- lines are positional
-          <div key={`a${i}`} className="bg-good/9">
-            + {line}
+          <div key={i} className={line.added ? 'bg-good/9' : 'bg-critical/8'}>
+            {line.added ? '+' : '−'} {line.text}
           </div>
         ))}
       </pre>
@@ -582,6 +657,12 @@ function ExchangeView({
       return (
         <div key={it.key} className={ENTER}>
           <AgentCard run={run} cwd={cwd} onOpen={onOpenAgent} />
+        </div>
+      )
+    if (it.kind === 'block' && isFileEdit(it.block))
+      return (
+        <div key={it.key} className={ENTER}>
+          <FileEditBadge block={it.block} cwd={cwd} />
         </div>
       )
     return it.kind === 'group' ? (

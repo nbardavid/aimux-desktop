@@ -8,6 +8,7 @@ import {
   addNote,
   blocksOf,
   type ChatState,
+  contextUsageLine,
   type Image,
   initialChat,
   initializeLine,
@@ -22,6 +23,7 @@ import {
   resolvePermission,
   sendTurn,
   STOP,
+  USAGE,
   userLine,
 } from '../chat/model'
 import { HOST_BLOCKED, type HostChat } from './use-host'
@@ -333,6 +335,12 @@ export function useChats(hooks: Hooks) {
     [edit, write]
   )
 
+  /** Asks Claude Code what fills the context; its answer lands in `state.usage`. */
+  const askUsage = useCallback(
+    (id: string) => void write(id, contextUsageLine(`${USAGE}${crypto.randomUUID()}`)),
+    [write]
+  )
+
   const rename = useCallback(
     (id: string, title: string) => edit(id, (c) => ({ ...c, record: { ...c.record, title } })),
     [edit]
@@ -414,6 +422,7 @@ export function useChats(hooks: Hooks) {
   return useMemo(
     () => ({
       answer,
+      askUsage,
       chats,
       clear,
       close,
@@ -430,6 +439,7 @@ export function useChats(hooks: Hooks) {
     }),
     [
       answer,
+      askUsage,
       chats,
       clear,
       close,

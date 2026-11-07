@@ -44,6 +44,10 @@ import { clipboardImages, readImage } from './pasted-images'
 import { QuestionCard } from './question-card'
 import { QueuedPrompts, Transcript } from './transcript'
 
+/** The prompt's look, shared with the twin that measures it. */
+const COMPOSER_FIELD =
+  'min-h-0 rounded-none border-0 bg-transparent px-4 pt-2.5 pb-0 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100'
+
 interface Props {
   /** The chat's id: a new one is a chat navigated to, whose composer takes the focus. */
   id: string
@@ -69,6 +73,8 @@ interface Props {
     answers?: Record<string, string>
   ) => void
   onInterrupt: () => void
+  /** Asks Claude Code for its breakdown of the context (the meter's popover, on open). */
+  onAskUsage?: () => void
   /** Under the empty chat's question, in place of how the chat works. */
   intro?: ReactNode
   /** The workspace's name, for the empty chat's question (a renamed one is not its folder). */
@@ -174,6 +180,7 @@ export function ChatView({
   models,
   onAgent,
   onAnswer,
+  onAskUsage,
   onCommand,
   onInterrupt,
   onOpenFile,
@@ -192,6 +199,9 @@ export function ChatView({
   const [agentOpen, setAgentOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
+  // A hidden twin of the prompt, measured instead of it: collapsing the prompt itself to
+  // measure it let the chat above jump and lose its last line on every key.
+  const twin = useRef<HTMLTextAreaElement>(null)
   // A stable handler, so typing (which redraws this view) leaves the transcript alone.
   const latestOpen = useRef(onOpenFile)
   latestOpen.current = onOpenFile
@@ -284,10 +294,13 @@ export function ChatView({
 
   useLayoutEffect(() => {
     const el = field.current
-    if (!el) return
-    el.style.height = 'auto'
+    const measure = twin.current
+    if (!el || !measure) return
+    measure.style.width = `${el.clientWidth}px`
+    measure.value = draft || ' '
     // Grows to 40% of the window, then scrolls.
-    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
+    const height = `${Math.min(measure.scrollHeight, window.innerHeight * 0.4)}px`
+    if (el.style.height !== height) el.style.height = height
   }, [draft])
 
   const typing = /^\/(\S*)$/.exec(draft)
@@ -458,9 +471,17 @@ export function ChatView({
               }}
             />
             <Textarea
+              ref={twin}
+              aria-hidden
+              tabIndex={-1}
+              readOnly
+              rows={1}
+              className={`${COMPOSER_FIELD} pointer-events-none invisible absolute top-0 left-0 h-0`}
+            />
+            <Textarea
               ref={field}
               // One line empty (74px with its toolbar); it grows as the prompt does.
-              className="min-h-0 rounded-none border-0 bg-transparent px-4 pt-2.5 pb-0 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100"
+              className={COMPOSER_FIELD}
               rows={1}
               value={draft}
               placeholder={placeholder}
@@ -493,6 +514,8 @@ export function ChatView({
               <span className="min-w-0 flex-1" />
               <ContextMeter
                 context={state.context}
+                usage={state.usage}
+                onOpen={onAskUsage}
                 model={state.model}
                 onSend={(command) => onSend(command, [])}
               />

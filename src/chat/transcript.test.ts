@@ -52,7 +52,7 @@ describe('the collapse rule', () => {
       said('a2', [tool('Edit'), tool('Bash'), text('Done.')]),
     ]
     const [ex] = exchanges(turns, false)
-    expect(shape(ex?.items ?? [])).toEqual(['G5', 'text'])
+    expect(shape(ex?.items ?? [])).toEqual(['G3', 'tool', 'G1', 'text'])
     expect(ex?.answer).toBe('Done.')
     expect(ex?.end).toMatchObject({ costUsd: 0.1 })
   })
@@ -70,6 +70,23 @@ describe('the collapse rule', () => {
     expect(shape(exchanges(turns, false)[0]?.items ?? [])).toEqual(['G1', 'tool', 'G1', 'text'])
     const running: Block = { id: 'r', input: {}, json: '', kind: 'tool', name: 'Task' }
     const live = [user('u'), said('a', [tool('Read'), running], false)]
+    expect(shape(exchanges(live, true)[0]?.items ?? [])).toEqual(['G1', 'tool'])
+  })
+
+  test('a file written stands apart as its badge, finished or live', () => {
+    const turns = [
+      user('u'),
+      said('a', [tool('Read'), tool('Write'), tool('MultiEdit'), tool('Bash'), text('Ok')]),
+    ]
+    expect(shape(exchanges(turns, false)[0]?.items ?? [])).toEqual([
+      'G1',
+      'tool',
+      'tool',
+      'G1',
+      'text',
+    ])
+    const writing: Block = { id: 'w', input: {}, json: '', kind: 'tool', name: 'Edit' }
+    const live = [user('u'), said('a', [tool('Read'), writing], false)]
     expect(shape(exchanges(live, true)[0]?.items ?? [])).toEqual(['G1', 'tool'])
   })
 
