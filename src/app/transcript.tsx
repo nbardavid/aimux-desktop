@@ -43,6 +43,7 @@ import { AgentCard } from './agents'
 import { BrailleSpinner } from './braille-spinner'
 import { ImageStrip } from './image-strip'
 import { useLoaderChoice } from './loader-choice'
+import { useSmoothText } from './smooth-text'
 import { Dot } from './status-dot'
 import { useWindow } from './use-window'
 
@@ -133,9 +134,6 @@ export const ENTER =
 // The same, for a <details>' body as it opens (`[open] > *`).
 const OPENING =
   '[[open]>&]:animate-in [[open]>&]:fade-in [[open]>&]:slide-in-from-bottom-[6px] [[open]>&]:duration-200 [[open]>&]:ease-[cubic-bezier(0.2,0,0,1)]'
-// A blinking tan block after the last thing a streaming answer wrote.
-const CARET =
-  '[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:h-[1.05em] [&>:last-child]:after:w-[7px] [&>:last-child]:after:animate-[caret_1s_ease-in-out_infinite] [&>:last-child]:after:rounded-[2px] [&>:last-child]:after:bg-tan [&>:last-child]:after:align-[-0.15em]'
 // Status dots, as status-dot.tsx draws them.
 const DOT = 'size-[7px] flex-none rounded-full'
 // A <details> header inside a group: a grey row under the pointer, no marker.
@@ -368,6 +366,18 @@ function Thought({ text }: { text: string }) {
   )
 }
 
+/** Claude's answer, revealed at a steady pace while it is being written. */
+function AnswerText({ live, text }: { live: boolean; text: string }) {
+  const shown = useSmoothText(text, live)
+  return (
+    <div className="md">
+      <Markdown remarkPlugins={PLUGINS} components={MD}>
+        {shown}
+      </Markdown>
+    </div>
+  )
+}
+
 /** A block outside any group: Claude's answer (or what it is writing), a card, a note. */
 const BlockView = memo(function BlockView({
   block,
@@ -378,15 +388,7 @@ const BlockView = memo(function BlockView({
   live: boolean
   collapsed: boolean
 }) {
-  if (block.kind === 'text') {
-    return (
-      <div className={cn('md', live && CARET)}>
-        <Markdown remarkPlugins={PLUGINS} components={MD}>
-          {block.text}
-        </Markdown>
-      </div>
-    )
-  }
+  if (block.kind === 'text') return <AnswerText text={block.text} live={live} />
   if (block.kind === 'output') return <OutputCard text={block.text} collapsed={collapsed} />
   if (block.kind === 'note') return <div className="text-faint mt-1 text-xs">{block.text}</div>
   return null

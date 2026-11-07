@@ -59,7 +59,7 @@
   /* The Merge button. */
   --merge: #2f8a4c;
   --merge-hover: #287a42;
-  /* Only the active-tab underline, the streaming caret and ::selection. */
+  /* Only the active-tab underline and ::selection. */
   --tan: #c29c87;
   /* The tab band, the composer, code blocks, command cards. */
   --chrome: #fafaf9;
@@ -245,6 +245,13 @@
     box-sizing: border-box;
   }
 
+  /* Prose reads as text: the I-beam over it, and it selects. */
+  .md {
+    cursor: text;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
   ::placeholder {
     color: revert;
   }
@@ -344,12 +351,6 @@ body.resizing * {
   from {
     opacity: 0;
     transform: translateY(6px) scale(0.99);
-  }
-}
-
-@keyframes caret {
-  50% {
-    opacity: 0.25;
   }
 }
 
