@@ -152,14 +152,36 @@ function at(e: MouseEvent) {
   return { x: box.left, y: box.bottom + 4 }
 }
 
+const FOLDED_KEY = 'aimux.sidebar.folded'
+
+/** The projects folded last time: a per-window convenience, empty when storage is refused. */
+function loadFolded(): ReadonlySet<string> {
+  try {
+    const raw = localStorage.getItem(FOLDED_KEY)
+    const ids: unknown = raw === null ? [] : JSON.parse(raw)
+    return new Set(Array.isArray(ids) ? ids.filter((x) => typeof x === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveFolded(ids: ReadonlySet<string>) {
+  try {
+    localStorage.setItem(FOLDED_KEY, JSON.stringify([...ids]))
+  } catch {
+    // nothing to do: the next launch shows every project open
+  }
+}
+
 export function Sidebar(props: Props) {
   const { onMenu, projectId, projects, workspaceId } = props
   const now = useNow()
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(loadFolded)
   const toggle = (id: string) =>
     setCollapsed((state) => {
       const next = new Set(state)
       if (!next.delete(id)) next.add(id)
+      saveFolded(next)
       return next
     })
   // ⌘1–9 go through every workspace in sidebar order, folded groups included.
