@@ -169,8 +169,37 @@ function stepOf(e: KeyboardEvent): number {
   return 0
 }
 
-/** Each tab's unsent prompt and images, kept while the window lives: switching never loses them. */
-const drafts = new Map<string, { text: string; images: Image[] }>()
+const DRAFTS = 'aimux.chat.drafts'
+
+/** Unsent prompts saved by an earlier launch, by chat: their text only. */
+function savedTexts(): Record<string, string> {
+  try {
+    const all: unknown = JSON.parse(localStorage.getItem(DRAFTS) ?? '{}')
+    return typeof all === 'object' && all !== null ? (all as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Each tab's unsent prompt and images: switching tabs or workspaces never loses them, and the
+ * text survives quitting too (images stay in memory: too big to keep).
+ */
+const drafts = new Map<string, { text: string; images: Image[] }>(
+  Object.entries(savedTexts()).map(([id, text]) => [id, { images: [], text }])
+)
+
+function keepDraft(id: string, text: string, images: Image[]) {
+  drafts.set(id, { images, text })
+  const all = savedTexts()
+  if (text === '') delete all[id]
+  else all[id] = text
+  try {
+    localStorage.setItem(DRAFTS, JSON.stringify(all))
+  } catch {
+    // Only a convenience: the text then lives until the window closes.
+  }
+}
 
 export function ChatView({
   above,
@@ -202,7 +231,7 @@ export function ChatView({
     setImages(drafts.get(id)?.images ?? [])
   }
   useEffect(() => {
-    drafts.set(id, { images, text: draft })
+    keepDraft(id, draft, images)
   }, [id, draft, images])
   // The `/` menu: its highlighted row, and the draft Esc closed it on (it stays shut until
   // the draft changes).
