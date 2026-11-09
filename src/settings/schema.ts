@@ -108,6 +108,20 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    id: 'chat',
+    label: 'Chats',
+    rows: [
+      {
+        fallback: '250k',
+        help: 'Claude Code compacts a chat by itself past this size: smaller costs less per message and keeps Claude sharp; 1M never compacts early. New and restarted chats.',
+        id: 'chat.compactWindow',
+        kind: 'select',
+        label: 'Compact past',
+        options: ['200k', '250k', '400k', '1M'],
+      },
+    ],
+  },
+  {
     id: 'terminal',
     label: 'Terminal',
     rows: [

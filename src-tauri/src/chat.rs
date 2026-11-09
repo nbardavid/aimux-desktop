@@ -58,6 +58,10 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
         }
     }
     cmd.envs(ARTIFACT_ENV);
+    // Compacts by itself past the size Settings picked, instead of filling the 1M window.
+    if let Some(tokens) = crate::store::compact_window() {
+        cmd.env("CLAUDE_CODE_AUTO_COMPACT_WINDOW", tokens.to_string());
+    }
     cmd.spawn().map_err(|e| format!("claude: {e}"))
 }
 

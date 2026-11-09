@@ -656,6 +656,21 @@ fn read_settings_map() -> Map<String, Value> {
         .unwrap_or_default()
 }
 
+/// Where Claude Code compacts on its own (Settings › Chats › Compact past), in tokens; None
+/// for "1M": the model's whole window. Unset, 250k.
+pub fn compact_window() -> Option<u64> {
+    compact_window_of(read_settings_map().get("chat.compactWindow"))
+}
+
+fn compact_window_of(value: Option<&Value>) -> Option<u64> {
+    match value.and_then(Value::as_str).unwrap_or("250k") {
+        "1M" => None,
+        "200k" => Some(200_000),
+        "400k" => Some(400_000),
+        _ => Some(250_000),
+    }
+}
+
 #[tauri::command]
 pub fn read_settings() -> Value {
     serde_json::json!({ "path": settings_file(), "settings": read_settings_map() })
@@ -776,6 +791,14 @@ pub fn setup_ran(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_window_defaults_to_250k_and_1m_means_none() {
+        assert_eq!(compact_window_of(None), Some(250_000));
+        assert_eq!(compact_window_of(Some(&Value::from("200k"))), Some(200_000));
+        assert_eq!(compact_window_of(Some(&Value::from("1M"))), None);
+        assert_eq!(compact_window_of(Some(&Value::from(7))), Some(250_000));
+    }
 
     fn one_workspace() -> Catalog {
         serde_json::from_value(serde_json::json!({ "workspaces": [{
