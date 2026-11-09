@@ -4,6 +4,7 @@ pub mod git;
 pub mod git_write;
 pub mod host;
 pub mod host_client;
+pub mod mcp;
 pub mod pty;
 pub mod quota;
 pub mod sessions;
@@ -75,6 +76,7 @@ pub fn run() {
             host_client::host_status,
             host_client::host_restart,
             host_client::chat_open,
+            host_client::host_answer,
             host_client::chat_send,
             host_client::chat_stop,
             host_client::term_open,

@@ -44,6 +44,9 @@ pub struct Workspace {
     /// What its chats published with Claude Code's `Artifact` tool, as the panel's tabs.
     #[serde(default)]
     pub artifacts: Vec<Artifact>,
+    /// The chat whose agent created it (through aimux's MCP), if one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_chat: Option<String>,
 }
 
 /// A published artifact: its claude.ai page, open as a tab of the right panel until closed.
@@ -184,6 +187,11 @@ pub fn imported(aimux_projects: &Value) -> Vec<Project> {
         })
         .filter(|p| Path::new(&p.path).is_dir())
         .collect()
+}
+
+/// The catalog as saved: what another process (the MCP server) reads.
+pub fn saved_catalog() -> Catalog {
+    load()
 }
 
 fn load() -> Catalog {
@@ -344,6 +352,7 @@ pub fn workspace_create(
     project_id: String,
     candidates: Vec<String>,
     base: Option<String>,
+    parent_chat: Option<String>,
 ) -> Result<Workspace, String> {
     let (project, names) = {
         let mut guard = store.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -364,7 +373,8 @@ pub fn workspace_create(
     };
     let (fetch, copy) = worktree_settings();
     let root = data_dir().join("worktrees").join(&project.id);
-    let workspace = make_worktree(&project, &root, &names, &candidates, base, fetch, &copy)?;
+    let mut workspace = make_worktree(&project, &root, &names, &candidates, base, fetch, &copy)?;
+    workspace.parent_chat = parent_chat;
     edit(&store, |c| {
         c.workspaces.push(workspace.clone());
         Ok(workspace.clone())
@@ -455,6 +465,7 @@ pub fn make_worktree(
         project_id: project.id.clone(),
         setup: None,
         artifacts: Vec::new(),
+        parent_chat: None,
     })
 }
 
@@ -999,6 +1010,7 @@ mod tests {
                 project_id: "p".into(),
                 setup: None,
                 artifacts: Vec::new(),
+                parent_chat: None,
             }],
             ..Catalog::default()
         };

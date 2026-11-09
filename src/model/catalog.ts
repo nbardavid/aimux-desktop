@@ -19,6 +19,8 @@ export interface Workspace {
   setup?: { exitCode: number | null; ranAt: number } | null
   /** What its chats published with Claude Code's `Artifact` tool: the right panel's tabs. */
   artifacts?: Artifact[]
+  /** The chat whose agent created it through aimux's MCP server. */
+  parentChat?: string
 }
 
 /** A published artifact: its claude.ai page, a tab of the right panel until closed. */

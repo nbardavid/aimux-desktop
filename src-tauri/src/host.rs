@@ -7,7 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process::{Child, ChildStdin};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use portable_pty::{ChildKiller, MasterPty};
@@ -19,7 +19,10 @@ use crate::{pty, store};
 
 /// Bumped by hand whenever a message or behaviour changes incompatibly. `hello`, `list` and
 /// `shutdown` keep their shape in every version, so any app can always talk that much.
-pub const HOST_PROTOCOL: u32 = 1;
+pub const HOST_PROTOCOL: u32 = 2;
+
+/// How long an `ask` waits for a window to answer.
+const ASK_WAIT: Duration = Duration::from_secs(60);
 
 /// About the 10 000 lines of xterm scrollback.
 const TERM_BUFFER_BYTES: usize = 2 * 1024 * 1024;
@@ -57,6 +60,17 @@ pub enum Request {
     },
     TermKill {
         id: String,
+    },
+    /// Every chat's state, leaving the unread flags to `list`.
+    Peek,
+    /// Something only a window can do (create a workspace, send a chat a prompt), for an
+    /// agent: handed to a window as `{"ask": ..., "askId": n}`, its `answer` sent back.
+    Ask {
+        ask: Value,
+    },
+    Answer {
+        ask_id: u64,
+        result: Value,
     },
 }
 
@@ -243,6 +257,9 @@ struct State {
     unread: HashSet<String>,
     windows: usize,
     last_window_left: Instant,
+    /// The windows' presence connections, written to for `ask`.
+    window_streams: Vec<UnixStream>,
+    asks: HashMap<u64, mpsc::Sender<Value>>,
 }
 
 type Shared = Arc<Mutex<State>>;
@@ -290,6 +307,8 @@ pub fn serve(sock: &Path) -> std::io::Result<()> {
         unread: HashSet::new(),
         windows: 0,
         last_window_left: Instant::now(),
+        window_streams: Vec::new(),
+        asks: HashMap::new(),
     }));
     let accepting = state.clone();
     let path = sock.to_path_buf();
@@ -371,7 +390,13 @@ fn handle(state: &Shared, sock: &Path, stream: UnixStream) -> std::io::Result<()
             std::process::exit(0)
         }
         Request::Window => {
-            lock(state).windows += 1;
+            {
+                let mut s = lock(state);
+                s.windows += 1;
+                if let Ok(w) = stream.try_clone() {
+                    s.window_streams.push(w);
+                }
+            }
             // Held open by the app for as long as it runs.
             let _ = std::io::copy(&mut reader, &mut std::io::sink());
             let mut s = lock(state);
@@ -421,7 +446,56 @@ fn handle(state: &Shared, sock: &Path, stream: UnixStream) -> std::io::Result<()
             }
             reply(&stream, Ok(()))
         }
+        Request::Peek => writeln!(&stream, "{}", serde_json::json!({ "chats": peek(state) })),
+        Request::Ask { ask } => {
+            let answer =
+                ask_window(state, ask).unwrap_or_else(|e| serde_json::json!({ "error": e }));
+            writeln!(&stream, "{answer}")
+        }
+        Request::Answer { ask_id, result } => {
+            let to = lock(state).asks.remove(&ask_id);
+            reply(
+                &stream,
+                to.ok_or_else(|| "nobody waits for that answer".to_string())
+                    .and_then(|to| to.send(result).map_err(|e| e.to_string())),
+            )
+        }
     }
+}
+
+fn peek(state: &Shared) -> Vec<HostChat> {
+    lock(state)
+        .chats
+        .iter()
+        .map(|(id, c)| HostChat {
+            id: id.clone(),
+            alive: !c.ended,
+            working: c.flags.working,
+            waiting: c.flags.waiting,
+            unread: c.flags.unread,
+            history_len: c.history_len,
+        })
+        .collect()
+}
+
+/// Hands `ask` to the windows and waits for the first answer.
+fn ask_window(state: &Shared, mut ask: Value) -> Result<Value, String> {
+    let (tx, rx) = mpsc::channel();
+    let id = {
+        let mut s = lock(state);
+        s.serial += 1;
+        let id = s.serial;
+        ask["askId"] = id.into();
+        let line = serde_json::json!({ "ask": ask }).to_string();
+        if !broadcast(&mut s.window_streams, &line) {
+            return Err("aimux's window is closed: ask the user to open aimux.".into());
+        }
+        s.asks.insert(id, tx);
+        id
+    };
+    let answer = rx.recv_timeout(ASK_WAIT);
+    lock(state).asks.remove(&id);
+    answer.map_err(|_| "aimux's window did not answer.".to_string())
 }
 
 /// What runs, for a window attaching. The window now holds the unread flags, so they are
@@ -473,7 +547,7 @@ fn chat_open(
             start.model.as_deref(),
             start.effort.as_deref(),
         );
-        let mut child = match spawn_claude(&start.cwd, args) {
+        let mut child = match spawn_claude(&start.cwd, args, Some(&id)) {
             Ok(child) => child,
             Err(e) => return writeln!(stream, "{}", serde_json::json!({ "error": e })),
         };
@@ -801,6 +875,36 @@ mod tests {
                 Ok(_) => {}
             }
         }
+    }
+
+    #[test]
+    fn an_ask_needs_a_window_and_gets_its_answer() {
+        let sock = temp_sock();
+        spawn_serve(&sock);
+        let none = request(&sock, r#"{"op":"ask","ask":{"op":"chat_send"}}"#);
+        assert!(none["error"].as_str().unwrap().contains("closed"));
+
+        let mut window = open(&sock, r#"{"op":"window"}"#);
+        // The window must be counted before the ask goes out.
+        std::thread::sleep(Duration::from_millis(100));
+        let path = sock.to_path_buf();
+        let asked = std::thread::spawn(move || {
+            request(
+                &path,
+                r#"{"op":"ask","ask":{"op":"chat_send","text":"hi"}}"#,
+            )
+        });
+        let mut line = String::new();
+        window.read_line(&mut line).unwrap();
+        let ask: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(ask["ask"]["text"], "hi");
+        let id = ask["ask"]["askId"].as_u64().unwrap();
+        let ok = request(
+            &sock,
+            &format!(r#"{{"op":"answer","ask_id":{id},"result":{{"chatId":"c1"}}}}"#),
+        );
+        assert_eq!(ok["ok"], true);
+        assert_eq!(asked.join().unwrap()["chatId"], "c1");
     }
 
     #[test]

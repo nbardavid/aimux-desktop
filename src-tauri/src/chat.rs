@@ -43,9 +43,28 @@ const ARTIFACT_ENV: [(&str, &str); 2] = [
     ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0"),
 ];
 
-pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
+/// aimux's own MCP server (`aimux --mcp <chat>`, this binary) for chat `chat`, its tools
+/// allowed without asking: what they do (workspaces, prompts) shows in the window.
+fn aimux_mcp(chat: Option<&str>) -> Vec<String> {
+    let (Ok(exe), Some(chat)) = (std::env::current_exe(), chat) else {
+        return Vec::new();
+    };
+    let config = serde_json::json!({
+        "mcpServers": { "aimux": { "command": exe, "args": ["--mcp", chat] } }
+    });
+    vec![
+        "--mcp-config".into(),
+        config.to_string(),
+        "--allowedTools".into(),
+        "mcp__aimux".into(),
+    ]
+}
+
+/// `chat`: the aimux chat it runs, which then gets aimux's MCP server.
+pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<Child, String> {
     let mut cmd = Command::new("claude");
     cmd.args(args)
+        .args(aimux_mcp(chat))
         .current_dir(cwd)
         .env("PATH", tool_path())
         .stdin(Stdio::piped())
@@ -71,7 +90,7 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>) -> Result<Child, String> {
 pub fn claude_models() -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     // Its stderr pipe is never read: the little it prints before the answer fits the buffer.
-    let mut child = spawn_claude(&home, claude_args(None, None, None))?;
+    let mut child = spawn_claude(&home, claude_args(None, None, None), None)?;
     let mut stdin = child.stdin.take().ok_or("claude: no stdin")?;
     let stdout = child.stdout.take().ok_or("claude: no stdout")?;
     let asked = writeln!(
@@ -99,6 +118,19 @@ pub fn claude_models() -> Result<String, String> {
 /// reopened after a restart shows what was said. Claude names the folder after the cwd.
 #[tauri::command(async)]
 pub fn chat_history(session_id: String) -> Result<Vec<String>, String> {
+    let file = transcript_file(&session_id)?;
+    let raw = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+    let mut lines: Vec<String> = raw
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(String::from)
+        .collect();
+    lines.extend(agent_lines(&file.with_extension("").join("subagents")));
+    Ok(lines)
+}
+
+/// Where Claude Code keeps session `session_id`'s transcript.
+pub fn transcript_file(session_id: &str) -> Result<std::path::PathBuf, String> {
     if session_id.is_empty()
         || !session_id
             .chars()
@@ -111,20 +143,12 @@ pub fn chat_history(session_id: String) -> Result<Vec<String>, String> {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::Path::new(&home).join(".claude"))
         .join("projects");
-    let file = std::fs::read_dir(&root)
+    std::fs::read_dir(&root)
         .map_err(|e| e.to_string())?
         .flatten()
         .map(|dir| dir.path().join(format!("{session_id}.jsonl")))
         .find(|f| f.exists())
-        .ok_or("no transcript for this chat")?;
-    let raw = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
-    let mut lines: Vec<String> = raw
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(String::from)
-        .collect();
-    lines.extend(agent_lines(&file.with_extension("").join("subagents")));
-    Ok(lines)
+        .ok_or_else(|| "no transcript for this chat".into())
 }
 
 /// The sub-agents' transcripts Claude Code keeps beside a session's (`subagents/agent-*.jsonl`,
@@ -136,13 +160,19 @@ fn agent_lines(dir: &std::path::Path) -> Vec<String> {
     };
     let mut lines = Vec::new();
     for path in entries.flatten().map(|e| e.path()) {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        let Some(agent) = name.strip_suffix(".meta.json") else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(agent) = name.strip_suffix(".meta.json") else {
+            continue;
+        };
         let meta: serde_json::Value = std::fs::read_to_string(&path)
             .ok()
             .and_then(|m| serde_json::from_str(&m).ok())
             .unwrap_or_default();
-        let Some(call) = meta["toolUseId"].as_str() else { continue };
+        let Some(call) = meta["toolUseId"].as_str() else {
+            continue;
+        };
         let Ok(raw) = std::fs::read_to_string(dir.join(format!("{agent}.jsonl"))) else {
             continue;
         };
@@ -165,7 +195,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("aimux-agents-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("agent-a1.meta.json"), r#"{"toolUseId":"toolu_1"}"#).unwrap();
-        std::fs::write(dir.join("agent-a1.jsonl"), "{\"type\":\"user\"}\nnot json\n").unwrap();
+        std::fs::write(
+            dir.join("agent-a1.jsonl"),
+            "{\"type\":\"user\"}\nnot json\n",
+        )
+        .unwrap();
         std::fs::write(dir.join("agent-a2.jsonl"), "{\"type\":\"user\"}\n").unwrap();
         let lines = agent_lines(&dir);
         std::fs::remove_dir_all(&dir).unwrap();

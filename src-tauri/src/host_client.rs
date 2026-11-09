@@ -12,7 +12,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::host::{ChatStart, HostList, Request, TermStart, HOST_PROTOCOL};
 use crate::store;
@@ -99,15 +99,23 @@ fn call(request: &Request) -> Result<Value, String> {
 
 /// Holds the presence connection for the app's life. When the host goes (a crash, a restart),
 /// the next one is started and told the window is there, or it would stop chats as idle.
-fn hold_presence(presence: &Presence) -> Result<(), String> {
+/// What the host asks of the window on it (for an agent) reaches the webview as `host-ask`.
+fn hold_presence(presence: &Presence, app: &AppHandle) -> Result<(), String> {
     if presence.0.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
     let mut held =
         open(&Request::Window).inspect_err(|_| presence.0.store(false, Ordering::SeqCst))?;
+    let app = app.clone();
     std::thread::spawn(move || loop {
-        // Returns when the host closes the connection.
-        let _ = std::io::copy(&mut held, &mut std::io::sink());
+        // Until the host closes the connection.
+        for line in BufReader::new(&held).lines().map_while(Result::ok) {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                if v["ask"].is_object() {
+                    let _ = app.emit("host-ask", &v["ask"]);
+                }
+            }
+        }
         held = loop {
             std::thread::sleep(POLL);
             if let Ok(s) = open(&Request::Window) {
@@ -121,18 +129,18 @@ fn hold_presence(presence: &Presence) -> Result<(), String> {
 /// Whether the running host speaks this app's protocol, and what it runs. A host that does
 /// counts the window as there from now on.
 #[tauri::command(async)]
-pub fn host_status(presence: State<'_, Presence>) -> Result<HostStatus, String> {
+pub fn host_status(presence: State<'_, Presence>, app: AppHandle) -> Result<HostStatus, String> {
     let protocol_ok = call(&Request::Hello)?["protocol"] == HOST_PROTOCOL;
     let list = serde_json::from_value(call(&Request::List)?).map_err(|e| e.to_string())?;
     if protocol_ok {
-        hold_presence(&presence)?;
+        hold_presence(&presence, &app)?;
     }
     Ok(HostStatus { protocol_ok, list })
 }
 
 /// Stops the host, everything it runs with it, and starts this app's.
 #[tauri::command(async)]
-pub fn host_restart(presence: State<'_, Presence>) -> Result<(), String> {
+pub fn host_restart(presence: State<'_, Presence>, app: AppHandle) -> Result<(), String> {
     let sock = sock();
     // Nothing answering is fine: there is nothing to stop.
     if let Ok(mut s) = UnixStream::connect(&sock) {
@@ -146,7 +154,7 @@ pub fn host_restart(presence: State<'_, Presence>) -> Result<(), String> {
         std::thread::sleep(POLL);
     }
     connect()?;
-    hold_presence(&presence)
+    hold_presence(&presence, &app)
 }
 
 /// Sends a stream's request and returns its first line, read once the host has handled it:
@@ -190,6 +198,12 @@ pub fn chat_open(
         }
     });
     Ok(())
+}
+
+/// The window's answer to a `host-ask`.
+#[tauri::command(async)]
+pub fn host_answer(ask_id: u64, result: Value) -> Result<(), String> {
+    call(&Request::Answer { ask_id, result }).map(drop)
 }
 
 #[tauri::command(async)]
