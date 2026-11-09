@@ -46,6 +46,26 @@ function rememberBase(projectId: string, base: string) {
   }
 }
 
+const DRAFTS = 'aimux.composer.drafts'
+
+/** The unsent prompt of each project: closing the composer by mistake loses nothing. */
+function loadDrafts(): Record<string, string> {
+  try {
+    const all: unknown = JSON.parse(localStorage.getItem(DRAFTS) ?? '{}')
+    return typeof all === 'object' && all !== null ? (all as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveDrafts(all: Record<string, string>) {
+  try {
+    localStorage.setItem(DRAFTS, JSON.stringify(all))
+  } catch {
+    // Only a convenience: the next composer starts empty.
+  }
+}
+
 interface Branches {
   branches: string[]
   default: string | null
@@ -73,7 +93,16 @@ function useBranches(path: string | undefined) {
 /** One box for a new piece of work: where, what to ask, and who does it. Enter starts it. */
 export function NewWorkspace(props: Props) {
   const [projectId, setProjectId] = useState(props.projectId)
-  const [prompt, setPrompt] = useState('')
+  const [drafts, setDrafts] = useState(loadDrafts)
+  const prompt = typeof drafts[projectId] === 'string' ? drafts[projectId] : ''
+  const setPrompt = (text: string) =>
+    setDrafts((all) => {
+      const next = { ...all }
+      if (text === '') delete next[projectId]
+      else next[projectId] = text
+      saveDrafts(next)
+      return next
+    })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -99,10 +128,19 @@ export function NewWorkspace(props: Props) {
     setBusy(true)
     setError(null)
     if (base !== null) rememberBase(projectId, base)
-    props.onCreate(projectId, base, prompt.trim()).then(props.onClose, (error_: unknown) => {
-      setBusy(false)
-      setError(String(error_).replace(/^Error: /, ''))
-    })
+    props.onCreate(projectId, base, prompt.trim()).then(
+      () => {
+        // Sent: this project's draft is done with.
+        const rest = { ...loadDrafts() }
+        delete rest[projectId]
+        saveDrafts(rest)
+        props.onClose()
+      },
+      (error_: unknown) => {
+        setBusy(false)
+        setError(String(error_).replace(/^Error: /, ''))
+      }
+    )
   }
 
   return (
