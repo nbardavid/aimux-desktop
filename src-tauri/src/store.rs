@@ -469,6 +469,47 @@ pub fn make_worktree(
     })
 }
 
+/// Removes a worktree folder; the branch stays. Without `force`, git refuses to drop changes, and
+/// that is the only refusal: when git fails otherwise (a process still writing in the folder
+/// leaves it "not empty"), the folder is removed by hand and git forgets the worktree.
+fn remove_worktree(repo: &str, path: &str, force: bool) -> Result<(), String> {
+    if Path::new(path).exists() {
+        let mut args = vec!["worktree", "remove"];
+        if force {
+            args.push("--force");
+        }
+        args.push(path);
+        if let Err(error) = git(repo, &args) {
+            if !force && holds_changes(&error) {
+                return Err(error);
+            }
+            remove_dir_hard(Path::new(path)).map_err(|e| format!("{error}\n{e}"))?;
+            // A locked worktree would survive the prune.
+            let _ = git(repo, &["worktree", "unlock", path]);
+        }
+    }
+    let _ = git(repo, &["worktree", "prune"]);
+    Ok(())
+}
+
+/// Git's refusal to remove a worktree that holds work.
+fn holds_changes(error: &str) -> bool {
+    error.contains("modified") || error.contains("untracked") || error.contains("--force")
+}
+
+/// `remove_dir_all`, tried again while something keeps writing files into the folder.
+fn remove_dir_hard(path: &Path) -> std::io::Result<()> {
+    let mut last = Ok(());
+    for _ in 0..5 {
+        last = std::fs::remove_dir_all(path);
+        if last.is_ok() || !path.exists() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    last
+}
+
 /// Removes the worktree folder; the branch stays. Without `force`, git refuses to drop changes.
 #[tauri::command(async)]
 pub fn workspace_remove(store: State<'_, Store>, id: String, force: bool) -> Result<(), String> {
@@ -489,16 +530,7 @@ pub fn workspace_remove(store: State<'_, Store>, id: String, force: bool) -> Res
             .ok_or("unknown project")?;
         (w, repo)
     };
-    if Path::new(&workspace.path).exists() {
-        let mut args = vec!["worktree", "remove"];
-        if force {
-            args.push("--force");
-        }
-        args.push(&workspace.path);
-        git(&repo, &args)?;
-    } else {
-        let _ = git(&repo, &["worktree", "prune"]);
-    }
+    remove_worktree(&repo, &workspace.path, force)?;
     edit(&store, |c| {
         c.workspaces.retain(|w| w.id != id);
         c.chats.retain(|chat| chat.workspace_id != id);
@@ -940,6 +972,43 @@ mod tests {
             .status
             .success();
         assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn removing_refuses_only_over_changes_and_otherwise_always_succeeds() {
+        let root = std::env::temp_dir().join(format!("aimux-rm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let repo = root.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        sh(&repo, &["init", "-q", "-b", "main"]);
+        let id = ["-c", "user.name=t", "-c", "user.email=t@t"];
+        sh(
+            &repo,
+            &[&id[..], &["commit", "-q", "--allow-empty", "-m", "one"]].concat(),
+        );
+        let r = repo.to_string_lossy().into_owned();
+        let add = |name: &str| {
+            let path = root.join(name);
+            let p = path.to_string_lossy().into_owned();
+            sh(&repo, &["worktree", "add", "-q", "-b", name, &p]);
+            (path, p)
+        };
+
+        // Changes: refused without force, gone with it.
+        let (dirty, d) = add("dirty");
+        std::fs::write(dirty.join("new.txt"), "x").unwrap();
+        assert!(remove_worktree(&r, &d, false).is_err());
+        remove_worktree(&r, &d, true).unwrap();
+        assert!(!dirty.exists());
+
+        // Git refusing for another reason (here, a lock) does not stop the delete.
+        let (locked, l) = add("locked");
+        sh(&repo, &["worktree", "lock", &l]);
+        remove_worktree(&r, &l, false).unwrap();
+        assert!(!locked.exists());
+        let list = git(&r, &["worktree", "list"]).unwrap();
+        assert!(!list.contains("locked"), "{list}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
