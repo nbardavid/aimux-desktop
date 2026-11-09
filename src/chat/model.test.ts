@@ -856,3 +856,15 @@ describe('sub-agents as tasks', () => {
     })
   })
 })
+
+test('a turn cut short to take the next prompt is not an error', () => {
+  const aborted = (reason: string) => ({
+    is_error: true,
+    subtype: 'error_during_execution',
+    terminal_reason: reason,
+    type: 'result',
+  })
+  expect(feed([aborted('aborted_streaming')]).errors).toEqual([])
+  expect(feed([aborted('aborted_tools')]).errors).toEqual([])
+  expect(feed([aborted('turn_setup_failed')]).errors).toEqual(['error_during_execution'])
+})

@@ -462,8 +462,10 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         durationMs: typeof m.duration_ms === 'number' ? m.duration_ms : 0,
         stopped: state.stopping,
       }
-      // A turn the user stopped ends as `error_during_execution`: asked for, not a failure.
-      const failed = !state.stopping && (m.subtype !== 'success' || m.is_error === true)
+      // A turn the user stopped, or one cut short to take a prompt sent meanwhile
+      // (`aborted_*`), ends as `error_during_execution`: asked for, not a failure.
+      const aborted = str(m.terminal_reason).startsWith('aborted_')
+      const failed = !state.stopping && !aborted && (m.subtype !== 'success' || m.is_error === true)
       const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : state.errors
       const ended = withEnd(stopTools(withWindow(state, m.modelUsage)), state.turns.length, end)
       if (!state.tracks && state.queued.length > 0) {
