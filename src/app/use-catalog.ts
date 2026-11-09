@@ -93,14 +93,21 @@ export function useCatalog() {
   )
 
   const createWorkspace = useCallback(
-    async (projectId_: string, candidates: string[], base: string | null) => {
+    async (
+      projectId_: string,
+      candidates: string[],
+      base: string | null,
+      // An agent's: it shows in the sidebar without taking the user there.
+      parentChat: string | null = null
+    ) => {
       const created = await invoke<Workspace>('workspace_create', {
         base,
         candidates,
+        parentChat,
         projectId: projectId_,
       })
       await reload()
-      select(projectId_, created.id)
+      if (parentChat === null) select(projectId_, created.id)
       return created
     },
     [reload, select]

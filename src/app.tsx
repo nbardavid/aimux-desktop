@@ -33,6 +33,7 @@ import { TerminalView } from './app/terminal-view'
 import { type Attention, AttentionToast, errorText, type Notice, NoticeToast } from './app/toast'
 import { TopBar } from './app/top-bar'
 import { UpdateButton, useUpdate } from './app/update-button'
+import { type AgentAsk, useAgentAsks } from './app/use-agent-asks'
 import { useArtifacts } from './app/use-artifacts'
 import { useCatalog } from './app/use-catalog'
 import { chatSignal, type ChatTab, turnsEnded, useChats } from './app/use-chats'
@@ -215,6 +216,7 @@ export function App() {
   // Chats an earlier launch left open come back, in the worktrees that still exist: live when
   // the background host still runs them, asleep otherwise. Its terminals come back as tabs.
   // A host too old to keep gives nothing back until it is restarted.
+  const agentAsk = useAgentAsks()
   const restored = useRef(false)
   useEffect(() => {
     if (status.kind !== 'ready' || host.state.kind === 'loading' || restored.current) return
@@ -462,6 +464,34 @@ export function App() {
     const hasScript = await invoke<{ exists: boolean }>('setup_status', { projectId: pid })
     if (hasScript.exists) await runSetup(created)
     newChat(created, prompt)
+  }
+
+  /** An agent's ask (aimux's MCP): a workspace as the composer makes one, or a follow-up. */
+  agentAsk.current = async (ask: AgentAsk) => {
+    if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
+    if (ask.op === 'chat_send') {
+      if (!chats.chats.some((c) => c.record.id === ask.chatId))
+        throw new Error('That chat is closed.')
+      chats.send(ask.chatId, ask.text)
+      return {}
+    }
+    const taken = (workspaces[ask.projectId] ?? []).map((w) => w.name)
+    const w = await store.createWorkspace(
+      ask.projectId,
+      nameCandidates(taken),
+      ask.base,
+      ask.parentChat
+    )
+    const hasScript = await invoke<{ exists: boolean }>('setup_status', { projectId: w.projectId })
+    if (hasScript.exists) await runSetup(w)
+    const flags = chatFlags(selection)
+    const id = chats.create(w.id, w.path, {
+      effort: ask.effort ?? flags.effort,
+      model: ask.model ?? flags.model,
+    })
+    selectTab(w.id, id)
+    chats.send(id, ask.prompt)
+    return { branch: w.branch, chatId: id, name: w.name, path: w.path }
   }
 
   /** Its tabs close only once the worktree is gone: a refusal (changes) leaves them be. */
