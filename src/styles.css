@@ -476,7 +476,12 @@ body.resizing * {
     color: var(--muted-foreground);
   }
 
+  /* A wide table scrolls on its own instead of squeezing a column down to one letter:
+     `.md`'s `overflow-wrap: anywhere` would let auto layout break every word. */
   .md table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
     border-collapse: collapse;
     font-size: 13.5px;
     line-height: 20px;
@@ -487,6 +492,13 @@ body.resizing * {
     padding: 6px 16px 6px 0;
     border-bottom: 1px solid var(--border);
     text-align: left;
+    vertical-align: top;
+    overflow-wrap: normal;
+  }
+
+  .md th,
+  .md td code {
+    white-space: nowrap;
   }
 
   .md th {
