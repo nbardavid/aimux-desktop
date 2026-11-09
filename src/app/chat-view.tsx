@@ -16,7 +16,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
-import { isAppCommand, parseCommand, rankCommands } from '../chat/commands'
+import { commandTokens, isAppCommand, parseCommand, rankCommands, slashAt } from '../chat/commands'
 import {
   agentRun,
   type ChatState,
@@ -43,6 +43,44 @@ import { overlayShown } from './overlay'
 import { clipboardImages, readImage } from './pasted-images'
 import { QuestionCard } from './question-card'
 import { QueuedPrompts, Transcript } from './transcript'
+
+/** What the marks behind the prompt copy from it, to wrap its text at the same places. */
+const MIRRORED = [
+  'font-family',
+  'font-size',
+  'font-weight',
+  'line-height',
+  'letter-spacing',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'border-top-width',
+  'border-left-width',
+  'border-style',
+  'border-color',
+  'tab-size',
+] as const
+
+/** The prompt cut at the commands it names, those wrapped in a mark. */
+const segments = (text: string, named: { end: number; start: number }[]) => {
+  const out: ReactNode[] = []
+  let at = 0
+  for (const { end, start } of named) {
+    out.push(text.slice(at, start))
+    out.push(
+      <mark
+        key={start}
+        className="bg-command rounded-[3px] text-transparent shadow-[0_0_0_2px_var(--command)]"
+      >
+        {text.slice(start, end)}
+      </mark>
+    )
+    at = end
+  }
+  out.push(`${text.slice(at)}\n`)
+  return out
+}
 
 /** The prompt's look, shared with the twin that measures it. */
 const COMPOSER_FIELD =
@@ -224,6 +262,7 @@ export function ChatView({
   state,
 }: Props) {
   const [draft, setDraft] = useState(() => drafts.get(id)?.text ?? '')
+  const [caret, setCaret] = useState(() => draft.length)
   // Pasted images, shown over the prompt until it is sent.
   const [images, setImages] = useState<Image[]>(() => drafts.get(id)?.images ?? [])
   // Another tab: its own unsent prompt comes back (set while rendering, so never shown wrong).
@@ -231,6 +270,7 @@ export function ChatView({
   if (draftOf !== id) {
     setDraftOf(id)
     setDraft(drafts.get(id)?.text ?? '')
+    setCaret((drafts.get(id)?.text ?? '').length)
     setImages(drafts.get(id)?.images ?? [])
   }
   useEffect(() => {
@@ -247,6 +287,8 @@ export function ChatView({
   // A hidden twin of the prompt, measured instead of it: collapsing the prompt itself to
   // measure it let the chat above jump and lose its last line on every key.
   const twin = useRef<HTMLTextAreaElement>(null)
+  // The commands the prompt names, marked behind its text: drawn in a copy laid out like it.
+  const marks = useRef<HTMLDivElement>(null)
   // A stable handler, so typing (which redraws this view) leaves the transcript alone.
   const latestOpen = useRef(onOpenFile)
   latestOpen.current = onOpenFile
@@ -346,12 +388,27 @@ export function ChatView({
     // Grows to 40% of the window, then scrolls.
     const height = `${Math.min(measure.scrollHeight, window.innerHeight * 0.4)}px`
     if (el.style.height !== height) el.style.height = height
+    const copy = marks.current
+    if (copy) {
+      const look = getComputedStyle(el)
+      for (const key of MIRRORED) copy.style.setProperty(key, look.getPropertyValue(key))
+      copy.style.top = `${el.offsetTop}px`
+      copy.style.width = `${el.clientWidth}px`
+      copy.style.height = height
+      copy.scrollTop = el.scrollTop
+    }
   }, [draft])
+  const named = commandTokens(draft, commands)
 
-  const typing = /^\/(\S*)$/.exec(draft)
+  // The `/word` at the caret, wherever it stands; mid-sentence, the app's own commands (which
+  // only run alone) are left out.
+  const slot = slashAt(draft, caret)
+  const alone = slot !== null && slot.start === 0 && draft === `/${slot.query}`
+  const offered =
+    slot === null || slot.start === 0 ? commands : commands.filter((c) => !isAppCommand(c.name))
   const menu =
-    typing && draft !== dismissed && state.status !== 'exited'
-      ? rankCommands(commands, typing[1] ?? '')
+    slot && draft !== dismissed && state.status !== 'exited'
+      ? rankCommands(offered, slot.query)
       : []
   // The commands can change under an open menu (the chat's own list arrives).
   const at = Math.min(hot, Math.max(menu.length - 1, 0))
@@ -361,9 +418,20 @@ export function ChatView({
       ? commands.find((c) => c.name === chosen.name && c.argumentHint !== '')
       : undefined
 
-  const edit = (text: string) => {
+  const edit = (text: string, at = text.length) => {
     setDraft(text)
+    setCaret(at)
     setHot(0)
+  }
+
+  /** The `/word` at the caret becomes the command, followed by a space, the caret after it. */
+  const insert = (command: SlashCommand) => {
+    if (slot === null) return
+    const end = slot.start + 1 + slot.query.length
+    const rest = draft.slice(end).replace(/^\s/, '')
+    const head = `${draft.slice(0, slot.start)}/${command.name} `
+    edit(head + rest, head.length)
+    requestAnimationFrame(() => field.current?.setSelectionRange(head.length, head.length))
   }
 
   const submit = (line = draft) => {
@@ -396,8 +464,8 @@ export function ChatView({
 
   /** A command with arguments waits for them; one without runs. */
   const accept = (command: SlashCommand) => {
-    if (command.argumentHint === '') submit(`/${command.name}`)
-    else edit(`/${command.name} `)
+    if (alone && command.argumentHint === '') submit(`/${command.name}`)
+    else insert(command)
   }
 
   const onMenuKey = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
@@ -405,10 +473,10 @@ export function ChatView({
     const command = menu[at]
     if (step !== 0) setHot((at + step + menu.length) % menu.length)
     else if (e.key === 'Escape') setDismissed(draft)
-    else if (command && e.key === 'Tab') edit(`/${command.name} `)
+    else if (command && e.key === 'Tab') insert(command)
     else if (command && e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       // A name typed in full runs as typed; a partial one is completed first.
-      if (command.name === typing?.[1]) submit()
+      if (alone && command.name === slot?.query) submit()
       else accept(command)
     } else return false
     e.preventDefault()
@@ -500,7 +568,7 @@ export function ChatView({
               <CommandMenu
                 id={menuId}
                 items={menu}
-                query={typing?.[1] ?? ''}
+                query={slot?.query ?? ''}
                 hot={at}
                 onHover={setHot}
                 onPick={accept}
@@ -523,10 +591,20 @@ export function ChatView({
               rows={1}
               className={`${COMPOSER_FIELD} pointer-events-none invisible absolute top-0 left-0 h-0`}
             />
+            {named.length > 0 && (
+              <div
+                ref={marks}
+                aria-hidden
+                className="pointer-events-none absolute left-0 overflow-hidden break-words whitespace-pre-wrap text-transparent"
+              >
+                {segments(draft, named)}
+              </div>
+            )}
             <Textarea
               ref={field}
-              // One line empty (74px with its toolbar); it grows as the prompt does.
-              className={COMPOSER_FIELD}
+              // One line empty (74px with its toolbar); it grows as the prompt does. Above the
+              // marks, which show through its transparent background.
+              className={cn(COMPOSER_FIELD, 'relative')}
               rows={1}
               value={draft}
               placeholder={placeholder}
@@ -536,7 +614,11 @@ export function ChatView({
               aria-controls={menuId}
               aria-autocomplete="list"
               aria-activedescendant={menu.length > 0 ? `${menuId}-${at}` : undefined}
-              onChange={(e) => edit(e.target.value)}
+              onChange={(e) => edit(e.target.value, e.target.selectionStart)}
+              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+              onScroll={(e) => {
+                if (marks.current) marks.current.scrollTop = e.currentTarget.scrollTop
+              }}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
             />

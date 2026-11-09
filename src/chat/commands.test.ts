@@ -7,11 +7,13 @@ import {
   availableCommands,
   commandGroup,
   commandParts,
+  commandTokens,
   isAppCommand,
   matchedAlias,
   parseCommand,
   rankCommands,
   shortDescription,
+  slashAt,
 } from './commands'
 
 const c = (name: string, o: Partial<SlashCommand> = {}): SlashCommand => ({
@@ -161,4 +163,30 @@ test('a description shows its first sentence, 80 characters at most', () => {
   expect(cut).toHaveLength(80)
   expect(cut.endsWith('…')).toBe(true)
   expect(shortDescription('Version 1.5 is out')).toBe('Version 1.5 is out')
+})
+
+test('a slash is caught at the caret, at the start or mid-sentence', () => {
+  expect(slashAt('/rev', 4)).toEqual({ query: 'rev', start: 0 })
+  expect(slashAt('use /rev', 8)).toEqual({ query: 'rev', start: 4 })
+  expect(slashAt('use / then', 5)).toEqual({ query: '', start: 4 })
+  expect(slashAt('use /rev then', 8)).toEqual({ query: 'rev', start: 4 })
+})
+
+test('a path or a word glued to the caret is no command', () => {
+  expect(slashAt('src/app', 7)).toBeNull()
+  expect(slashAt('use /review', 6)).toBeNull()
+  expect(slashAt('a/b /x', 3)).toBeNull()
+})
+
+test('known commands are found at the start and mid-sentence; the app’s only at the start', () => {
+  const list = [...APP_COMMANDS, c('review'), c('ponytail:ponytail')]
+  const at = (text: string) => commandTokens(text, list).map((t) => text.slice(t.start, t.end))
+  expect(at('/review this')).toEqual(['/review'])
+  expect(at('please /ponytail:ponytail the diff, then /review')).toEqual([
+    '/ponytail:ponytail',
+    '/review',
+  ])
+  expect(at('then /clear it')).toEqual([])
+  expect(at('/clear')).toEqual(['/clear'])
+  expect(at('/nope and src/review and /reviewer')).toEqual([])
 })

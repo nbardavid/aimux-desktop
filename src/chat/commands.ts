@@ -132,3 +132,35 @@ export function parseCommand(text: string): { name: string; args: string } | nul
   const m = /^\/([\w:.-]+)(?:\s+([\s\S]*))?$/.exec(text.trim())
   return m ? { args: (m[2] ?? '').trim(), name: m[1] ?? '' } : null
 }
+
+/**
+ * The `/word` being typed at the caret: at the start or after a space, with nothing but a space
+ * or the end after the caret. `start` is where its `/` stands.
+ */
+export function slashAt(text: string, caret: number): { query: string; start: number } | null {
+  const after = text.slice(caret, caret + 1)
+  if (after !== '' && !/\s/.test(after)) return null
+  const m = /(^|\s)\/([\w:.-]*)$/.exec(text.slice(0, caret))
+  if (!m) return null
+  return { query: m[2] ?? '', start: (m.index ?? 0) + (m[1] ?? '').length }
+}
+
+/**
+ * The commands a prompt names, to show them recognised: `/name` at the start, or after a space
+ * anywhere for what Claude Code reads in a sentence (not the app's own, which only run alone).
+ */
+export function commandTokens(
+  text: string,
+  commands: SlashCommand[]
+): { end: number; start: number }[] {
+  const leading = new Set(commands.map((c) => c.name))
+  const inline = new Set(commands.filter((c) => !isAppCommand(c.name)).map((c) => c.name))
+  const found: { end: number; start: number }[] = []
+  for (const m of text.matchAll(/(^|\s)\/([\w:.-]+)(?=\s|$)/g)) {
+    const start = (m.index ?? 0) + (m[1] ?? '').length
+    const name = m[2] ?? ''
+    if ((start === 0 ? leading : inline).has(name))
+      found.push({ end: start + 1 + name.length, start })
+  }
+  return found
+}

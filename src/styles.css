@@ -61,6 +61,8 @@
   --merge-hover: #287a42;
   /* Only the active-tab underline and ::selection. */
   --tan: #c29c87;
+  /* A command the prompt names, marked behind its text. */
+  --command: color-mix(in srgb, var(--tan) 24%, transparent);
   /* The tab band, the composer, code blocks, command cards. */
   --chrome: #fafaf9;
   /* The user's bubble in a chat. */
@@ -165,6 +167,7 @@
   --color-merge: var(--merge);
   --color-merge-hover: var(--merge-hover);
   --color-tan: var(--tan);
+  --color-command: var(--command);
   --color-side: var(--sidebar);
   --color-chrome: var(--chrome);
   --color-bubble: var(--bubble);
