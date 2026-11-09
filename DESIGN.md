@@ -32,7 +32,7 @@ never in the way. Every state change that would otherwise "pop" gets a transitio
 | New message / block / card                      | 200–280ms | ease-out    | fade + 6px rise                                    |
 | Expand / collapse (tool rows, "Show all")       | 180ms     | ease-in-out | height + fade, no jump                             |
 | Tabs: open, close, reorder                      | 160ms     | ease-out    | width and position slide; neighbours make room     |
-| Panels (sidebar ⌘B, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way       |
+| Panels (sidebar ⌘S, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way       |
 | Status changes (dots, badges, counts)           | 160ms     | ease-out    | cross-fade; working dots breathe                   |
 | Sidebar row finishes / waits (tint)             | 700ms     | ease-out    | opacity only: swell, hold, settle to a faint wash  |
 | Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift         |

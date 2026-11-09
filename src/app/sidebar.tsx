@@ -198,8 +198,8 @@ export function Sidebar(props: Props) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Hide the sidebar (⌘B)"
-          data-tip="Hide sidebar · ⌘B"
+          aria-label="Hide the sidebar (⌘S)"
+          data-tip="Hide sidebar · ⌘S"
           onClick={props.onHide}
         >
           <PanelLeftIcon className="size-4" />

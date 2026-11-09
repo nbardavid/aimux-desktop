@@ -26,6 +26,7 @@ import { resumeTarget, type Session } from './app/resume'
 import { ResumePicker } from './app/resume-picker'
 import { RightPanel } from './app/right-panel'
 import { SettingsView } from './app/settings-view'
+import { SidePeek } from './app/side-peek'
 import { type DiffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
 import { Slide, Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
@@ -331,7 +332,7 @@ export function App() {
       }
       // e.code: with Option held, e.key is the composed character.
       else if (e.code === 'KeyB' && e.altKey) update({ gitOpen: !layout.gitOpen })
-      else if (e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
+      else if (e.code === 'KeyS' || e.code === 'KeyB') update({ sideOpen: !layout.sideOpen })
       else if (e.key === 'p') setOverlay('projects')
       else if (e.key.toLowerCase() === 't') keys.current.newTab(e.shiftKey ? 'terminal' : 'chat')
       else if (e.key === 'w') keys.current.close()
@@ -810,45 +811,50 @@ export function App() {
 
   const sideWidth = layout.sideWidth === null ? SIDE_WIDTH : `${layout.sideWidth}px`
 
+  const sidebar = (
+    <Sidebar
+      width={sideWidth}
+      page={mode === 'settings' ? mode : null}
+      foot={<Quotas cache={quotas.cache} error={quotas.error} />}
+      dock={layout.sideOpen && attentionToast}
+      projects={projects}
+      workspaces={workspaces}
+      signals={signals}
+      diffs={diffs}
+      chats={sidebarChats}
+      projectId={projectId}
+      workspaceId={ws?.id ?? null}
+      onSelect={(pid, wid) => {
+        setMode('normal')
+        store.select(pid, wid)
+      }}
+      onProjects={() => setOverlay('projects')}
+      onNewProject={() => void newProject()}
+      onNewWorkspace={setComposeIn}
+      onMenu={rowMenu}
+      renamingId={renamingWs}
+      onRename={(w) => setRenamingWs(w.id)}
+      onRenamed={(w, name) => {
+        setRenamingWs(null)
+        if (name === null || name === w.name) return
+        store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
+      }}
+      inbox={{
+        done: inbox.filter((e) => e.kind === 'done').length,
+        waiting: inbox.filter((e) => e.kind === 'waiting').length,
+      }}
+      onInbox={setInboxAt}
+      onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
+      onHide={() => update({ sideOpen: false })}
+    />
+  )
+
   return (
     <div className="relative h-full">
+      {!layout.sideOpen && <SidePeek width={sideWidth}>{sidebar}</SidePeek>}
       <div className="flex h-full">
         <Slide open={layout.sideOpen} width={`calc(${sideWidth} + 1px)`}>
-          <Sidebar
-            width={sideWidth}
-            page={mode === 'settings' ? mode : null}
-            foot={<Quotas cache={quotas.cache} error={quotas.error} />}
-            dock={layout.sideOpen && attentionToast}
-            projects={projects}
-            workspaces={workspaces}
-            signals={signals}
-            diffs={diffs}
-            chats={sidebarChats}
-            projectId={projectId}
-            workspaceId={ws?.id ?? null}
-            onSelect={(pid, wid) => {
-              setMode('normal')
-              store.select(pid, wid)
-            }}
-            onProjects={() => setOverlay('projects')}
-            onNewProject={() => void newProject()}
-            onNewWorkspace={setComposeIn}
-            onMenu={rowMenu}
-            renamingId={renamingWs}
-            onRename={(w) => setRenamingWs(w.id)}
-            onRenamed={(w, name) => {
-              setRenamingWs(null)
-              if (name === null || name === w.name) return
-              store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
-            }}
-            inbox={{
-              done: inbox.filter((e) => e.kind === 'done').length,
-              waiting: inbox.filter((e) => e.kind === 'waiting').length,
-            }}
-            onInbox={setInboxAt}
-            onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
-            onHide={() => update({ sideOpen: false })}
-          />
+          {sidebar}
           <Splitter
             label="Resize the projects sidebar"
             value={layout.sideWidth ?? sideWidthNow()}

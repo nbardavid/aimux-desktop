@@ -126,7 +126,18 @@ export function stepThrough(ids: string[], current: string | undefined, step: 1 
  * ⌘ keys the window's listeners own (app.tsx; ⌘L, chat-view.tsx), by `code`: Option changes
  * `key`.
  */
-const APP_KEYS = new Set(['KeyB', 'KeyG', 'KeyL', 'KeyN', 'KeyO', 'KeyP', 'KeyT', 'KeyW', 'Comma'])
+const APP_KEYS = new Set([
+  'KeyB',
+  'KeyG',
+  'KeyL',
+  'KeyN',
+  'KeyO',
+  'KeyP',
+  'KeyS',
+  'KeyT',
+  'KeyW',
+  'Comma',
+])
 
 /**
  * A shortcut of the app's rather than of the shell: a focused terminal lets it through to the

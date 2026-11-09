@@ -58,8 +58,8 @@ export function TopBar(props: Props) {
               variant="ghost"
               size="icon"
               className="flex-none"
-              aria-label="Show the sidebar (⌘B)"
-              data-tip="Show sidebar · ⌘B"
+              aria-label="Show the sidebar (⌘S)"
+              data-tip="Show sidebar · ⌘S"
               onClick={props.onShowSide}
             >
               <PanelLeftIcon className="size-4" />

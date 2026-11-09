@@ -56,7 +56,8 @@ branding.
 - **It feels native**:
   - keyboard first: ⌘N, ⌘T chat, ⇧⌘T terminal, ⌘W (twice if the agent is working), ⌘P,
     ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
-    ⌘B, ⌥⌘B, ⌘G, ⌘, settings;
+    ⌘S (⌘B too) the sidebar, which slides out over the content from the left edge while hidden,
+    ⌥⌘B, ⌘G, ⌘, settings;
   - no browser context menu;
   - a macOS menu that leaves ⌘W to the app.
 - **Updates**: the installed app checks GitHub releases at launch, when the window comes
