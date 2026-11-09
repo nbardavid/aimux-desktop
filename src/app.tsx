@@ -15,7 +15,6 @@ import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { Dock } from './app/dock'
 import { GitMode } from './app/git-mode'
 import { HostBar } from './app/host-bar'
-import { Inbox } from './app/inbox'
 import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
 import { NewWorkspace } from './app/new-workspace'
 import { overlayShown } from './app/overlay'
@@ -57,7 +56,6 @@ import {
   reportedModel,
 } from './model/agents'
 import { byProject, strongest, type Workspace } from './model/catalog'
-import { inboxOf } from './model/inbox'
 import { nameCandidates } from './model/names'
 
 // What a new tab can be, as in Conductor: a native Claude chat, or a shell.
@@ -129,7 +127,6 @@ export function App() {
   // A rename `/rename` started: its title also goes to Claude, so `/resume` shows it.
   const renameTells = useRef<string | null>(null)
   const [commandPick, setCommandPick] = useState<CommandPick | null>(null)
-  const [inboxAt, setInboxAt] = useState<{ x: number; y: number } | null>(null)
   // A tab whose agent is working closes on the second ask: ⌘W twice, or × twice.
   const [armed, setArmed] = useState<string | null>(null)
   const [activeByWs, setActiveByWs] = useState<Record<string, string>>({})
@@ -317,7 +314,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         // Settings and the diff are pages: Esc leaves them, unless something sits over them.
-        const over = overlay !== null || composeIn !== null || ctxMenu !== null || inboxAt !== null
+        const over = overlay !== null || composeIn !== null || ctxMenu !== null
         if (mode === 'normal' || e.defaultPrevented || over || overlayShown()) return
         setMode('normal')
       } else if (e.ctrlKey && e.key === 'Tab') keys.current.stepTab(e.shiftKey ? -1 : 1)
@@ -596,17 +593,6 @@ export function App() {
   // After a merge, the worktree that carried the branch is dead weight.
   const cleanup = cleanupOf(ws, removeWorkspace)
 
-  const inbox = inboxOf(
-    chats.chats.map((c) => ({
-      signal: c.record.id === watching.current ? null : chatSignal(c),
-      tabId: c.record.id,
-      title: c.record.title,
-      workspaceId: c.record.workspaceId,
-    })),
-    projects,
-    catalog.workspaces
-  )
-
   const signals: Record<string, ReturnType<typeof strongest>> = {}
   for (const w of catalog.workspaces) {
     signals[w.id] = strongest(
@@ -839,11 +825,6 @@ export function App() {
         if (name === null || name === w.name) return
         store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
       }}
-      inbox={{
-        done: inbox.filter((e) => e.kind === 'done').length,
-        waiting: inbox.filter((e) => e.kind === 'waiting').length,
-      }}
-      onInbox={setInboxAt}
       onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
       onHide={() => update({ sideOpen: false })}
     />
@@ -1048,15 +1029,6 @@ export function App() {
           onSelection={setSelection}
           onCreate={startWork}
           onClose={() => setComposeIn(null)}
-        />
-      )}
-      {inboxAt && (
-        <Inbox
-          entries={inbox}
-          at={inboxAt}
-          projectId={projectId}
-          onClose={() => setInboxAt(null)}
-          onOpen={(entry) => goTo(entry.projectId, entry.workspaceId, entry.tabId)}
         />
       )}
       {ctxMenu && <ContextMenu menu={ctxMenu} onClose={() => setCtxMenu(null)} />}

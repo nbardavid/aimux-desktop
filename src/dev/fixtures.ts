@@ -379,7 +379,7 @@ export const QUESTION_ASK = [
   }),
 ]
 
-/** A chat that finished while nobody looked: `done` in the sidebar and the inbox. */
+/** A chat that finished while nobody looked: `done` in the sidebar. */
 const NOTES = [
   initAnswer('chat-notes'),
   systemInit('session-notes', 'claude-sonnet-5-5'),

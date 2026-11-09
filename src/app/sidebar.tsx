@@ -2,7 +2,6 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   FolderOpenIcon,
-  InboxIcon,
   PanelLeftIcon,
   PlusIcon,
   SearchIcon,
@@ -61,8 +60,6 @@ interface Props {
   /** A new name ('' gives the colour back), or null when renaming was dropped. */
   onRenamed: (workspace: Workspace, name: string | null) => void
   /** How many agents wait for an answer, and how many finished, in every project. */
-  inbox: { waiting: number; done: number }
-  onInbox: (at: { x: number; y: number }) => void
   onSettings: () => void
   onHide: () => void
   /** Pixels once dragged, or a CSS width that follows the window. */
@@ -137,8 +134,6 @@ function useNow(): number {
 
 const NAV =
   'hover:bg-hover text-muted-foreground flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color] duration-120'
-const BADGE =
-  'bg-active text-muted-foreground h-[18px] min-w-[18px] rounded-full px-[5px] text-center text-2xs leading-[18px] tabular-nums'
 /** A section label: "Projects", and each project's name. */
 const LABEL = 'text-label text-xs font-medium'
 /** The hover tools over a row's end: they fade in over a gradient of the row's own fill. */
@@ -214,33 +209,6 @@ export function Sidebar(props: Props) {
         >
           <PlusIcon className="text-faint size-4 shrink-0" />
           <span className="min-w-0 flex-1 text-left">New workspace</span>
-        </button>
-        <button
-          type="button"
-          className={NAV}
-          onClick={(e) => {
-            const box = e.currentTarget.getBoundingClientRect()
-            props.onInbox({ x: box.right + 8, y: box.top })
-          }}
-        >
-          <InboxIcon className="text-faint size-4 shrink-0" />
-          <span className="min-w-0 flex-1 text-left">Inbox</span>
-          {props.inbox.waiting > 0 && (
-            <span
-              data-tip={`${props.inbox.waiting} waiting`}
-              className={cn(
-                BADGE,
-                'bg-[color-mix(in_srgb,var(--warn)_22%,var(--background))] text-warn-ink'
-              )}
-            >
-              {props.inbox.waiting}
-            </span>
-          )}
-          {props.inbox.done > 0 && (
-            <span className={BADGE} data-tip={`${props.inbox.done} done`}>
-              {props.inbox.done}
-            </span>
-          )}
         </button>
         <button type="button" className={NAV} data-tip="Search · ⌘P" onClick={props.onProjects}>
           <SearchIcon className="text-faint size-4 shrink-0" />

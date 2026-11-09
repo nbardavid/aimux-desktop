@@ -4,7 +4,7 @@ import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 
 import { cn } from '@/lib/utils'
 
-/** A sheet anchored to its trigger (the inbox, the quotas): white, hairline ring, soft shadow,
+/** A sheet anchored to its trigger (the quotas): white, hairline ring, soft shadow,
  * and the menus' motion (menu-styles.ts). */
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
