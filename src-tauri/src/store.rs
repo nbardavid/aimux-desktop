@@ -382,6 +382,19 @@ pub fn workspace_create(
 }
 
 /// The git side of a new workspace, under `root`: the branch, the worktree, its seed files.
+/// A repository without commits has no HEAD to fork a worktree from: it gets an empty first
+/// commit on its current branch. Built from an empty tree, so the files and the index (anything
+/// already staged) stay as they are.
+fn ensure_first_commit(repo: &str) -> Result<(), String> {
+    if git(repo, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok() {
+        return Ok(());
+    }
+    let tree = git(repo, &["hash-object", "-w", "-t", "tree", "--stdin"])?;
+    let commit = git(repo, &["commit-tree", tree.trim(), "-m", "Initial commit"])?;
+    git(repo, &["update-ref", "HEAD", commit.trim()])?;
+    Ok(())
+}
+
 pub fn make_worktree(
     project: &Project,
     root: &Path,
@@ -392,6 +405,7 @@ pub fn make_worktree(
     copy: &[String],
 ) -> Result<Workspace, String> {
     let repo = project.path.as_str();
+    ensure_first_commit(repo)?;
     let base = match base {
         Some(b) => b,
         None => git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?
@@ -1008,6 +1022,31 @@ mod tests {
         assert!(!locked.exists());
         let list = git(&r, &["worktree", "list"]).unwrap();
         assert!(!list.contains("locked"), "{list}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_repository_without_commits_gets_an_empty_first_one_and_keeps_its_index() {
+        let root = std::env::temp_dir().join(format!("aimux-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let repo = root.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        sh(&repo, &["init", "-q", "-b", "main"]);
+        sh(&repo, &["config", "user.name", "t"]);
+        sh(&repo, &["config", "user.email", "t@t"]);
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        sh(&repo, &["add", "a.txt"]);
+        let r = repo.to_string_lossy().into_owned();
+        ensure_first_commit(&r).unwrap();
+        let head = git(&r, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
+        assert_eq!(head.trim(), "main");
+        let files = git(&r, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
+        assert_eq!(files.trim(), "");
+        let staged = git(&r, &["diff", "--cached", "--name-only"]).unwrap();
+        assert_eq!(staged.trim(), "a.txt");
+        ensure_first_commit(&r).unwrap();
+        let count = git(&r, &["rev-list", "--count", "HEAD"]).unwrap();
+        assert_eq!(count.trim(), "1");
         let _ = std::fs::remove_dir_all(&root);
     }
 
