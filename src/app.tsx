@@ -13,6 +13,7 @@ import { ChatView } from './app/chat-view'
 import { cleanupOf } from './app/cleanup-effect'
 import { ContextMenu, type MenuItem, type MenuState } from './app/context-menu'
 import { Dock } from './app/dock'
+import { leaveInPieces, useLeaving, withoutLeaving } from './app/explode'
 import { GitMode } from './app/git-mode'
 import { HostBar } from './app/host-bar'
 import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
@@ -46,7 +47,6 @@ import { useTerminals } from './app/use-terminals'
 import { DOCK_TAGS } from './app/workspace-dock'
 import { availableCommands } from './chat/commands'
 import { type ChatState, type Image, initialChat, toolSummary } from './chat/model'
-import { uncommittedRefusal } from './git/pr'
 import {
   chatFlags,
   type ChatSettings,
@@ -153,7 +153,12 @@ export function App() {
   /** The tab on screen, when the window has the focus: what needs no calling out. */
   const watching = useRef<string | null>(null)
 
-  const workspaces = useMemo(() => byProject(catalog), [catalog])
+  /** Workspaces being deleted in the background: gone from the sidebar at once. */
+  const [removing, markRemoving] = useLeaving()
+  const workspaces = useMemo(
+    () => byProject(withoutLeaving(catalog, removing)),
+    [catalog, removing]
+  )
   const placeOf = (workspaceId: string) => {
     const w = catalog.workspaces.find((x) => x.id === workspaceId)
     const p = projects.find((x) => x.id === w?.projectId)
@@ -494,9 +499,23 @@ export function App() {
     return { branch: w.branch, chatId: id, name: w.name, path: w.path }
   }
 
-  /** Its tabs close only once the worktree is gone: a refusal (changes) leaves them be. */
-  const removeWorkspace = async (w: Workspace, force: boolean) => {
+  /**
+   * Bursts in pieces at once while git removes the worktree in the background. Its tabs close
+   * only once the worktree is gone: a refusal brings the row's content back with a toast.
+   */
+  const removeWorkspace = (w: Workspace, force: boolean) => {
+    leaveInPieces(w.id, async () => deleteWorkspace(w, force), markRemoving).catch(
+      fail(`Could not delete ${w.name}`)
+    )
+  }
+
+  /** The removal itself, awaited: the git panel's clean up shows its own effect and refusal. */
+  const deleteWorkspace = async (w: Workspace, force: boolean) => {
     await store.removeWorkspace(w.id, force)
+    closeRemoved(w)
+  }
+
+  const closeRemoved = (w: Workspace) => {
     terminals.closeWorkspace(w.id)
     const pages = (w.artifacts ?? []).map((a) => browserId(a.url))
     void invoke('browser_close_many', { ids: pages }).catch(() => {})
@@ -535,24 +554,21 @@ export function App() {
     }
     if (row.kind === 'workspace') {
       const w = row.workspace
+      const dirty = (git.changes[w.path]?.length ?? 0) > 0
       items.push('separator', {
         confirm: {
-          button: 'Delete',
+          button: dirty ? 'Delete anyway' : 'Delete',
           cautious: true,
-          text: `Delete ${w.name}? Its tabs close and its worktree folder is removed. The branch ${w.branch} stays.`,
+          text: dirty
+            ? `${w.name} has uncommitted changes. Deleting it discards them and removes its worktree folder. The branch ${w.branch} stays.`
+            : `Delete ${w.name}? Its tabs close and its worktree folder is removed. The branch ${w.branch} stays.`,
           ...((signals[w.id] === 'working' || signals[w.id] === 'waiting') && {
             warning: ' · Claude is working',
           }),
         },
         danger: true,
         label: 'Delete workspace…',
-        retry: {
-          button: 'Delete anyway',
-          run: async () => removeWorkspace(w, true),
-          text: `${w.name} has uncommitted changes. Deleting it anyway discards them.`,
-          when: uncommittedRefusal,
-        },
-        run: async () => removeWorkspace(w, false),
+        run: () => removeWorkspace(w, dirty),
       })
     }
     setCtxMenu({ items, x: row.x, y: row.y })
@@ -621,7 +637,7 @@ export function App() {
   }
 
   // After a merge, the worktree that carried the branch is dead weight.
-  const cleanup = cleanupOf(ws, removeWorkspace)
+  const cleanup = cleanupOf(ws, deleteWorkspace)
 
   const signals: Record<string, ReturnType<typeof strongest>> = {}
   for (const w of catalog.workspaces) {
