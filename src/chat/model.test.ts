@@ -11,6 +11,7 @@ import {
   contextWindow,
   exitCode,
   initialChat,
+  liveStep,
   modelSet,
   newPublishes,
   numberedLines,
@@ -775,4 +776,31 @@ test('only publishes that completed since the last state are new', () => {
   expect(newPublishes([finished], [finished, again])).toEqual([
     { title: '', toolId: 'b', url: URL_A },
   ])
+})
+
+describe('compacting', () => {
+  const status = (s: string | null) => ({ status: s, subtype: 'status', type: 'system' })
+
+  test('Claude Code saying it compacts shows until it is done', () => {
+    const s = feed([status('compacting')])
+    expect(s.compacting).toBe(true)
+    expect(liveStep(s, '/w').verb).toBe('Compacting the conversation')
+    expect(feed([status(null)], s).compacting).toBe(false)
+    expect(feed([{ subtype: 'compact_boundary', type: 'system' }], s).compacting).toBe(false)
+  })
+
+  test("a reopened chat never shows the compaction's summary as a prompt", () => {
+    const summary = {
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: {
+        content: 'This session is being continued from a previous conversation…',
+        role: 'user',
+      },
+      type: 'user',
+      uuid: 'sum',
+    }
+    const s = replayTranscript([JSON.stringify(summary)])
+    expect(s.turns).toEqual([])
+  })
 })

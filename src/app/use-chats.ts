@@ -76,6 +76,29 @@ function isLive(line: string): boolean {
   }
 }
 
+/** A sub-agent's line, which `chat_history` appends after the session's own (`aimuxAgent`). */
+function isAgentLine(line: string): boolean {
+  try {
+    return 'aimuxAgent' in (JSON.parse(line) as object)
+  } catch {
+    return false
+  }
+}
+
+/** How many lines of the session's own transcript there are: what the host counts from. */
+export const historyLength = (history: readonly string[]) =>
+  history.filter((l) => !isAgentLine(l)).length
+
+/**
+ * The transcript as it was when the host started Claude: its first `len` lines of its own, then
+ * the sub-agents'. Cutting the whole list would let sub-agent lines push the cut past the
+ * start, and the host's replay would add those messages again, out of place.
+ */
+export function historyBefore(history: readonly string[], len: number): string[] {
+  const own = history.filter((l) => !isAgentLine(l))
+  return [...own.slice(0, len), ...history.filter(isAgentLine)]
+}
+
 /** The record, following a model Claude Code newly reports (`/model` typed, a resume). */
 function followModel(c: ChatTab, state: ChatState, hooks: Hooks): ChatRecord {
   if (state.model === null || state.model === c.state.model) return c.record
@@ -175,7 +198,7 @@ export function useChats(hooks: Hooks) {
             ? []
             : await invoke<string[]>('chat_history', { sessionId }).catch(() => [])
         // The host replays everything since Claude started: the transcript gives what came before.
-        const lines = host ? history.slice(0, host.historyLen) : history
+        const lines = host ? historyBefore(history, host.historyLen) : history
         // The transcript says which model the session was on last: it resumes on that one.
         const replayed = replayTranscript(lines)
         const { model } = followModel(chat, replayed, latest.current.hooks)
@@ -200,7 +223,13 @@ export function useChats(hooks: Hooks) {
         channel.onmessage = (line) => {
           if (procs.current.get(id) === proc) onLine(id, line)
         }
-        const begin = { cwd: chat.cwd, effort, historyLen: lines.length, model, resume: sessionId }
+        const begin = {
+          cwd: chat.cwd,
+          effort,
+          historyLen: historyLength(lines),
+          model,
+          resume: sessionId,
+        }
         await invoke('chat_open', { id, onLine: channel, start: host ? null : begin })
         if (!host) await invoke('chat_send', { id, line: initializeLine(`init-${id}`) })
       }

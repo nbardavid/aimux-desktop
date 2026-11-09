@@ -169,6 +169,9 @@ function stepOf(e: KeyboardEvent): number {
   return 0
 }
 
+/** Each tab's unsent prompt and images, kept while the window lives: switching never loses them. */
+const drafts = new Map<string, { text: string; images: Image[] }>()
+
 export function ChatView({
   above,
   agent,
@@ -188,9 +191,19 @@ export function ChatView({
   place,
   state,
 }: Props) {
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => drafts.get(id)?.text ?? '')
   // Pasted images, shown over the prompt until it is sent.
-  const [images, setImages] = useState<Image[]>([])
+  const [images, setImages] = useState<Image[]>(() => drafts.get(id)?.images ?? [])
+  // Another tab: its own unsent prompt comes back (set while rendering, so never shown wrong).
+  const [draftOf, setDraftOf] = useState(id)
+  if (draftOf !== id) {
+    setDraftOf(id)
+    setDraft(drafts.get(id)?.text ?? '')
+    setImages(drafts.get(id)?.images ?? [])
+  }
+  useEffect(() => {
+    drafts.set(id, { images, text: draft })
+  }, [id, draft, images])
   // The `/` menu: its highlighted row, and the draft Esc closed it on (it stays shut until
   // the draft changes).
   const [hot, setHot] = useState(0)

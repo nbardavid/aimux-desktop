@@ -5,6 +5,7 @@
 import { parseCommand } from './commands'
 import { type ContextUsage, parseUsage, USAGE } from './context-usage'
 
+export { artifactUrl, newPublishes, type Published, publishedArtifacts } from './artifacts'
 export { type ContextUsage, contextUsageLine, USAGE } from './context-usage'
 
 export type Block =
@@ -79,6 +80,8 @@ export interface ChatState {
    * was running nothing, until it acknowledges the stop.
    */
   stopping: boolean
+  /** Claude Code is compacting the conversation (`status: compacting`), until it says done. */
+  compacting: boolean
   turns: Turn[]
   /**
    * Prompts sent while Claude works: already written to it, shown above the composer until
@@ -150,11 +153,13 @@ function withUsage(state: ChatState, usage: unknown): ChatState {
   return { ...state, context }
 }
 
-/**
- * The conversation was just compacted: what the context held is gone, and its new size is
- * unknown until Claude Code measures it (`get_context_usage`) or the next answer reports it.
- */
-const compacted = (state: ChatState): ChatState => ({ ...state, context: null, usage: null })
+/** Just compacted: the context it held is gone, its new size unknown until measured again. */
+const compacted = (s: ChatState): ChatState => ({
+  ...s,
+  compacting: false,
+  context: null,
+  usage: null,
+})
 
 /** The window's size from a turn's `result` (`modelUsage`: the largest of its models'). */
 function withWindow(state: ChatState, modelUsage: unknown): ChatState {
@@ -167,6 +172,7 @@ function withWindow(state: ChatState, modelUsage: unknown): ChatState {
 export const initialChat: ChatState = {
   agents: {},
   commands: [],
+  compacting: false,
   context: null,
   errors: [],
   model: null,
@@ -384,7 +390,8 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         }
       }
       if (m.subtype === 'status' && m.status === 'requesting')
-        return { ...state, status: 'working' }
+        return { ...state, compacting: false, status: 'working' }
+      if (m.subtype === 'status') return { ...state, compacting: m.status === 'compacting' }
       if (m.subtype === 'compact_boundary') return compacted(state)
       return state
     }
@@ -616,7 +623,8 @@ export function replayTranscript(lines: readonly string[]): ChatState {
       state = replayAgentLine(state, m.aimuxAgent, m)
       continue
     }
-    if (m.isSidechain === true || m.isMeta === true) continue
+    // The compaction's summary is Claude's memory, not a prompt anyone typed.
+    if (m.isSidechain === true || m.isMeta === true || m.isCompactSummary === true) continue
     const message = obj(m.message)
     const uuid = str(m.uuid) || `u${state.turns.length}`
     const before = state.turns.length
@@ -1145,6 +1153,7 @@ const STEP: Record<string, string> = {
  */
 export function liveStep(state: ChatState, cwd: string): { verb: string; target: string } {
   if (state.stopping) return { target: '', verb: 'Stopping' }
+  if (state.compacting) return { target: '', verb: 'Compacting the conversation' }
   if (state.status === 'starting') return { target: '', verb: 'Starting Claude' }
   const last = state.turns.at(-1)
   const block = last?.role === 'assistant' ? last.blocks.at(-1) : undefined
@@ -1200,50 +1209,6 @@ export function changedFiles(blocks: readonly Block[], cwd: string): ChangedFile
 
 /** Every block of a chat, in order. */
 export const blocksOf = (state: ChatState): Block[] => state.turns.flatMap((t) => t.blocks)
-
-/** An artifact Claude Code's `Artifact` tool published (or opened): its claude.ai page. */
-export interface Published {
-  url: string
-  /** The title Claude gave it, or '' (the page's own title shows once loaded). */
-  title: string
-  toolId: string
-}
-
-const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+/
-
-/** The claude.ai artifact link in a tool's result text, if any. */
-export function artifactUrl(text: string): string | null {
-  return ARTIFACT_URL.exec(text)?.[0] ?? null
-}
-
-/** Every publish or open call that succeeded with a link, in order (repeats included). */
-function publishCalls(blocks: readonly Block[]): Published[] {
-  const out: Published[] = []
-  for (const b of blocks) {
-    if (b.kind !== 'tool' || b.name !== 'Artifact' || !b.result || b.result.isError) continue
-    const action = str(b.input.action)
-    if (action !== '' && action !== 'publish' && action !== 'open') continue
-    const url = artifactUrl(b.result.text)
-    if (url !== null) out.push({ title: str(b.input.title), toolId: b.id, url })
-  }
-  return out
-}
-
-/** A chat's artifacts, one per link, each with its last title. */
-export function publishedArtifacts(blocks: readonly Block[]): Published[] {
-  const byUrl = new Map<string, Published>()
-  for (const p of publishCalls(blocks)) {
-    byUrl.delete(p.url)
-    byUrl.set(p.url, p)
-  }
-  return [...byUrl.values()]
-}
-
-/** The publishes that completed between two states of a chat. */
-export function newPublishes(before: readonly Block[], after: readonly Block[]): Published[] {
-  const seen = new Set(publishCalls(before).map((p) => p.toolId))
-  return publishCalls(after).filter((p) => !seen.has(p.toolId))
-}
 
 /** "12s", "2m 4s", "1h 3m". */
 export function formatDuration(ms: number): string {
