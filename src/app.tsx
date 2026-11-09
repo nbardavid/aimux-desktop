@@ -916,6 +916,7 @@ export function App() {
                       }
                       onInterrupt={() => chats.interrupt(chat.record.id)}
                       onAskUsage={() => chats.askUsage(chat.record.id)}
+                      onStopTask={(task) => chats.stopTask(chat.record.id, task)}
                       onOpenFile={openChangedFile}
                       place={ws?.name}
                     />

@@ -75,6 +75,8 @@ interface Props {
   onInterrupt: () => void
   /** Asks Claude Code for its breakdown of the context (the meter's popover, on open). */
   onAskUsage?: () => void
+  /** Stops a sub-agent (or a background shell), by its task id. */
+  onStopTask?: (taskId: string) => void
   /** Under the empty chat's question, in place of how the chat works. */
   intro?: ReactNode
   /** The workspace's name, for the empty chat's question (a renamed one is not its folder). */
@@ -217,6 +219,7 @@ export function ChatView({
   onInterrupt,
   onOpenFile,
   onSend,
+  onStopTask,
   place,
   state,
 }: Props) {
@@ -437,7 +440,7 @@ export function ChatView({
     <div className="flex min-h-0 flex-1 flex-col" ref={root}>
       {run ? (
         <>
-          <AgentBar run={run} place={place ?? 'Chat'} onBack={back} />
+          <AgentBar run={run} place={place ?? 'Chat'} onBack={back} onStop={onStopTask} />
           <Transcript key={run.call.id} cwd={cwd} state={run.chat} blocked={false} watch />
           <div className="text-label mx-auto w-full max-w-[752px] flex-none border-t border-dashed px-4 py-3 text-center text-xs">
             Read only: a sub-agent takes no messages
@@ -461,7 +464,7 @@ export function ChatView({
         {above}
         {/* The column's 720px and 16px either side: 752px of composer. */}
         <div className="relative mx-auto flex w-full max-w-[784px] flex-col gap-2 px-4 pb-4">
-          <RunningAgents runs={runningAgents(state)} onOpen={openAgent} />
+          <RunningAgents runs={runningAgents(state)} onOpen={openAgent} onStop={onStopTask} />
           {permission !== undefined && questions !== null && (
             <QuestionCard
               key={permission.requestId}

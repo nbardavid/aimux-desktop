@@ -253,7 +253,17 @@ function chatSend(args: Args) {
     later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
   else if (message.type === 'control_request' && message.request?.subtype === 'get_context_usage')
     later(channel, [usageAnswer(str(message.request_id))])
-  else if (message.type === 'control_request' && message.request?.subtype === 'interrupt') {
+  else if (message.type === 'control_request' && message.request?.subtype === 'stop_task') {
+    const taskId = str((message.request as { task_id?: unknown }).task_id)
+    later(channel, [
+      JSON.stringify({
+        status: 'stopped',
+        subtype: 'task_notification',
+        task_id: taskId,
+        type: 'system',
+      }),
+    ])
+  } else if (message.type === 'control_request' && message.request?.subtype === 'interrupt') {
     const busy = working.has(id)
     stop(id)
     for (const [key, a] of asked) if (a.chatId === id) asked.delete(key)

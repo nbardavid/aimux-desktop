@@ -22,6 +22,8 @@ import {
   questionsOf,
   reduceLine,
   replayTranscript,
+  runningAgents,
+  stopTaskLine,
   toolSummary,
   userLine,
 } from './model'
@@ -802,5 +804,55 @@ describe('compacting', () => {
     }
     const s = replayTranscript([JSON.stringify(summary)])
     expect(s.turns).toEqual([])
+  })
+})
+
+describe('sub-agents as tasks', () => {
+  const call = {
+    message: {
+      content: [
+        {
+          id: 'call1',
+          input: {
+            description: 'Find flaky tests',
+            prompt: 'go',
+            subagent_type: 'general-purpose',
+          },
+          name: 'Agent',
+          type: 'tool_use',
+        },
+      ],
+      id: 'm1',
+    },
+    type: 'assistant',
+  }
+  const task = (subtype: string, extra: object = {}) => ({
+    subtype,
+    task_id: 'a1',
+    tool_use_id: 'call1',
+    type: 'system',
+    ...extra,
+  })
+
+  test('a sub-agent still at work stays running past the end of the turn', () => {
+    const s = feed([
+      call,
+      task('task_started'),
+      { result: 'ok', subtype: 'success', type: 'result' },
+      task('task_progress', { last_tool_name: 'Bash', usage: { tool_uses: 3 } }),
+    ])
+    expect(runningAgents(s).map((r) => r.call.id)).toEqual(['call1'])
+    expect(s.tasks.call1).toMatchObject({ id: 'a1', lastTool: 'Bash', toolUses: 3 })
+    const done = feed([task('task_notification', { status: 'stopped' })], s)
+    expect(runningAgents(done)).toEqual([])
+    expect(done.tasks.call1?.status).toBe('stopped')
+  })
+
+  test('stop_task asks Claude Code to stop one', () => {
+    expect(JSON.parse(stopTaskLine('stop-task-1', 'a1'))).toEqual({
+      request: { subtype: 'stop_task', task_id: 'a1' },
+      request_id: 'stop-task-1',
+      type: 'control_request',
+    })
   })
 })

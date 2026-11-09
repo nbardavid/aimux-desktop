@@ -4,9 +4,12 @@
 
 import { parseCommand } from './commands'
 import { type ContextUsage, parseUsage, USAGE } from './context-usage'
+import { type Task, withTaskEvent } from './tasks'
 
 export { artifactUrl, newPublishes, type Published, publishedArtifacts } from './artifacts'
 export { type ContextUsage, contextUsageLine, USAGE } from './context-usage'
+export { STOP_TASK, stopTaskLine, type Task } from './tasks'
+export { exitCode, numberedLines } from './tool-text'
 
 export type Block =
   | { kind: 'text'; text: string }
@@ -111,6 +114,8 @@ export interface ChatState {
   context: Context | null
   /** Claude Code's own breakdown of the context, as `get_context_usage` last answered. */
   usage: ContextUsage | null
+  /** What runs on the side (sub-agents, background shells), by the call that started it. */
+  tasks: Record<string, Task>
 }
 
 /** The context window: what the last request sent and got back, in tokens. */
@@ -183,6 +188,7 @@ export const initialChat: ChatState = {
   startedAt: null,
   status: 'starting',
   stopping: false,
+  tasks: {},
   tracks: false,
   turns: [],
   usage: null,
@@ -393,6 +399,8 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         return { ...state, compacting: false, status: 'working' }
       if (m.subtype === 'status') return { ...state, compacting: m.status === 'compacting' }
       if (m.subtype === 'compact_boundary') return compacted(state)
+      const tasks = withTaskEvent(state.tasks, m)
+      if (tasks) return { ...state, tasks }
       return state
     }
     case 'control_response': {
@@ -857,29 +865,6 @@ export function toolSummary(name: string, input: Record<string, unknown>, cwd: s
   return typeof first === 'string' ? first : ''
 }
 
-/**
- * Read's output, `cat -n` style (`    12→text` or `12\ttext`), as numbered lines; null when a
- * line is not numbered (an error, a notice), which is then shown as it came.
- */
-export function numberedLines(text: string): { n: string; text: string }[] | null {
-  const lines = text.replace(/\n$/, '').split('\n')
-  const out: { n: string; text: string }[] = []
-  for (const l of lines) {
-    const m = /^\s*(\d+)(?:\t|→)(.*)$/.exec(l)
-    if (!m) return null
-    out.push({ n: m[1] ?? '', text: m[2] ?? '' })
-  }
-  return out.length > 0 ? out : null
-}
-
-/** A failed command's output, its `exit code N` line taken out to be shown apart. */
-export function exitCode(text: string): { code: number | null; body: string } {
-  const m = /^(?:Error: )?exit code (\d+)$/im.exec(text)
-  if (!m) return { body: text, code: null }
-  const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim()
-  return { body, code: Number(m[1]) }
-}
-
 // The transcript as it reads: exchanges, their tool calls folded into one row.
 
 /** A block with a key that stays the same while it streams and once it is folded. */
@@ -926,6 +911,8 @@ const standsApart = (b: Block) => isAgentCall(b) || isFileEdit(b)
 /** A sub-agent, as its card and its own chat show it. */
 export interface AgentRun {
   call: Block & { kind: 'tool' }
+  /** Claude Code's task for it, once it said so: what stopping it takes. */
+  task: Task | null
   /** What it was asked to do, in a few words (its call's `description`). */
   title: string
   /** Its kind (`subagent_type`), `Agent` when not given. */
@@ -941,7 +928,11 @@ export function agentRun(state: ChatState, id: string): AgentRun | null {
     .flatMap((t) => t.blocks)
     .find((b): b is Block & { kind: 'tool' } => isAgentCall(b) && b.id === id)
   if (!call) return null
-  const running = call.result === undefined && call.stopped !== true
+  // Claude Code's task events know best: a sub-agent outlives the turn that started it.
+  const task = state.tasks[id]
+  const running = task
+    ? task.status === 'running'
+    : call.result === undefined && call.stopped !== true
   const prompt: Turn = {
     blocks: [{ kind: 'text', text: str(call.input.prompt) }],
     id: `${id}:prompt`,
@@ -953,6 +944,7 @@ export function agentRun(state: ChatState, id: string): AgentRun | null {
     chat: { ...initialChat, startedAt: null, status: running ? 'working' : 'idle', turns },
     kind: str(call.input.subagent_type) || 'Agent',
     running,
+    task: task ?? null,
     title: str(call.input.description) || 'Sub-agent',
   }
 }

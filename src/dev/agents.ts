@@ -88,6 +88,23 @@ export const AGENT_RUNNING_LINES = [
       output_tokens: 1600,
     }
   ),
+  // Claude Code's task for it: what lets the pill stop it.
+  JSON.stringify({
+    description: 'Find flaky tests',
+    subtype: 'task_started',
+    task_id: 'task-flaky',
+    task_type: 'local_agent',
+    tool_use_id: 'agent-flaky',
+    type: 'system',
+  }),
+  JSON.stringify({
+    last_tool_name: 'Bash',
+    subtype: 'task_progress',
+    task_id: 'task-flaky',
+    tool_use_id: 'agent-flaky',
+    type: 'system',
+    usage: { duration_ms: 9000, tool_uses: 2, total_tokens: 21_000 },
+  }),
   assistant(
     'm-sub-4',
     [tool('sub-grep', 'Grep', { path: 'src', pattern: 'setTimeout' })],

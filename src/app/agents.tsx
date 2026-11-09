@@ -1,6 +1,6 @@
 // Sub-agents: a card in the conversation where each one starts, a row of the ones at work
 // over the composer, and the bar over a sub-agent's own chat when it is opened.
-import { ArrowLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { ArrowLeftIcon, ChevronRightIcon, SquareIcon, XIcon } from 'lucide-react'
 
 import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
@@ -15,6 +15,8 @@ const tools = (run: AgentRun) =>
 /** One line on where it is: what it does now, or what it answered. */
 function status(run: AgentRun, cwd: string): string {
   const { result, stopped } = run.call
+  if (run.task?.status === 'stopped') return 'Stopped'
+  if (run.running && run.task?.lastTool != null) return `Using ${run.task.lastTool}`
   if (result) return firstLine(result.text) || (result.isError ? 'Failed' : 'Done')
   if (stopped === true) return 'Stopped'
   const last = tools(run).at(-1) as (Block & { kind: 'tool' }) | undefined
@@ -27,7 +29,8 @@ function Mark({ run }: { run: AgentRun }) {
   const loaders = useLoaderChoice()
   if (run.running) return <BrailleSpinner loader={loaders.working} className="text-faint" />
   let tone = 'bg-good'
-  if (run.call.stopped === true) tone = 'border-faint border-[1.5px]'
+  if (run.call.stopped === true || run.task?.status === 'stopped')
+    tone = 'border-faint border-[1.5px]'
   else if (run.call.result?.isError === true) tone = 'bg-critical'
   return <span className={cn('size-[7px] rounded-full', tone)} />
 }
@@ -70,25 +73,52 @@ export function AgentCard({
 /** Over the composer, while any sub-agent works: one pill each, to open it from anywhere. */
 export function RunningAgents({
   onOpen,
+  onStop,
   runs,
 }: {
   runs: AgentRun[]
   onOpen: (id: string) => void
+  /** Stops one, by its task id: shown once Claude Code has said which task it is. */
+  onStop?: (taskId: string) => void
 }) {
   if (runs.length === 0) return null
   return (
     <div className="animate-in fade-in slide-in-from-bottom-[4px] flex flex-wrap gap-1.5 duration-160 ease-out">
-      {runs.map((run) => (
-        <button
-          key={run.call.id}
-          type="button"
-          className="bg-background hover:border-line-strong hover:bg-hover flex h-6 max-w-[240px] flex-none items-center gap-1.5 rounded-full border pr-2.5 pl-2 text-xs transition-colors duration-120"
-          onClick={() => onOpen(run.call.id)}
-        >
-          <Mark run={run} />
-          <span className="truncate">{run.title}</span>
-        </button>
-      ))}
+      {runs.map((run) => {
+        const task = run.task
+        return (
+          <span
+            key={run.call.id}
+            className="group/pill bg-background hover:border-line-strong flex h-6 max-w-[260px] flex-none items-center rounded-full border text-xs transition-colors duration-120"
+          >
+            <button
+              type="button"
+              className="hover:bg-hover flex h-full min-w-0 items-center gap-1.5 rounded-full pr-2.5 pl-2 transition-colors duration-120"
+              data-tip={task?.lastTool == null ? undefined : `Using ${task.lastTool}`}
+              data-tip-side="top"
+              onClick={() => onOpen(run.call.id)}
+            >
+              <Mark run={run} />
+              <span className="truncate">{run.title}</span>
+              {task?.toolUses != null && task.toolUses > 0 && (
+                <span className="text-faint flex-none tabular-nums">{task.toolUses}</span>
+              )}
+            </button>
+            {onStop && task && (
+              <button
+                type="button"
+                aria-label={`Stop ${run.title}`}
+                data-tip="Stop it"
+                data-tip-side="top"
+                className="text-faint hover:text-foreground hover:bg-hover -ml-1.5 mr-0.5 grid size-5 flex-none place-items-center rounded-full transition-colors duration-120"
+                onClick={() => onStop(task.id)}
+              >
+                <XIcon className="size-3" />
+              </button>
+            )}
+          </span>
+        )
+      })}
     </div>
   )
 }
@@ -96,13 +126,16 @@ export function RunningAgents({
 /** Over a sub-agent's chat: the way back to the conversation. */
 export function AgentBar({
   onBack,
+  onStop,
   place,
   run,
 }: {
   run: AgentRun
   place: string
   onBack: () => void
+  onStop?: (taskId: string) => void
 }) {
+  const task = run.task
   return (
     <div className="bg-chrome flex h-9 flex-none items-center gap-2 border-b px-3 text-sm">
       <button
@@ -121,8 +154,20 @@ export function AgentBar({
         <span className="text-faint">{run.kind} · </span>
         {run.title}
       </span>
-      <span className="text-label ml-auto flex-none text-xs">
-        <Kbd className="text-label">esc</Kbd> to go back
+      <span className="text-label ml-auto flex flex-none items-center gap-3 text-xs">
+        {run.running && onStop && task && (
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground hover:bg-hover inline-flex h-6 items-center gap-1.5 rounded-md border px-2 transition-colors duration-120"
+            onClick={() => onStop(task.id)}
+          >
+            <SquareIcon className="size-2.5 fill-current" />
+            Stop
+          </button>
+        )}
+        <span>
+          <Kbd className="text-label">esc</Kbd> to go back
+        </span>
       </span>
     </div>
   )

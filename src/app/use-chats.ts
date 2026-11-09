@@ -23,6 +23,8 @@ import {
   resolvePermission,
   sendTurn,
   STOP,
+  STOP_TASK,
+  stopTaskLine,
   USAGE,
   userLine,
 } from '../chat/model'
@@ -370,6 +372,13 @@ export function useChats(hooks: Hooks) {
     [edit, write]
   )
 
+  /** Stops one of the chat's sub-agents or background shells; its task event says it ended. */
+  const stopTask = useCallback(
+    (id: string, taskId: string) =>
+      void write(id, stopTaskLine(`${STOP_TASK}${crypto.randomUUID()}`, taskId)),
+    [write]
+  )
+
   /** Asks Claude Code what fills the context; its answer lands in `state.usage`. */
   const askUsage = useCallback(
     (id: string) => void write(id, contextUsageLine(`${USAGE}${crypto.randomUUID()}`)),
@@ -470,11 +479,13 @@ export function useChats(hooks: Hooks) {
       send,
       setEffort,
       setModel,
+      stopTask,
       wake,
     }),
     [
       answer,
       askUsage,
+      stopTask,
       chats,
       clear,
       close,
