@@ -26,7 +26,9 @@ import {
   runningAgents,
   type SlashCommand,
   toolSummary,
+  type Turn,
 } from '../chat/model'
+import { imagesOf, recallStep, sentPrompts, typedText } from '../chat/recall'
 import {
   agentCommand,
   agentLabel,
@@ -111,6 +113,8 @@ interface Props {
     answers?: Record<string, string>
   ) => void
   onInterrupt: () => void
+  /** Takes back queued prompts (by id): true for each Claude let go of before starting it. */
+  onUnqueue?: (ids: string[]) => Promise<boolean[]>
   /** Asks Claude Code for its breakdown of the context (the meter's popover, on open). */
   onAskUsage?: () => void
   /** Stops a sub-agent (or a background shell), by its task id. */
@@ -258,6 +262,7 @@ export function ChatView({
   onOpenFile,
   onSend,
   onStopTask,
+  onUnqueue,
   place,
   state,
 }: Props) {
@@ -434,6 +439,50 @@ export function ChatView({
     requestAnimationFrame(() => field.current?.setSelectionRange(head.length, head.length))
   }
 
+  // ↑ and ↓ through the prompts already sent, as in a shell: where in it the prompt is.
+  const sent = sentPrompts(state.turns)
+  const [recalled, setRecalled] = useState<number | null>(null)
+  // Typing over a recalled prompt makes it a new one.
+  const recall = recalled !== null && sent[recalled] === draft ? recalled : null
+
+  /**
+   * Queued prompts back into the composer, to edit or drop: Claude lets go of those it hasn't
+   * started (one it already took stays and runs).
+   */
+  const takeBack = async (turns: readonly Turn[], into: boolean) => {
+    if (!onUnqueue || turns.length === 0) return
+    const kept = await onUnqueue(turns.map((t) => t.id))
+    const back = turns.filter((_, i) => kept[i] === true)
+    if (!into || back.length === 0) return
+    const text = back.map(typedText).filter((t) => t !== '')
+    const words = [...text, draft].filter((t) => t !== '').join('\n\n')
+    edit(words)
+    setImages((prev) => [...back.flatMap(imagesOf), ...prev])
+    requestAnimationFrame(() => field.current?.focus())
+  }
+
+  const onArrow = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key] ?? 0
+    if (step === 0 || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false
+    const box = e.currentTarget
+    if (box.selectionStart !== box.selectionEnd) return false
+    // Only from the first line up, the last line down: inside a long prompt, arrows move.
+    const before = draft.slice(0, box.selectionStart)
+    const after = draft.slice(box.selectionEnd)
+    if (step < 0 ? before.includes('\n') : after.includes('\n')) return false
+    if (step < 0 && draft === '' && state.queued.length > 0) {
+      void takeBack(state.queued, true)
+    } else {
+      if (draft !== '' && recall === null) return false
+      const next = recallStep(sent.length, recall, step)
+      if (next === recall) return false
+      setRecalled(next)
+      edit(next === null ? '' : (sent[next] ?? ''))
+    }
+    e.preventDefault()
+    return true
+  }
+
   const submit = (line = draft) => {
     const text = line.trim()
     if ((text === '' && images.length === 0) || off) return
@@ -494,6 +543,7 @@ export function ChatView({
       setImages(images.slice(0, -1))
       return
     }
+    if (onArrow(e)) return
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       submit()
@@ -561,7 +611,11 @@ export function ChatView({
             {/* Prompts sent while Claude works: one line each, at the top of the box. */}
             {state.queued.length > 0 && (
               <div className="flex flex-col overflow-hidden rounded-t-lg">
-                <QueuedPrompts turns={state.queued} />
+                <QueuedPrompts
+                  turns={state.queued}
+                  onEdit={onUnqueue && ((turns) => void takeBack(turns, true))}
+                  onCancel={onUnqueue && ((turns) => void takeBack(turns, false))}
+                />
               </div>
             )}
             {menu.length > 0 && (

@@ -253,7 +253,25 @@ function chatSend(args: Args) {
     later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
   else if (message.type === 'control_request' && message.request?.subtype === 'get_context_usage')
     later(channel, [usageAnswer(str(message.request_id))])
-  else if (message.type === 'control_request' && message.request?.subtype === 'stop_task') {
+  else if (
+    message.type === 'control_request' &&
+    message.request?.subtype === 'cancel_async_message'
+  ) {
+    // Claude lets go of a prompt it hasn't started.
+    const uuid = str((message.request as { message_uuid?: unknown }).message_uuid)
+    const waiting = queued.get(id) ?? []
+    const cancelled = waiting.some((p) => p.uuid === uuid)
+    queued.set(
+      id,
+      waiting.filter((p) => p.uuid !== uuid)
+    )
+    later(channel, [
+      JSON.stringify({
+        response: { request_id: message.request_id, response: { cancelled }, subtype: 'success' },
+        type: 'control_response',
+      }),
+    ])
+  } else if (message.type === 'control_request' && message.request?.subtype === 'stop_task') {
     const taskId = str((message.request as { task_id?: unknown }).task_id)
     later(channel, [
       JSON.stringify({

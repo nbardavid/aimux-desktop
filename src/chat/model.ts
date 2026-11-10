@@ -414,6 +414,12 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         return { ...state, pending: [], queued: [], status: 'idle', stopping: false, turns }
       }
       const answer = obj(response.response)
+      // A queued prompt Claude gave back: it leaves the queue (the composer has it again).
+      if (str(response.request_id).startsWith(UNQUEUE)) {
+        if (answer.cancelled !== true) return state
+        const uuid = str(response.request_id).slice(UNQUEUE.length)
+        return { ...state, queued: state.queued.filter((t) => t.id !== uuid) }
+      }
       if (str(response.request_id).startsWith(USAGE)) {
         const usage = parseUsage(answer)
         if (!usage) return state
@@ -770,6 +776,20 @@ export const interruptLine = (requestId: string) =>
   JSON.stringify({
     request: { subtype: 'interrupt' },
     request_id: requestId,
+    type: 'control_request',
+  })
+
+/** Request ids that take back a queued prompt: the prefix, then the prompt's uuid. */
+export const UNQUEUE = 'unqueue-'
+
+/**
+ * Takes back a prompt Claude has queued but not started; its answer says `cancelled`. Once
+ * Claude started it (or folded it into the running turn) it stays.
+ */
+export const unqueueLine = (uuid: string) =>
+  JSON.stringify({
+    request: { message_uuid: uuid, subtype: 'cancel_async_message' },
+    request_id: `${UNQUEUE}${uuid}`,
     type: 'control_request',
   })
 

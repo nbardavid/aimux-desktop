@@ -25,6 +25,8 @@ import {
   STOP,
   STOP_TASK,
   stopTaskLine,
+  UNQUEUE,
+  unqueueLine,
   USAGE,
   userLine,
 } from '../chat/model'
@@ -101,6 +103,20 @@ export function historyBefore(history: readonly string[], len: number): string[]
   return [...own.slice(0, len), ...history.filter(isAgentLine)]
 }
 
+/** Hands a `cancel_async_message` answer to whoever asked for it. */
+function settleUnqueue(line: string, waiting: Map<string, (cancelled: boolean) => void>) {
+  try {
+    const m = JSON.parse(line) as {
+      type?: string
+      response?: { request_id?: string; response?: { cancelled?: unknown } }
+    }
+    if (m.type !== 'control_response') return
+    waiting.get(m.response?.request_id ?? '')?.(m.response?.response?.cancelled === true)
+  } catch {
+    // Not JSON: not an answer.
+  }
+}
+
 /** The record, following a model Claude Code newly reports (`/model` typed, a resume). */
 function followModel(c: ChatTab, state: ChatState, hooks: Hooks): ChatRecord {
   if (state.model === null || state.model === c.state.model) return c.record
@@ -128,6 +144,8 @@ export function useChats(hooks: Hooks) {
   const live = useRef(new Set<string>())
   /** A cleared chat's old Claude, until it is gone: the new one waits for it. */
   const stopping = useRef(new Map<string, Promise<unknown>>())
+  /** Queued prompts being taken back, by request id: their answer says if Claude let go. */
+  const unqueues = useRef(new Map<string, (cancelled: boolean) => void>())
   const latest = useRef({ chats, hooks })
   latest.current = { chats, hooks }
 
@@ -152,6 +170,7 @@ export function useChats(hooks: Hooks) {
         return
       }
       const replaying = !live.current.has(id)
+      if (line.includes(UNQUEUE)) settleUnqueue(line, unqueues.current)
       edit(id, (c) => {
         const state = reduceLine(c.state, line)
         const sessionId = state.sessionId ?? c.record.sessionId
@@ -361,6 +380,32 @@ export function useChats(hooks: Hooks) {
     [edit, write]
   )
 
+  /**
+   * Takes back prompts Claude has queued and not started yet: true for each it let go of
+   * (gone from the queue), false for one it had already taken.
+   */
+  const unqueue = useCallback(
+    async (id: string, uuids: readonly string[]): Promise<boolean[]> =>
+      Promise.all(
+        uuids.map(
+          async (uuid) =>
+            new Promise<boolean>((resolve) => {
+              const requestId = `${UNQUEUE}${uuid}`
+              // An old Claude that never answers keeps the prompt.
+              const timer = setTimeout(() => settle(false), 3000)
+              const settle = (cancelled: boolean) => {
+                clearTimeout(timer)
+                unqueues.current.delete(requestId)
+                resolve(cancelled)
+              }
+              unqueues.current.set(requestId, settle)
+              void write(id, unqueueLine(uuid))
+            })
+        )
+      ),
+    [write]
+  )
+
   /** Esc: says "Stopping…" at once; the turn's result ends it. */
   const interrupt = useCallback(
     (id: string) => {
@@ -480,6 +525,7 @@ export function useChats(hooks: Hooks) {
       setEffort,
       setModel,
       stopTask,
+      unqueue,
       wake,
     }),
     [
@@ -498,6 +544,7 @@ export function useChats(hooks: Hooks) {
       send,
       setEffort,
       setModel,
+      unqueue,
       wake,
     ]
   )

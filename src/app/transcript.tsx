@@ -8,6 +8,7 @@ import {
   FileImageIcon,
   FileTextIcon,
   PencilIcon,
+  XIcon,
 } from 'lucide-react'
 import { memo, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown, { type Components } from 'react-markdown'
@@ -515,9 +516,18 @@ function UserTurn({ turn }: { turn: Turn }) {
 /**
  * Prompts sent while Claude works: one line at the top of the composer until Claude takes
  * them. The text ones wait as one line, as Claude takes them together; a slash command
- * waits alone. They are already written to Claude, so they cannot be taken back.
+ * waits alone. Until Claude starts them they can be taken back: into the composer to edit
+ * (↑ in an empty prompt, or Edit), or dropped (×).
  */
-export function QueuedPrompts({ turns }: { turns: Turn[] }) {
+export function QueuedPrompts({
+  onCancel,
+  onEdit,
+  turns,
+}: {
+  turns: Turn[]
+  onEdit?: (turns: Turn[]) => void
+  onCancel?: (turns: Turn[]) => void
+}) {
   const command = (t: Turn) => t.blocks[0]?.kind === 'command'
   const texts = turns.filter((t) => !command(t))
   const groups = [texts, ...turns.filter(command).map((t) => [t])].filter((g) => g.length > 0)
@@ -543,7 +553,30 @@ export function QueuedPrompts({ turns }: { turns: Turn[] }) {
             {images}
           </span>
         )}
-        <span className="truncate">{words.join(' · ')}</span>
+        <span className="min-w-0 flex-1 truncate">{words.join(' · ')}</span>
+        {onEdit && (
+          <button
+            type="button"
+            className="text-faint hover:text-foreground flex h-6 flex-none items-center gap-1.5 rounded-md px-1.5 text-xs transition-[color] duration-120"
+            aria-label="Edit the queued prompt"
+            onClick={() => onEdit(group)}
+          >
+            Edit
+            <Kbd>↑</Kbd>
+          </button>
+        )}
+        {onCancel && (
+          <button
+            type="button"
+            className="text-faint hover:bg-hover hover:text-foreground -mr-1.5 grid size-6 flex-none place-items-center rounded-md transition-[background-color,color] duration-120"
+            aria-label="Cancel the queued prompt"
+            data-tip="Cancel"
+            data-tip-side="top"
+            onClick={() => onCancel(group)}
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        )}
       </div>
     )
   })

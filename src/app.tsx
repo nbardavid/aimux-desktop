@@ -949,6 +949,7 @@ export function App() {
                         chats.answer(chat.record.id, p, choice, answers)
                       }
                       onInterrupt={() => chats.interrupt(chat.record.id)}
+                      onUnqueue={(ids) => chats.unqueue(chat.record.id, ids)}
                       onAskUsage={() => chats.askUsage(chat.record.id)}
                       onStopTask={(task) => chats.stopTask(chat.record.id, task)}
                       onOpenFile={openChangedFile}
