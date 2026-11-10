@@ -176,7 +176,7 @@ export function Sidebar(props: Props) {
   const now = useNow()
   const projectDrag = useReorder(props.onReorder)
   const workspaceDrag = useReorder(props.onReorder)
-  const projects = projectDrag.arranged(props.projects)
+  const projects = props.projects
   const projectIds = projects.map((p) => p.id)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(loadFolded)
   const toggle = (id: string) =>
@@ -236,7 +236,7 @@ export function Sidebar(props: Props) {
         )}
         {projects.map((project, p) => {
           const open = !collapsed.has(project.id)
-          const list = workspaceDrag.arranged(props.workspaces[project.id] ?? [])
+          const list = props.workspaces[project.id] ?? []
           const listIds = list.map((w) => w.id)
           // With no workspace to select, the project itself is where you are (not in Settings).
           const here = project.id === projectId && workspaceId === null && props.page === null
@@ -246,8 +246,8 @@ export function Sidebar(props: Props) {
               aria-label={project.name}
               data-reorder-id={project.id}
               className={cn(
-                'transition-opacity duration-120',
-                projectDrag.dragging === project.id && 'opacity-60'
+                'rounded-md transition-[box-shadow,background-color] duration-120',
+                projectDrag.dragging === project.id && 'bg-side shadow-popover'
               )}
             >
               <div
@@ -330,8 +330,8 @@ export function Sidebar(props: Props) {
                       key={ws.id}
                       data-reorder-id={ws.id}
                       className={cn(
-                        'transition-opacity duration-120',
-                        workspaceDrag.dragging === ws.id && 'opacity-60'
+                        'rounded-md transition-[box-shadow,background-color] duration-120',
+                        workspaceDrag.dragging === ws.id && 'bg-side shadow-popover'
                       )}
                       onPointerDown={(e) => workspaceDrag.start(ws.id, listIds, e)}
                     >
