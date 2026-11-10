@@ -78,6 +78,10 @@
   --line-ink: #4a4644;
   --line-strong: var(--input);
   --term-fg: var(--foreground);
+  /* The composer in shell mode (`!`): a terminal bar. */
+  --shell: #1f1d1c;
+  --shell-ink: #ecebe9;
+  --shell-dim: #8d8885;
   --term-bg: var(--background);
   /* One height for every bar on the top edge, so their hairlines line up. */
   --bar: 40px;
@@ -324,6 +328,71 @@ body.resizing * {
 }
 
 /* Keyframes the components name in `animate-[…]` utilities. */
+/* The composer as a terminal bar, once `!` starts the prompt. Its controls read light on it. */
+.composer-shell {
+  border-color: var(--shell) !important;
+  background-color: var(--shell) !important;
+  color: var(--shell-ink);
+}
+.composer-shell textarea {
+  color: inherit;
+}
+.composer-shell button,
+.composer-shell button * {
+  color: var(--shell-dim);
+  transition: color 120ms ease-out;
+}
+.composer-shell button .font-medium,
+.composer-shell button:hover,
+.composer-shell button:hover * {
+  color: var(--shell-ink);
+}
+.composer-shell textarea::placeholder {
+  color: var(--shell-dim);
+}
+
+/* The pixels that eat the bar going in and out of shell mode (PixelWipe). Each one holds the
+   old look, flashes tan, then clears onto the new one. */
+.pixel-wipe {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.pixel-wipe > i {
+  width: 6px;
+  height: 6px;
+  opacity: 0;
+  background: var(--tan);
+  /* Held as the old look until its turn (backwards), gone once done (opacity 0 at rest). */
+  animation: pixel-eat 90ms linear backwards;
+}
+.pixel-wipe[data-to='shell'] > i {
+  --from: var(--background);
+}
+.pixel-wipe[data-to='prompt'] > i {
+  --from: var(--shell);
+}
+@keyframes pixel-eat {
+  0%,
+  33% {
+    opacity: 1;
+    background: var(--from);
+  }
+  34%,
+  66% {
+    opacity: 1;
+    background: var(--tan);
+  }
+  67%,
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes breathe {
   50% {
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 22%, transparent);

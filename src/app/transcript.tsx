@@ -492,8 +492,37 @@ const PromptImages = ({ turn }: { turn: Turn }) => (
   <ImageStrip images={imagesIn(turn)} className={cn('max-w-[80%] self-end justify-end', ENTER)} />
 )
 
+/** A `!` command: what was typed, at the right like a prompt; what it printed, under it. */
+function ShellTurn({ block }: { block: Extract<Block, { kind: 'shell' }> }) {
+  const failed = block.exitCode !== null && block.exitCode !== 0
+  const loaders = useLoaderChoice()
+  return (
+    <div className="flex flex-col gap-2">
+      <div className={cn(USER, 'font-mono text-sm leading-[22px]')}>
+        <span className="text-faint">!</span> {block.command}
+      </div>
+      {block.output === null ? (
+        <div className="text-faint flex h-7 items-center gap-2.5 text-base">
+          <BrailleSpinner loader={loaders.working} className="text-[15px]" />
+          <span className={SHIMMER}>Running…</span>
+        </div>
+      ) : (
+        (block.output !== '' || failed) && (
+          <div className={cn(TOOL_OUT, 'my-0', failed && 'text-critical-ink')}>
+            {block.output}
+            {failed && (
+              <div className="text-critical-ink mt-1 opacity-80">exit {block.exitCode}</div>
+            )}
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 function UserTurn({ turn }: { turn: Turn }) {
   const first = turn.blocks[0]
+  if (first?.kind === 'shell') return <ShellTurn block={first} />
   if (first?.kind === 'command') {
     return (
       <div className={cn(USER, 'font-mono text-sm leading-[22px]')}>

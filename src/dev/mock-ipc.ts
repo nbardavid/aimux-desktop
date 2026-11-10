@@ -253,7 +253,27 @@ function chatSend(args: Args) {
     later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
   else if (message.type === 'control_request' && message.request?.subtype === 'get_context_usage')
     later(channel, [usageAnswer(str(message.request_id))])
-  else if (
+  else if (message.type === 'bash_command') {
+    // Claude Code's bash mode: the command echoed, then what it printed.
+    const command = str((message as { command?: unknown }).command)
+    const row = (content: string) =>
+      JSON.stringify({ isReplay: true, message: { content, role: 'user' }, type: 'user' })
+    const failed = /^(false|exit 1)\b/.test(command)
+    later(channel, [
+      row(`<bash-input>${command}</bash-input>`),
+      row(
+        `<bash-stdout>${failed ? '' : `(Preview) No shell runs in the browser; this stands in for \`${command}\`.\nsecond line`}</bash-stdout><bash-stderr>${failed ? 'command failed' : ''}</bash-stderr><bash-exit-code>${failed ? 1 : 0}</bash-exit-code>`
+      ),
+    ])
+  } else if (
+    message.type === 'user' &&
+    (message as { shouldQuery?: unknown }).shouldQuery === false
+  ) {
+    // Added to the conversation without a turn: Claude only says so.
+    later(channel, [
+      JSON.stringify({ num_turns: 0, result: '', subtype: 'success', type: 'result' }),
+    ])
+  } else if (
     message.type === 'control_request' &&
     message.request?.subtype === 'cancel_async_message'
   ) {

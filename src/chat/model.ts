@@ -4,10 +4,12 @@
 
 import { parseCommand } from './commands'
 import { type ContextUsage, parseUsage, USAGE } from './context-usage'
+import { addShellTurn, BASH_IN, BASH_OUT, unescapeRow, withShellOutput } from './shell'
 import { type Task, withTaskEvent } from './tasks'
 
 export { artifactUrl, newPublishes, type Published, publishedArtifacts } from './artifacts'
 export { type ContextUsage, contextUsageLine, USAGE } from './context-usage'
+export { addShellTurn, shellContextLine, shellLine, shellsDone } from './shell'
 export { STOP_TASK, stopTaskLine, type Task } from './tasks'
 export { exitCode, numberedLines } from './tool-text'
 
@@ -17,6 +19,11 @@ export type Block =
   | { kind: 'command'; name: string; args: string }
   /** What a local command printed, shown as a card rather than as Claude's answer. */
   | { kind: 'output'; text: string }
+  /**
+   * A `!` command the user ran in the worktree (Claude Code's bash mode): what it printed,
+   * null while it runs.
+   */
+  | { kind: 'shell'; command: string; output: string | null; exitCode: number | null }
   /** A faint line of the app's own: a model or effort picked outside the composer. */
   | { kind: 'note'; text: string }
   | { kind: 'thinking'; text: string }
@@ -344,6 +351,8 @@ function onAssistant(prior: ChatState, message: Json): ChatState {
 }
 
 function onUser(state: ChatState, message: Json): ChatState {
+  const said = promptText(message.content)
+  if (BASH_OUT.test(said)) return withShellOutput(state, said)
   const content = Array.isArray(message.content) ? message.content : []
   let next = state
   for (const raw of content) {
@@ -463,6 +472,8 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       return { ...state, pending: [...state.pending, permission] }
     }
     case 'result': {
+      // What a `!` command added to the conversation: no turn ran, nothing ends.
+      if (m.num_turns === 0 && state.status !== 'working') return state
       const end = {
         costUsd: typeof m.total_cost_usd === 'number' ? m.total_cost_usd : 0,
         durationMs: typeof m.duration_ms === 'number' ? m.duration_ms : 0,
@@ -580,6 +591,12 @@ const ANSI = /\u001B\[[\d;]*m/g
 
 /** How the transcript records a command and what it printed, as the chat shows them. */
 function harnessTurn(state: ChatState, text: string, id: string): ChatState {
+  const typed = BASH_IN.exec(text)?.[1]
+  if (typed !== undefined) {
+    const shell = addShellTurn(state, unescapeRow(typed).trim(), id)
+    return BASH_OUT.test(text) ? withShellOutput(shell, text) : shell
+  }
+  if (BASH_OUT.test(text)) return withShellOutput(state, text)
   const name = COMMAND_NAME.exec(text)?.[1]
   if (name !== undefined) {
     const args = (COMMAND_ARGS.exec(text)?.[1] ?? '').trim()

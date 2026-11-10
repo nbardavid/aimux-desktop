@@ -43,6 +43,7 @@ import { ContextMeter } from './context-meter'
 import { ImageStrip } from './image-strip'
 import { overlayShown } from './overlay'
 import { clipboardImages, readImage } from './pasted-images'
+import { PixelWipe } from './pixel-wipe'
 import { QuestionCard } from './question-card'
 import { QueuedPrompts, Transcript } from './transcript'
 
@@ -85,6 +86,9 @@ const segments = (text: string, named: { end: number; start: number }[]) => {
 }
 
 /** The prompt's look, shared with the twin that measures it. */
+/** The field as a shell prompt, past its `$`: same type as a prompt. */
+const SHELL_FIELD = 'pl-9 caret-tan'
+
 const COMPOSER_FIELD =
   'min-h-0 rounded-none border-0 bg-transparent px-4 pt-2.5 pb-0 text-base field-sizing-fixed placeholder:text-label focus-visible:ring-0 disabled:opacity-100'
 
@@ -113,6 +117,8 @@ interface Props {
     answers?: Record<string, string>
   ) => void
   onInterrupt: () => void
+  /** A `!` command, run in the worktree (Claude Code's bash mode); absent, `!` is plain text. */
+  onShell?: (command: string) => void
   /** Takes back queued prompts (by id): true for each Claude let go of before starting it. */
   onUnqueue?: (ids: string[]) => Promise<boolean[]>
   /** Asks Claude Code for its breakdown of the context (the meter's popover, on open). */
@@ -261,6 +267,7 @@ export function ChatView({
   onInterrupt,
   onOpenFile,
   onSend,
+  onShell,
   onStopTask,
   onUnqueue,
   place,
@@ -281,6 +288,11 @@ export function ChatView({
   useEffect(() => {
     keepDraft(id, draft, images)
   }, [id, draft, images])
+  // A `!` first makes the prompt a shell command (Claude Code's bash mode). The draft keeps
+  // the `!`; the field shows what follows it, behind a `$`.
+  const shellMode = onShell !== undefined && draft.startsWith('!')
+  const lead = shellMode ? 1 : 0
+  const shown = draft.slice(lead)
   // The `/` menu: its highlighted row, and the draft Esc closed it on (it stays shut until
   // the draft changes).
   const [hot, setHot] = useState(0)
@@ -389,7 +401,7 @@ export function ChatView({
     const measure = twin.current
     if (!el || !measure) return
     measure.style.width = `${el.clientWidth}px`
-    measure.value = draft || ' '
+    measure.value = shown || ' '
     // Grows to 40% of the window, then scrolls.
     const height = `${Math.min(measure.scrollHeight, window.innerHeight * 0.4)}px`
     if (el.style.height !== height) el.style.height = height
@@ -402,8 +414,8 @@ export function ChatView({
       copy.style.height = height
       copy.scrollTop = el.scrollTop
     }
-  }, [draft])
-  const named = commandTokens(draft, commands)
+  }, [draft, shown])
+  const named = shellMode ? [] : commandTokens(draft, commands)
 
   // The `/word` at the caret, wherever it stands; mid-sentence, the app's own commands (which
   // only run alone) are left out.
@@ -412,7 +424,7 @@ export function ChatView({
   const offered =
     slot === null || slot.start === 0 ? commands : commands.filter((c) => !isAppCommand(c.name))
   const menu =
-    slot && draft !== dismissed && state.status !== 'exited'
+    slot && !shellMode && draft !== dismissed && state.status !== 'exited'
       ? rankCommands(offered, slot.query)
       : []
   // The commands can change under an open menu (the chat's own list arrives).
@@ -467,8 +479,8 @@ export function ChatView({
     const box = e.currentTarget
     if (box.selectionStart !== box.selectionEnd) return false
     // Only from the first line up, the last line down: inside a long prompt, arrows move.
-    const before = draft.slice(0, box.selectionStart)
-    const after = draft.slice(box.selectionEnd)
+    const before = shown.slice(0, box.selectionStart)
+    const after = shown.slice(box.selectionEnd)
     if (step < 0 ? before.includes('\n') : after.includes('\n')) return false
     if (step < 0 && draft === '' && state.queued.length > 0) {
       void takeBack(state.queued, true)
@@ -486,6 +498,14 @@ export function ChatView({
   const submit = (line = draft) => {
     const text = line.trim()
     if ((text === '' && images.length === 0) || off) return
+    // `!` runs the rest in the worktree; the images wait for the next prompt.
+    if (onShell && text.startsWith('!')) {
+      const command = text.slice(1).trim()
+      if (command === '') return
+      onShell(command)
+      edit('')
+      return
+    }
     // A command runs on its own: the images wait for the next prompt.
     const command = parseCommand(text)
     if (command?.name === 'model' || command?.name === 'effort') {
@@ -537,6 +557,15 @@ export function ChatView({
     const answering = e.metaKey && permission !== undefined
     if (answering) return
     if (menu.length > 0 && onMenuKey(e)) return
+    // ⌫ at the very start, or Esc on an empty command, leaves the shell (the text stays).
+    const box = e.currentTarget
+    const atStart = box.selectionStart === 0 && box.selectionEnd === 0
+    if (shellMode && ((e.key === 'Backspace' && atStart) || (e.key === 'Escape' && shown === ''))) {
+      e.preventDefault()
+      e.stopPropagation()
+      edit(shown, 0)
+      return
+    }
     // ⌫ in an empty prompt takes back the last image pasted.
     if (e.key === 'Backspace' && draft === '' && images.length > 0) {
       e.preventDefault()
@@ -550,9 +579,11 @@ export function ChatView({
     }
   }
 
-  let placeholder = 'Ask Claude, or type / for a command'
+  let placeholder = 'Ask Claude, / for a command, ! for the shell'
+  if (onShell === undefined) placeholder = 'Ask Claude, or type / for a command'
   if (blocked) placeholder = 'Read-only until the background process restarts'
   else if (state.status === 'exited') placeholder = 'Claude has stopped'
+  else if (shellMode) placeholder = 'Enter a command'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" ref={root}>
@@ -604,10 +635,12 @@ export function ChatView({
           <div
             data-composer
             className={cn(
-              'group/composer shadow-composer focus-within:border-line-strong relative flex flex-col rounded-lg border transition-[border-color,background-color] duration-120 ease-out',
-              off ? 'bg-chrome' : 'bg-background'
+              'group/composer shadow-composer focus-within:border-line-strong relative flex flex-col rounded-lg border transition-[border-color] duration-120 ease-out',
+              off ? 'bg-chrome' : 'bg-background',
+              shellMode && 'composer-shell'
             )}
           >
+            {onShell !== undefined && <PixelWipe on={shellMode} />}
             {/* Prompts sent while Claude works: one line each, at the top of the box. */}
             {state.queued.length > 0 && (
               <div className="flex flex-col overflow-hidden rounded-t-lg">
@@ -643,7 +676,11 @@ export function ChatView({
               tabIndex={-1}
               readOnly
               rows={1}
-              className={`${COMPOSER_FIELD} pointer-events-none invisible absolute top-0 left-0 h-0`}
+              className={cn(
+                COMPOSER_FIELD,
+                shellMode && SHELL_FIELD,
+                'pointer-events-none invisible absolute top-0 left-0 h-0'
+              )}
             />
             {named.length > 0 && (
               <div
@@ -654,13 +691,22 @@ export function ChatView({
                 {segments(draft, named)}
               </div>
             )}
+            {shellMode && (
+              <span
+                aria-hidden
+                className="text-tan pointer-events-none absolute left-4 z-10 text-base leading-6 font-semibold"
+                style={{ top: field.current ? field.current.offsetTop + 10 : undefined }}
+              >
+                $
+              </span>
+            )}
             <Textarea
               ref={field}
               // One line empty (74px with its toolbar); it grows as the prompt does. Above the
               // marks, which show through its transparent background.
-              className={cn(COMPOSER_FIELD, 'relative')}
+              className={cn(COMPOSER_FIELD, 'relative', shellMode && SHELL_FIELD)}
               rows={1}
-              value={draft}
+              value={shown}
               placeholder={placeholder}
               disabled={off}
               role="combobox"
@@ -668,8 +714,11 @@ export function ChatView({
               aria-controls={menuId}
               aria-autocomplete="list"
               aria-activedescendant={menu.length > 0 ? `${menuId}-${at}` : undefined}
-              onChange={(e) => edit(e.target.value, e.target.selectionStart)}
-              onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+              onChange={(e) => {
+                const text = e.target.value
+                edit(draft.slice(0, lead) + text, e.target.selectionStart + lead)
+              }}
+              onSelect={(e) => setCaret(e.currentTarget.selectionStart + lead)}
               onScroll={(e) => {
                 if (marks.current) marks.current.scrollTop = e.currentTarget.scrollTop
               }}
@@ -722,8 +771,8 @@ export function ChatView({
                 <Button
                   size="icon"
                   className={SEND}
-                  aria-label="Send (Enter)"
-                  data-tip="Send · Enter"
+                  aria-label={shellMode ? 'Run (Enter)' : 'Send (Enter)'}
+                  data-tip={shellMode ? 'Run · Enter' : 'Send · Enter'}
                   data-tip-side="top"
                   disabled={off || (draft.trim() === '' && images.length === 0)}
                   onClick={() => submit()}

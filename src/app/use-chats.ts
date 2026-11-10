@@ -6,6 +6,7 @@ import type { ChatRecord, Signal } from '../model/catalog'
 import { parseCommand } from '../chat/commands'
 import {
   addNote,
+  addShellTurn,
   blocksOf,
   type ChatState,
   contextUsageLine,
@@ -22,6 +23,9 @@ import {
   replayTranscript,
   resolvePermission,
   sendTurn,
+  shellContextLine,
+  shellLine,
+  shellsDone,
   STOP,
   STOP_TASK,
   stopTaskLine,
@@ -188,6 +192,12 @@ export function useChats(hooks: Hooks) {
         }
         for (const artifact of newPublishes(blocksOf(c.state), blocksOf(state))) {
           queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
+        }
+        // A `!` command's output: into the conversation, for Claude's next prompt.
+        for (const shell of shellsDone(c.state, state)) {
+          if (replaying) continue
+          const told = shellContextLine(shell.command, shell.output ?? '', shell.exitCode)
+          queueMicrotask(() => void invoke('chat_send', { id, line: told }))
         }
         // Just compacted: measure what is left, so the meter drops at once.
         const emptied = c.state.context !== null || c.state.usage !== null
@@ -406,6 +416,20 @@ export function useChats(hooks: Hooks) {
     [write]
   )
 
+  /** A `!` command: run in the chat's worktree by Claude Code, shown with its output. */
+  const shell = useCallback(
+    (id: string, command: string) => {
+      const uuid = crypto.randomUUID()
+      edit(id, (c) => ({
+        ...c,
+        record: { ...c.record, activeAt: Date.now() },
+        state: addShellTurn(c.state, command, uuid),
+      }))
+      void write(id, shellLine(command, uuid))
+    },
+    [edit, write]
+  )
+
   /** Esc: says "Stopping…" at once; the turn's result ends it. */
   const interrupt = useCallback(
     (id: string) => {
@@ -524,6 +548,7 @@ export function useChats(hooks: Hooks) {
       send,
       setEffort,
       setModel,
+      shell,
       stopTask,
       unqueue,
       wake,
@@ -544,6 +569,7 @@ export function useChats(hooks: Hooks) {
       send,
       setEffort,
       setModel,
+      shell,
       unqueue,
       wake,
     ]

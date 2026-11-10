@@ -945,11 +945,10 @@ export function App() {
                       commands={availableCommands(chat.state.commands, appWideCommands)}
                       onSend={(text, images) => chats.send(chat.record.id, text, images)}
                       onCommand={(name, args) => runCommand(chat, name, args)}
-                      onAnswer={(p, choice, answers) =>
-                        chats.answer(chat.record.id, p, choice, answers)
-                      }
+                      onAnswer={(...answer) => chats.answer(chat.record.id, ...answer)}
                       onInterrupt={() => chats.interrupt(chat.record.id)}
                       onUnqueue={(ids) => chats.unqueue(chat.record.id, ids)}
+                      onShell={(command) => chats.shell(chat.record.id, command)}
                       onAskUsage={() => chats.askUsage(chat.record.id)}
                       onStopTask={(task) => chats.stopTask(chat.record.id, task)}
                       onOpenFile={openChangedFile}

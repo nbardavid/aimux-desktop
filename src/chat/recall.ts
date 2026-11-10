@@ -3,6 +3,7 @@ import type { Image, Turn } from './model'
 /** What a prompt said, as typed again: a command with its arguments, or its text. */
 export function typedText(turn: Turn): string {
   const first = turn.blocks[0]
+  if (first?.kind === 'shell') return `!${first.command}`
   if (first?.kind === 'command') return `/${first.name}${first.args === '' ? '' : ` ${first.args}`}`
   return turn.blocks.map((b) => (b.kind === 'text' ? b.text : '')).join('')
 }
