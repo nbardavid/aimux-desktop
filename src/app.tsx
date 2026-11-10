@@ -864,6 +864,7 @@ export function App() {
       onNewProject={() => void newProject()}
       onNewWorkspace={setComposeIn}
       onMenu={rowMenu}
+      onReorder={store.reorder}
       renamingId={renamingWs}
       onRename={(w) => setRenamingWs(w.id)}
       onRenamed={(w, name) => {

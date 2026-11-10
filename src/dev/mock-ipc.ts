@@ -413,6 +413,13 @@ function handle(cmd: string, args: Args): unknown {
       w.name = str(args.name).trim() || w.branch.replace(/^aimux\//, '')
       return structuredClone(w)
     }
+    case 'catalog_reorder': {
+      const ids = args.ids as string[]
+      const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)
+      store.projects = store.projects.toSorted((a, b) => rank(a.id) - rank(b.id))
+      store.workspaces = store.workspaces.toSorted((a, b) => rank(a.id) - rank(b.id))
+      return null
+    }
     case 'project_remove':
       store.projects = store.projects.filter((p) => p.id !== args.id)
       return null

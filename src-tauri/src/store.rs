@@ -289,6 +289,22 @@ pub fn project_open(store: State<'_, Store>, id: String) -> Result<(), String> {
     })
 }
 
+/// Puts the projects and workspaces `ids` names in that order: the sidebar's, as dragged.
+/// What it doesn't name keeps its place relative to the rest, after them.
+pub fn reorder(c: &mut Catalog, ids: &[String]) {
+    let rank = |id: &str| ids.iter().position(|x| x == id).unwrap_or(usize::MAX);
+    c.projects.sort_by_key(|p| rank(&p.id));
+    c.workspaces.sort_by_key(|w| rank(&w.id));
+}
+
+#[tauri::command]
+pub fn catalog_reorder(store: State<'_, Store>, ids: Vec<String>) -> Result<(), String> {
+    edit(&store, |c| {
+        reorder(c, &ids);
+        Ok(())
+    })
+}
+
 fn git(cwd: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
@@ -847,6 +863,21 @@ pub fn setup_ran(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reorder_follows_the_ids_and_keeps_the_rest() {
+        let p = |id: &str| Project {
+            id: id.into(),
+            ..Default::default()
+        };
+        let mut c = Catalog {
+            projects: vec![p("a"), p("b"), p("c")],
+            ..Default::default()
+        };
+        super::reorder(&mut c, &["c".into(), "a".into()]);
+        let ids: Vec<&str> = c.projects.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["c", "a", "b"]);
+    }
+
     use super::*;
 
     #[test]

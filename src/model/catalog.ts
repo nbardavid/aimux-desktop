@@ -58,11 +58,11 @@ export interface Catalog {
 
 export type Signal = 'waiting' | 'working' | 'done'
 
-/** The last opened project first; workspaces of each, oldest first, as the sidebar lists them. */
+/** Each project's workspaces in the catalog's order: the sidebar's, as the user dragged it. */
 export function byProject(catalog: Catalog): Record<string, Workspace[]> {
   const out: Record<string, Workspace[]> = {}
   for (const project of catalog.projects) out[project.id] = []
-  for (const ws of catalog.workspaces.toSorted((a, b) => a.createdAt - b.createdAt)) {
+  for (const ws of catalog.workspaces) {
     out[ws.projectId]?.push(ws)
   }
   return out
@@ -74,4 +74,10 @@ export function strongest(signals: readonly (Signal | null)[]): Signal | null {
   if (signals.includes('working')) return 'working'
   if (signals.includes('done')) return 'done'
   return null
+}
+
+/** `list` with the items `ids` names in that order, the others after them as they were. */
+export function arrange<T extends { id: string }>(list: readonly T[], ids: readonly string[]): T[] {
+  const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)
+  return list.toSorted((a, b) => rank(a.id) - rank(b.id))
 }

@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 
 import type { Project, Signal, Workspace } from '../model/catalog'
 
+import { useReorder } from './reorder'
 import { StatusDot } from './status-dot'
 import { RenameField } from './tab-bar'
 
@@ -54,6 +55,8 @@ interface Props {
   onNewProject: () => void
   onNewWorkspace: (projectId: string) => void
   onMenu: (menu: RowMenu) => void
+  /** Projects, or one project's workspaces, dragged into a new order. */
+  onReorder: (ids: string[]) => void
   /** The workspace whose name is being edited in place. */
   renamingId: string | null
   onRename: (workspace: Workspace) => void
@@ -169,8 +172,12 @@ function saveFolded(ids: ReadonlySet<string>) {
 }
 
 export function Sidebar(props: Props) {
-  const { onMenu, projectId, projects, workspaceId } = props
+  const { onMenu, projectId, workspaceId } = props
   const now = useNow()
+  const projectDrag = useReorder(props.onReorder)
+  const workspaceDrag = useReorder(props.onReorder)
+  const projects = projectDrag.arranged(props.projects)
+  const projectIds = projects.map((p) => p.id)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(loadFolded)
   const toggle = (id: string) =>
     setCollapsed((state) => {
@@ -215,7 +222,11 @@ export function Sidebar(props: Props) {
           <span className="min-w-0 flex-1 text-left">Search</span>
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-3">
+      <div
+        className="min-h-0 flex-1 overflow-auto px-1.5 pb-3"
+        data-reorder
+        onClickCapture={projectDrag.onClickCapture}
+      >
         {/* ⌘O and ⌘P's Projects add one; with none yet, this row says how. */}
         {projects.length === 0 && (
           <button type="button" className={cn(NAV, 'mt-2 w-full')} onClick={props.onNewProject}>
@@ -225,17 +236,28 @@ export function Sidebar(props: Props) {
         )}
         {projects.map((project, p) => {
           const open = !collapsed.has(project.id)
-          const list = props.workspaces[project.id] ?? []
+          const list = workspaceDrag.arranged(props.workspaces[project.id] ?? [])
+          const listIds = list.map((w) => w.id)
           // With no workspace to select, the project itself is where you are (not in Settings).
           const here = project.id === projectId && workspaceId === null && props.page === null
           return (
-            <section key={project.id} aria-label={project.name}>
+            <section
+              key={project.id}
+              aria-label={project.name}
+              data-reorder-id={project.id}
+              className={cn(
+                'transition-opacity duration-120',
+                projectDrag.dragging === project.id && 'opacity-60'
+              )}
+            >
               <div
                 className={cn(
                   'group/row relative flex h-7 items-center rounded-md [--row:var(--sidebar)]',
                   p === 0 ? 'mt-2' : 'mt-4',
                   here && 'bg-active [--row:var(--active)]'
                 )}
+                data-reorder-measure
+                onPointerDown={(e) => projectDrag.start(project.id, projectIds, e)}
                 aria-current={here || undefined}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -288,7 +310,11 @@ export function Sidebar(props: Props) {
                 )}
                 inert={!open}
               >
-                <div className="flex min-h-0 flex-col gap-0.5 overflow-hidden pt-0.5">
+                <div
+                  className="flex min-h-0 flex-col gap-0.5 overflow-hidden pt-0.5"
+                  data-reorder
+                  onClickCapture={workspaceDrag.onClickCapture}
+                >
                   {list.length === 0 && (
                     <button
                       type="button"
@@ -300,14 +326,23 @@ export function Sidebar(props: Props) {
                     </button>
                   )}
                   {list.map((ws) => (
-                    <WorkspaceRow
+                    <div
                       key={ws.id}
-                      {...props}
-                      ws={ws}
-                      project={project}
-                      number={order.indexOf(ws.id)}
-                      now={now}
-                    />
+                      data-reorder-id={ws.id}
+                      className={cn(
+                        'transition-opacity duration-120',
+                        workspaceDrag.dragging === ws.id && 'opacity-60'
+                      )}
+                      onPointerDown={(e) => workspaceDrag.start(ws.id, listIds, e)}
+                    >
+                      <WorkspaceRow
+                        {...props}
+                        ws={ws}
+                        project={project}
+                        number={order.indexOf(ws.id)}
+                        now={now}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>

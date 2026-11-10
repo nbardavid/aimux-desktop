@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test'
 
-import { type Artifact, byProject, type Catalog, isNew, strongest, type Workspace } from './catalog'
+import {
+  arrange,
+  type Artifact,
+  byProject,
+  type Catalog,
+  isNew,
+  strongest,
+  type Workspace,
+} from './catalog'
 
 const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
   base: 'main',
@@ -12,7 +20,12 @@ const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
   projectId,
 })
 
-test('workspaces group under their project, oldest first', () => {
+test('arrange puts the named ids first, in order, the rest after as they were', () => {
+  const items = ['a', 'b', 'c', 'd'].map((id) => ({ id }))
+  expect(arrange(items, ['c', 'a']).map((x) => x.id)).toEqual(['c', 'a', 'b', 'd'])
+})
+
+test('workspaces group under their project, in the catalog order', () => {
   const catalog: Catalog = {
     chats: [],
     projects: [
@@ -21,7 +34,7 @@ test('workspaces group under their project, oldest first', () => {
     ],
     workspaces: [ws('b', 'p', 2), ws('a', 'p', 1), ws('x', 'gone', 0)],
   }
-  expect(byProject(catalog)).toEqual({ p: [ws('a', 'p', 1), ws('b', 'p', 2)], q: [] })
+  expect(byProject(catalog)).toEqual({ p: [ws('b', 'p', 2), ws('a', 'p', 1)], q: [] })
 })
 
 test('a question beats work in progress beats a finished turn', () => {

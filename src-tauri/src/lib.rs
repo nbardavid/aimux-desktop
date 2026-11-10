@@ -90,6 +90,7 @@ pub fn run() {
             store::project_add,
             store::project_remove,
             store::project_open,
+            store::catalog_reorder,
             store::workspace_create,
             store::workspace_remove,
             store::workspace_rename,

@@ -1,7 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import type { Catalog, ChatRecord, Project, Workspace } from '../model/catalog'
+import {
+  arrange,
+  type Catalog,
+  type ChatRecord,
+  type Project,
+  type Workspace,
+} from '../model/catalog'
 
 export type CatalogStatus =
   | { kind: 'loading' }
@@ -48,10 +54,8 @@ export function useCatalog() {
     )
   }, [reload])
 
-  const projects = useMemo(
-    () => catalog.projects.toSorted((a, b) => b.lastOpenedAt - a.lastOpenedAt),
-    [catalog.projects]
-  )
+  // The order is the user's: the catalog keeps it as they last dragged it.
+  const projects = catalog.projects
 
   // A selection that no longer exists falls back to the first project and its first worktree.
   const project = projects.find((p) => p.id === selection.projectId) ?? projects[0]
@@ -153,6 +157,16 @@ export function useCatalog() {
     [reload]
   )
 
+  /** Projects or one project's workspaces, dropped in a new order: shown at once, then kept. */
+  const reorder = useCallback((ids: string[]) => {
+    setCatalog((c) => ({
+      ...c,
+      projects: arrange(c.projects, ids),
+      workspaces: arrange(c.workspaces, ids),
+    }))
+    void invoke('catalog_reorder', { ids }).catch(() => {})
+  }, [])
+
   const saveChat = useCallback(
     (chat: ChatRecord) => void invoke('chat_save', { chat }).catch(() => {}),
     []
@@ -175,6 +189,7 @@ export function useCatalog() {
     removeProject,
     removeWorkspace,
     renameWorkspace,
+    reorder,
     saveChat,
     seeArtifact,
     select,
