@@ -472,7 +472,8 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
       // (`aborted_*`), ends as `error_during_execution`: asked for, not a failure.
       const aborted = str(m.terminal_reason).startsWith('aborted_')
       const failed = !state.stopping && !aborted && (m.subtype !== 'success' || m.is_error === true)
-      const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : state.errors
+      // A turn that went through clears what failed before it (a limit hit, then lifted).
+      const errors = failed ? [...state.errors, str(m.result) || str(m.subtype)] : []
       const ended = withEnd(stopTools(withWindow(state, m.modelUsage)), state.turns.length, end)
       if (!state.tracks && state.queued.length > 0) {
         // A Claude that never says when it takes them: its next turn, all together.
@@ -732,7 +733,8 @@ export function sendTurn(
   id: string,
   images: readonly Image[] = []
 ): ChatState {
-  if (state.status !== 'working') return addUserTurn(state, text, id, images)
+  // A new prompt is a new try: the last error stops showing under it.
+  if (state.status !== 'working') return { ...addUserTurn(state, text, id, images), errors: [] }
   const turn = addUserTurn(state, text, id, images).turns.at(-1) as Turn
   return { ...state, queued: [...state.queued, turn] }
 }

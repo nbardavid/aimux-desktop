@@ -23,6 +23,7 @@ import {
   reduceLine,
   replayTranscript,
   runningAgents,
+  sendTurn,
   stopTaskLine,
   toolSummary,
   userLine,
@@ -167,6 +168,13 @@ describe('reduceLine', () => {
     )
     expect(done).toMatchObject({ pending: [], status: 'idle' })
     expect(done.turns.at(-1)?.end).toEqual({ costUsd: 0.01, durationMs: 1200, stopped: false })
+  })
+
+  test('an error goes once a prompt is sent again or a turn goes through', () => {
+    const limit = feed([{ is_error: true, result: "You've hit your limit", type: 'result' }])
+    expect(limit.errors).toEqual(["You've hit your limit"])
+    expect(sendTurn(limit, 'again', 'u2').errors).toEqual([])
+    expect(feed([{ subtype: 'success', type: 'result' }], limit).errors).toEqual([])
   })
 
   test('a failed turn and the process exit are said', () => {
