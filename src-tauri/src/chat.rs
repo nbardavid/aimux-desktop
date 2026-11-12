@@ -77,6 +77,10 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<
         }
     }
     cmd.envs(ARTIFACT_ENV);
+    // Name aimux as the client instead of the headless default `sdk-cli`, which drains the 5h
+    // window ~2x faster for the same tokens (anthropics/claude-code#97074; Orca does the same).
+    // Set after the CLAUDE_CODE_* scrub above so it sticks.
+    cmd.env("CLAUDE_CODE_ENTRYPOINT", "aimux-desktop");
     // Compacts by itself past the size Settings picked, instead of filling the 1M window.
     if let Some(tokens) = crate::store::compact_window() {
         cmd.env("CLAUDE_CODE_AUTO_COMPACT_WINDOW", tokens.to_string());
