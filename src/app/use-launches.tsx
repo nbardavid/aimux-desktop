@@ -15,8 +15,8 @@ export interface Launch {
   prompt: string
   steps: Step[]
   ws: Workspace | null
-  /** The step that stopped it: the worktree (back to the composer) or setup (start anyway). */
-  failed: 'worktree' | 'setup' | null
+  /** The worktree couldn't be made: back to the composer. */
+  failed: 'worktree' | null
   leaving: boolean
   /** The chat started: the steps leave once they have caught up. */
   done: boolean
@@ -24,7 +24,9 @@ export interface Launch {
 
 interface Deps {
   createWorkspace: (projectId: string, base: string | null) => Promise<Workspace>
-  runSetup: (w: Workspace, ended: (exitCode: number | null) => void) => Promise<unknown>
+  runSetup: (w: Workspace) => Promise<unknown>
+  /** The setup script couldn't start: said in a toast, Claude goes on. */
+  setupFailed: (error: unknown) => void
   startChat: (w: Workspace, prompt: string) => void
   reopenComposer: (projectId: string) => void
 }
@@ -36,7 +38,7 @@ const FADE = 170
 const message = (error: unknown) => String(error).replace(/^Error: /, '')
 
 /**
- * The composer's Create, off the composer: the worktree, its setup and the chat with the
+ * The composer's Create, off the composer: the worktree, then the chat with the
  * prompt get ready in the background, their steps shown where the chat will be.
  */
 export function useLaunches() {
@@ -46,7 +48,8 @@ export function useLaunches() {
   const deps = {
     createWorkspace: (pid: string, base: string | null) => need().createWorkspace(pid, base),
     reopenComposer: (pid: string) => need().reopenComposer(pid),
-    runSetup: (w: Workspace, ended: (code: number | null) => void) => need().runSetup(w, ended),
+    runSetup: (w: Workspace) => need().runSetup(w),
+    setupFailed: (error: unknown) => need().setupFailed(error),
     startChat: (w: Workspace, prompt: string) => need().startChat(w, prompt),
   }
   const need = () => {
@@ -62,19 +65,6 @@ export function useLaunches() {
     }))
   const drop = (key: string) => setLaunches((all) => all.filter((l) => l.key !== key))
 
-  const finish = (key: string, w: Workspace, prompt: string) => {
-    patch(key, (l) => ({
-      failed: null,
-      steps: l.steps.map((s) =>
-        s.key === 'setup' && s.state === 'active' ? { ...s, state: 'done' } : s
-      ),
-    }))
-    deps.startChat(w, prompt)
-    step(key, 'claude', 'done')
-    // Claude already works; the steps leave once they have played to the end (`settled`).
-    patch(key, () => ({ done: true }))
-  }
-
   const start = (projectId: string, base: string | null, prompt: string) => {
     const key = crypto.randomUUID()
     const steps: Step[] = [
@@ -84,7 +74,6 @@ export function useLaunches() {
         state: 'active',
         title: 'Creating the worktree',
       },
-      { key: 'setup', state: 'pending', title: 'Running setup' },
       { key: 'claude', state: 'pending', title: 'Starting Claude' },
     ]
     setLaunches((all) => [
@@ -104,27 +93,14 @@ export function useLaunches() {
       }
       patch(key, () => ({ ws: w }))
       step(key, 'worktree', 'done', w.branch)
-      try {
-        const setup = await invoke<{ exists: boolean }>('setup_status', { projectId })
-        if (!setup.exists) {
-          // No script: the step steps aside rather than pretending to run.
-          patch(key, (l) => ({ steps: l.steps.filter((s) => s.key !== 'setup') }))
-          finish(key, w, prompt)
-          return
-        }
-        step(key, 'setup', 'active', 'Its output is in the git panel’s Setup')
-        await deps.runSetup(w, (code) => {
-          if (code === 0) {
-            finish(key, w, prompt)
-            return
-          }
-          patch(key, () => ({ failed: 'setup' }))
-          step(key, 'setup', 'failed', `Exited with ${code ?? 'a signal'}; its log is in Setup`)
-        })
-      } catch (error) {
-        patch(key, () => ({ failed: 'setup' }))
-        step(key, 'setup', 'failed', message(error))
-      }
+      // The setup script runs beside Claude, in the dock; how it ends shows there.
+      void invoke<{ exists: boolean }>('setup_status', { projectId })
+        .then((setup) => (setup.exists ? deps.runSetup(w) : undefined))
+        .catch(deps.setupFailed)
+      deps.startChat(w, prompt)
+      step(key, 'claude', 'done')
+      // Claude already works; the steps leave once they have played to the end (`settled`).
+      patch(key, () => ({ done: true }))
     })()
   }
 
@@ -140,7 +116,7 @@ export function useLaunches() {
     }, HOLD + FADE)
   }
 
-  /** What a stopped launch offers: back to the composer, or Claude without the setup. */
+  /** What a stopped launch offers: back to the composer. */
   const actions = (l: Launch) => {
     if (l.failed === 'worktree')
       return (
@@ -159,13 +135,6 @@ export function useLaunches() {
             Dismiss
           </Button>
         </>
-      )
-    const { ws } = l
-    if (l.failed === 'setup' && ws !== null)
-      return (
-        <Button variant="secondary" className="h-7" onClick={() => finish(l.key, ws, l.prompt)}>
-          Start Claude anyway
-        </Button>
       )
     return null
   }

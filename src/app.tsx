@@ -449,6 +449,7 @@ export function App() {
       store.createWorkspace(pid, nameCandidates((workspaces[pid] ?? []).map((w) => w.name)), base),
     reopenComposer: setComposeIn,
     runSetup,
+    setupFailed: (error) => fail('Setup did not start')(error),
     startChat: newChat,
   }
 

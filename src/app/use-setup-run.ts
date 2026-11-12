@@ -19,18 +19,14 @@ export function useSetupRun(
     [reload]
   )
 
-  /** The script in `w`'s dock; `ended` hears how it ended, as the git panel does. */
-  const runSetup = async (w: Workspace, ended?: (exitCode: number | null) => void) => {
+  /** The script in `w`'s dock; how it ended is kept for the git panel. */
+  const runSetup = async (w: Workspace) => {
     if (!ready) throw new Error(HOST_BLOCKED)
     const script = await invoke<string>('ensure_setup_script', { projectId: w.projectId })
-    const ran = setupRan(w.id)
     return terminals.create({
       command: `bash '${script.replaceAll("'", "'\\''")}'`,
       cwd: w.path,
-      onExit: (code) => {
-        ran(code)
-        ended?.(code)
-      },
+      onExit: setupRan(w.id),
       tag: 'setup',
       title: 'Setup',
       workspaceId: w.id,
