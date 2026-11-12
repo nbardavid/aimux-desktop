@@ -856,6 +856,29 @@ describe('sub-agents as tasks', () => {
     expect(done.tasks.call1?.status).toBe('stopped')
   })
 
+  test('a sub-agent resumed by SendMessage runs again, under that call', () => {
+    const done = feed([call, task('task_started'), task('task_notification')])
+    const send = {
+      message: {
+        content: [
+          {
+            id: 'send1',
+            input: { message: 'Now the login test', summary: 'Login test too', to: 'a1' },
+            name: 'SendMessage',
+            type: 'tool_use',
+          },
+        ],
+        id: 'm2',
+      },
+      type: 'assistant',
+    }
+    const s = feed([send, task('task_started', { tool_use_id: 'send1' })], done)
+    const runs = runningAgents(s)
+    expect(runs.map((r) => [r.call.id, r.title])).toEqual([['send1', 'Login test too']])
+    const over = feed([task('task_notification', { tool_use_id: undefined })], s)
+    expect(runningAgents(over)).toEqual([])
+  })
+
   test('stop_task asks Claude Code to stop one', () => {
     expect(JSON.parse(stopTaskLine('stop-task-1', 'a1'))).toEqual({
       request: { subtype: 'stop_task', task_id: 'a1' },
