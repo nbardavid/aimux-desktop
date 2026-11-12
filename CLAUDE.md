@@ -53,6 +53,10 @@ branding.
 - **Quotas** come from Claude's OAuth usage endpoint (poll every 180 s at most, or it
   throttles). A chat's cost is Claude Code's API-price estimate, not what the subscription
   bills.
+- **Client label.** Every `claude` we launch sets `CLAUDE_CODE_ENTRYPOINT=aimux-desktop`
+  (`chat.rs`), naming the app instead of the headless default `sdk-cli`, which drains the 5h
+  window about twice as fast for the same tokens (anthropics/claude-code#97074). Never
+  pretend to be another client (`cli`, `claude-vscode`).
 - **It feels native**:
   - keyboard first: ⌘N, ⌘T chat, ⇧⌘T terminal, ⌘W (twice if the agent is working), ⌘P,
     ⌘1–9 workspaces (sidebar order), ⌃1–9 tabs, ⌃Tab / ⌃⇧Tab tabs, ⌥⌘↑/↓ workspaces,
