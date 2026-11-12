@@ -171,6 +171,24 @@ export function useChats(hooks: Hooks) {
     )
   }, [])
 
+  // Lines in since the last frame, applied together by `flush`.
+  const queuedRef = useRef<{ apply: (c: ChatTab) => ChatTab; id: string }[]>([])
+  const flush = useCallback(() => {
+    const batch = queuedRef.current.splice(0)
+    if (batch.length === 0) return
+    setChats((list) =>
+      list.map((c) => {
+        let next = c
+        for (const q of batch) if (q.id === c.record.id) next = q.apply(next)
+        if (next.record !== c.record) {
+          const { record } = next
+          queueMicrotask(() => latest.current.hooks.onRecord(record))
+        }
+        return next
+      })
+    )
+  }, [])
+
   const onLine = useCallback(
     (id: string, line: string) => {
       // Claude Code's own measure of the context, for the composer's meter: asked of a running
@@ -186,40 +204,46 @@ export function useChats(hooks: Hooks) {
       }
       const replaying = !live.current.has(id)
       if (line.includes(UNQUEUE)) settleUnqueue(line, unqueues.current)
-      edit(id, (c) => {
-        const state = reduceLine(c.state, line)
-        const sessionId = state.sessionId ?? c.record.sessionId
-        const followed = followModel(c, state, latest.current.hooks)
-        const asked = state.pending.length > c.state.pending.length
-        const finished = c.state.status === 'working' && state.status === 'idle'
-        // `initialize` answered: a resumed chat holds its whole past before any new turn.
-        const ready = /"request_id":\s*"init-/.test(line)
-        if ((finished && !replaying) || ready) measure()
-        const withSession = sessionId === followed.sessionId ? followed : { ...followed, sessionId }
-        // A result just in: the workspace's age restarts (not for a replayed one).
-        const record =
-          finished && !replaying ? { ...withSession, activeAt: Date.now() } : withSession
-        // A replay redraws what happened; the host's `unread` already says what was missed.
-        const next = { ...c, record, state, unread: c.unread || (finished && !replaying) }
-        if ((asked || finished) && !replaying) {
-          queueMicrotask(() => latest.current.hooks.onAttention(next, asked ? 'waiting' : 'done'))
-        }
-        for (const artifact of newPublishes(blocksOf(c.state), blocksOf(state))) {
-          queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
-        }
-        // A `!` command's output: into the conversation, for Claude's next prompt.
-        for (const shell of shellsDone(c.state, state)) {
-          if (replaying) continue
-          const told = shellContextLine(shell.command, shell.output ?? '', shell.exitCode)
-          queueMicrotask(() => void invoke('chat_send', { id, line: told }))
-        }
-        // Just compacted: measure what is left, so the meter drops at once.
-        const emptied = c.state.context !== null || c.state.usage !== null
-        if (emptied && state.context === null && state.usage === null && !replaying) measure()
-        return next
+      queuedRef.current.push({
+        apply: (c: ChatTab) => {
+          const state = reduceLine(c.state, line)
+          const sessionId = state.sessionId ?? c.record.sessionId
+          const followed = followModel(c, state, latest.current.hooks)
+          const asked = state.pending.length > c.state.pending.length
+          const finished = c.state.status === 'working' && state.status === 'idle'
+          // `initialize` answered: a resumed chat holds its whole past before any new turn.
+          const ready = /"request_id":\s*"init-/.test(line)
+          if ((finished && !replaying) || ready) measure()
+          const withSession =
+            sessionId === followed.sessionId ? followed : { ...followed, sessionId }
+          // A result just in: the workspace's age restarts (not for a replayed one).
+          const record =
+            finished && !replaying ? { ...withSession, activeAt: Date.now() } : withSession
+          // A replay redraws what happened; the host's `unread` already says what was missed.
+          const next = { ...c, record, state, unread: c.unread || (finished && !replaying) }
+          if ((asked || finished) && !replaying) {
+            queueMicrotask(() => latest.current.hooks.onAttention(next, asked ? 'waiting' : 'done'))
+          }
+          for (const artifact of newPublishes(blocksOf(c.state), blocksOf(state))) {
+            queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
+          }
+          // A `!` command's output: into the conversation, for Claude's next prompt.
+          for (const shell of shellsDone(c.state, state)) {
+            if (replaying) continue
+            const told = shellContextLine(shell.command, shell.output ?? '', shell.exitCode)
+            queueMicrotask(() => void invoke('chat_send', { id, line: told }))
+          }
+          // Just compacted: measure what is left, so the meter drops at once.
+          const emptied = c.state.context !== null || c.state.usage !== null
+          if (emptied && state.context === null && state.usage === null && !replaying) measure()
+          return next
+        },
+        id,
       })
+      // A reattach replays thousands of lines: one render per frame, not one per line.
+      if (queuedRef.current.length === 1) setTimeout(flush, 16)
     },
-    [edit]
+    [flush]
   )
 
   /** Starts the chat's Claude if it is not running: resumed from its session when it has one. */
