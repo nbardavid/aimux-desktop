@@ -1,4 +1,4 @@
-//! The background host: `aimux --host` owns the Claude chats and the terminals so they outlive
+//! The background host: `logit --host` owns the Claude chats and the terminals so they outlive
 //! the window. It serves newline-delimited JSON on a Unix socket in the profile's data dir.
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -19,7 +19,7 @@ use crate::{pty, store};
 
 /// Bumped by hand whenever a message or behaviour changes incompatibly. `hello`, `list` and
 /// `shutdown` keep their shape in every version, so any app can always talk that much.
-pub const HOST_PROTOCOL: u32 = 2;
+pub const HOST_PROTOCOL: u32 = 3;
 
 /// How long an `ask` waits for a window to answer.
 const ASK_WAIT: Duration = Duration::from_secs(60);
@@ -205,11 +205,11 @@ impl TermBuffer {
     }
 }
 
-/// A line the window sent, wrapped so a replay can show it (`aimux_sent`); "" when the line is
+/// A line the window sent, wrapped so a replay can show it (`logit_sent`); "" when the line is
 /// not JSON, and the caller skips it.
 pub fn sent_line(line: &str) -> String {
     match serde_json::from_str::<Value>(line) {
-        Ok(message) => serde_json::json!({ "type": "aimux_sent", "message": message }).to_string(),
+        Ok(message) => serde_json::json!({ "type": "logit_sent", "message": message }).to_string(),
         Err(_) => String::new(),
     }
 }
@@ -222,8 +222,8 @@ const HOST_IDLE: Duration = Duration::from_secs(60);
 /// A window that stops reading loses its stream instead of stalling the whole host.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
-const EXIT: &str = r#"{"type":"aimux_exit"}"#;
-const LIVE: &str = r#"{"type":"aimux_live"}"#;
+const EXIT: &str = r#"{"type":"logit_exit"}"#;
+const LIVE: &str = r#"{"type":"logit_live"}"#;
 
 struct ChatProc {
     /// Tells this process's reader threads apart from a later one under the same id.
@@ -279,7 +279,7 @@ pub fn run() {
     let dir = store::data_dir();
     let served = std::fs::create_dir_all(&dir).and_then(|()| serve(&dir.join("host.sock")));
     if let Err(e) = served {
-        eprintln!("aimux host: {e}");
+        eprintln!("logit host: {e}");
     }
 }
 
@@ -488,14 +488,14 @@ fn ask_window(state: &Shared, mut ask: Value) -> Result<Value, String> {
         ask["askId"] = id.into();
         let line = serde_json::json!({ "ask": ask }).to_string();
         if !broadcast(&mut s.window_streams, &line) {
-            return Err("aimux's window is closed: ask the user to open aimux.".into());
+            return Err("logit's window is closed: ask the user to open logit.".into());
         }
         s.asks.insert(id, tx);
         id
     };
     let answer = rx.recv_timeout(ASK_WAIT);
     lock(state).asks.remove(&id);
-    answer.map_err(|_| "aimux's window did not answer.".to_string())
+    answer.map_err(|_| "logit's window did not answer.".to_string())
 }
 
 /// What runs, for a window attaching. The window now holds the unread flags, so they are
@@ -562,7 +562,7 @@ fn chat_open(
         let (st, cid) = (state.clone(), id.clone());
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                let line = serde_json::json!({ "type": "aimux_stderr", "text": line });
+                let line = serde_json::json!({ "type": "logit_stderr", "text": line });
                 chat_out(&st, &cid, serial, line.to_string(), false);
             }
         });
@@ -913,7 +913,7 @@ mod tests {
         spawn_serve(&sock);
         let mut a = open(
             &sock,
-            r#"{"op":"term_open","id":"t1","start":{"cwd":"/tmp","cols":80,"rows":24,"command":"echo aimux-host","workspaceId":"w","title":"T","tag":"setup"}}"#,
+            r#"{"op":"term_open","id":"t1","start":{"cwd":"/tmp","cols":80,"rows":24,"command":"echo logit-host","workspaceId":"w","title":"T","tag":"setup"}}"#,
         );
         assert!(read_until(&mut a, "\"exit\":0"));
         drop(a);

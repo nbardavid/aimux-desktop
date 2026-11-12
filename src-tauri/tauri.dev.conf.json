@@ -1,6 +1,6 @@
 {
-  "productName": "aimux Dev",
-  "identifier": "dev.aimux.desktop.dev",
+  "productName": "logit Dev",
+  "identifier": "dev.logit.desktop.dev",
   "bundle": {
     "createUpdaterArtifacts": false
   }

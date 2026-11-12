@@ -25,7 +25,7 @@ interface Props {
   onClose: () => void
 }
 
-const RECENT = 'aimux.bases'
+const RECENT = 'logit.bases'
 
 /** The bases picked last in each project, newest first. */
 function recentBases(): Record<string, string[]> {
@@ -46,7 +46,7 @@ function rememberBase(projectId: string, base: string) {
   }
 }
 
-const DRAFTS = 'aimux.composer.drafts'
+const DRAFTS = 'logit.composer.drafts'
 
 /** The unsent prompt of each project: closing the composer by mistake loses nothing. */
 function loadDrafts(): Record<string, string> {

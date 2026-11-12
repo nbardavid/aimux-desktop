@@ -195,7 +195,7 @@ function createWorkspace(args: Args): Workspace {
   const project = store.projects.find((p) => p.id === args.projectId)
   const ws: Workspace = {
     base: str(args.base) || 'main',
-    branch: `aimux/${name}`,
+    branch: `logit/${name}`,
     createdAt: Date.now(),
     id: `ws-${crypto.randomUUID()}`,
     name,
@@ -534,16 +534,16 @@ function handle(cmd: string, args: Args): unknown {
       return SESSIONS
     case 'run_command':
       return (
-        runCommands.get(str(args.projectId)) ?? (args.projectId === 'p-aimux' ? 'bun run dev' : '')
+        runCommands.get(str(args.projectId)) ?? (args.projectId === 'p-logit' ? 'bun run dev' : '')
       )
     case 'set_run_command':
       runCommands.set(str(args.projectId), str(args.command).trim())
       return null
     case 'setup_status':
-      return { exists: args.projectId === 'p-aimux', path: '.aimux/setup.sh' }
+      return { exists: args.projectId === 'p-logit', path: '.logit/setup.sh' }
     case 'ensure_setup_script':
-      if (flags.has('fail')) throw new Error('Could not write .aimux/setup.sh: permission denied')
-      return `${path}/.aimux/setup.sh`
+      if (flags.has('fail')) throw new Error('Could not write .logit/setup.sh: permission denied')
+      return `${path}/.logit/setup.sh`
     case 'read_quota_cache':
       return quotaCache()
     case 'read_settings':

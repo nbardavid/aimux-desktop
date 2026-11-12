@@ -1,4 +1,4 @@
-// The names workspaces draw from, each with the colour it is named after: `aimux/crimson`.
+// The names workspaces draw from, each with the colour it is named after: `logit/crimson`.
 // Sayable ("switch to teal"), fixed, no model call to name a folder. The TUI's pool.
 export const COLORS: Readonly<Record<string, string>> = {
   absinthe: '#76b583',

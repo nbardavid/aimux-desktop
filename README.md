@@ -1,4 +1,4 @@
-# aimux desktop
+# logit
 
 A macOS app for working with Claude on several things at once. Each piece of work gets its
 own git worktree, with its chats and terminals beside it. Chats are the real `claude` binary
@@ -10,7 +10,7 @@ holds every Claude and every terminal, and the window picks them back up when it
 Apple Silicon, with [Claude Code](https://claude.com/claude-code) installed.
 
 ```sh
-curl -L https://github.com/nbardavid/aimux-desktop/releases/latest/download/aimux_aarch64.app.tar.gz | tar -xz -C /Applications
+curl -L https://github.com/nbardavid/logit/releases/latest/download/logit_aarch64.app.tar.gz | tar -xz -C /Applications
 ```
 
 The app updates itself afterwards: when a release is out, an "Update to x.y.z" pill appears
@@ -23,8 +23,8 @@ bun install
 bun run dev
 ```
 
-`bun run dev` runs "aimux Dev", a separate app with its own data and background process, so
-it sits beside the installed aimux without touching it. Checks:
+`bun run dev` runs "logit Dev", a separate app with its own data and background process, so
+it sits beside the installed logit without touching it. Checks:
 `bun run lint && bun run format && bun test && (cd src-tauri && cargo test)`.
 
 ## Release

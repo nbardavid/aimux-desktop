@@ -155,7 +155,7 @@ export function Gallery() {
           </Row>
           <Row label="Input · Textarea · Kbd">
             <Input className="w-56" placeholder="Search branches" />
-            <Input className="w-56" defaultValue="aimux/amber" />
+            <Input className="w-56" defaultValue="logit/amber" />
             <Kbd>⌘N</Kbd>
             <Kbd>⇧⌘T</Kbd>
           </Row>

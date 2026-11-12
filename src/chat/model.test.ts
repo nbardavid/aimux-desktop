@@ -180,7 +180,7 @@ describe('reduceLine', () => {
   test('a failed turn and the process exit are said', () => {
     const s = feed([
       { result: 'boom', subtype: 'error_during_execution', type: 'result' },
-      { type: 'aimux_exit' },
+      { type: 'logit_exit' },
     ])
     expect(s.errors).toEqual(['boom'])
     expect(s.status).toBe('exited')
@@ -195,7 +195,7 @@ describe('reduceLine', () => {
   test('a replayed send shows the prompt', () => {
     const sent = JSON.stringify({
       message: JSON.parse(userLine('hi there', null)),
-      type: 'aimux_sent',
+      type: 'logit_sent',
     })
     const state = reduceLine(initialChat, sent)
     expect(state.turns.at(-1)?.role).toBe('user')
@@ -211,7 +211,7 @@ describe('reduceLine', () => {
     let state = reduceLine(initialChat, asked)
     expect(state.pending).toHaveLength(1)
     const answer = permissionLine(state.pending[0] as Permission, 'allow')
-    state = reduceLine(state, JSON.stringify({ message: JSON.parse(answer), type: 'aimux_sent' }))
+    state = reduceLine(state, JSON.stringify({ message: JSON.parse(answer), type: 'logit_sent' }))
     expect(state.pending).toHaveLength(0)
   })
 })
@@ -219,8 +219,8 @@ describe('reduceLine', () => {
 test("a replayed chat keeps each sub-agent's work, its unfinished tools stopped", () => {
   const s = replayTranscript([
     JSON.stringify({
-      aimuxAgent: 't1',
       isSidechain: true,
+      logitAgent: 't1',
       message: {
         content: [{ id: 'u1', input: { command: 'ls' }, name: 'Bash', type: 'tool_use' }],
         id: 'm1',
@@ -527,7 +527,7 @@ describe('commands', () => {
   test('a replayed send of a command shows as a command', () => {
     const sent = JSON.stringify({
       message: JSON.parse(userLine('/context', null)),
-      type: 'aimux_sent',
+      type: 'logit_sent',
     })
     expect(reduceLine(initialChat, sent).turns[0]?.blocks[0]?.kind).toBe('command')
   })
@@ -571,7 +571,7 @@ test('a stop in progress ends with the turn’s result, or with the process', ()
   expect(feed([{ subtype: 'error_during_execution', type: 'result' }], stopping).stopping).toBe(
     false
   )
-  expect(feed([{ type: 'aimux_exit' }], stopping).stopping).toBe(false)
+  expect(feed([{ type: 'logit_exit' }], stopping).stopping).toBe(false)
   expect(feed([{ subtype: 'error_during_execution', type: 'result' }], stopping).errors).toEqual([])
   expect(feed([ev({ message: { id: 'm1' }, type: 'message_start' })], stopping).stopping).toBe(true)
 })
@@ -725,7 +725,7 @@ describe('pasted images', () => {
 
   test('come back in another window and from the transcript', () => {
     const sent = JSON.parse(userLine('', null, undefined, [png]))
-    const live = reduceLine(initialChat, JSON.stringify({ message: sent, type: 'aimux_sent' }))
+    const live = reduceLine(initialChat, JSON.stringify({ message: sent, type: 'logit_sent' }))
     expect(live.turns[0]?.blocks).toEqual([{ kind: 'image', ...png }])
 
     const line = JSON.stringify({ message: sent.message, type: 'user', uuid: 'a' })

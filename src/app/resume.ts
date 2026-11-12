@@ -23,7 +23,7 @@ export type ResumeTarget =
 
 const within = (cwd: string, path: string) => cwd === path || cwd.startsWith(`${path}/`)
 
-/** Nothing to show, or one of aimux's one-shot naming calls: not worth a row. */
+/** Nothing to show, or one of logit's one-shot naming calls: not worth a row. */
 export const listable = (s: Session) =>
   (s.title !== '' || s.firstPrompt !== '') &&
   !s.firstPrompt.trimStart().startsWith('Name a workspace for the user request')

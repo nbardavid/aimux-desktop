@@ -151,7 +151,7 @@ function at(e: MouseEvent) {
   return { x: box.left, y: box.bottom + 4 }
 }
 
-const FOLDED_KEY = 'aimux.sidebar.folded'
+const FOLDED_KEY = 'logit.sidebar.folded'
 
 /** The projects folded last time: a per-window convenience, empty when storage is refused. */
 function loadFolded(): ReadonlySet<string> {

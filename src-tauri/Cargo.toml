@@ -1,12 +1,12 @@
 [package]
-name = "aimux-desktop"
+name = "logit"
 version = "0.1.0"
-description = "aimux desktop app"
+description = "logit desktop app"
 authors = ["BrimVeyn"]
 edition = "2021"
 
 [lib]
-name = "aimux_desktop_lib"
+name = "logit_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

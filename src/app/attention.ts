@@ -1,6 +1,6 @@
-// How a chat that finished or asks something gets heard: a sound (aimux's three, played by the
-// window itself) and, with the window in the back, a system notification. Everything here
-// fails quietly; a sound that cannot play is a silent one.
+// How a chat that finished or asks something gets heard: a sound (the aimux TUI's three,
+// played by the window itself) and, with the window in the back, a system notification.
+// Everything here fails quietly; a sound that cannot play is a silent one.
 import { invoke } from '@tauri-apps/api/core'
 import {
   isPermissionGranted,
@@ -58,5 +58,5 @@ export async function playChosenSound(): Promise<void> {
 /** A system notification, once macOS allows them. */
 export async function notify(body: string): Promise<void> {
   const granted = (await isPermissionGranted()) || (await requestPermission()) === 'granted'
-  if (granted) sendNotification({ body, title: 'aimux' })
+  if (granted) sendNotification({ body, title: 'logit' })
 }

@@ -69,10 +69,10 @@ mod tests {
     #[test]
     fn a_command_runs_on_the_pty_and_reports_its_exit() {
         let (_master, mut child, mut reader, _writer) =
-            spawn("/tmp", 80, 24, Some("echo aimux-pty; exit 3")).unwrap();
+            spawn("/tmp", 80, 24, Some("echo logit-pty; exit 3")).unwrap();
         let mut out = String::new();
         let _ = reader.read_to_string(&mut out);
-        assert!(out.contains("aimux-pty"), "{out:?}");
+        assert!(out.contains("logit-pty"), "{out:?}");
         assert_eq!(child.wait().unwrap().exit_code(), 3);
     }
 

@@ -44,7 +44,7 @@ pub struct Workspace {
     /// What its chats published with Claude Code's `Artifact` tool, as the panel's tabs.
     #[serde(default)]
     pub artifacts: Vec<Artifact>,
-    /// The chat whose agent created it (through aimux's MCP), if one did.
+    /// The chat whose agent created it (through logit's MCP), if one did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_chat: Option<String>,
     /// Put aside by the user: drawn muted until a message is sent in it.
@@ -129,24 +129,82 @@ pub fn sanitize(raw: &str) -> String {
     }
 }
 
-/// `AIMUX_PROFILE` keeps a trial run (`gui-dev`) apart from everyday data. A dev build is
+/// `LOGIT_PROFILE` keeps a trial run (`gui-dev`) apart from everyday data. A dev build is
 /// `dev` unless told otherwise, so it never touches the installed app's data or host.
 fn profile() -> Option<String> {
-    env("AIMUX_PROFILE")
+    env("LOGIT_PROFILE")
         .or_else(|| cfg!(debug_assertions).then(|| "dev".into()))
         .filter(|p| p != "default")
 }
 
-/// `~/.local/share/aimux-desktop[-<profile>]`, or `AIMUX_DESKTOP_HOME`.
+/// `~/.local/share/logit[-<profile>]`, or `LOGIT_HOME`.
 pub fn data_dir() -> PathBuf {
-    if let Some(dir) = env("AIMUX_DESKTOP_HOME") {
+    if let Some(dir) = env("LOGIT_HOME") {
         return PathBuf::from(dir);
+    }
+    let name = match profile() {
+        Some(p) => format!("logit-{}", sanitize(&p)),
+        None => "logit".into(),
+    };
+    home().join(".local/share").join(name)
+}
+
+/// Where the previous app (aimux desktop) kept its data: `~/.local/share/aimux-desktop[-<profile>]`.
+/// None when `LOGIT_HOME` points the data elsewhere.
+pub fn legacy_data_dir() -> Option<PathBuf> {
+    if env("LOGIT_HOME").is_some() {
+        return None;
     }
     let name = match profile() {
         Some(p) => format!("aimux-desktop-{}", sanitize(&p)),
         None => "aimux-desktop".into(),
     };
-    home().join(".local/share").join(name)
+    Some(home().join(".local/share").join(name))
+}
+
+/// The first launch under this name copies what the previous app kept (its catalog, settings,
+/// quotas and setup scripts) into the data folder. Copies, never moves: the old app keeps
+/// working. Worktrees, the host socket and its log stay where they are.
+pub fn migrate_legacy() {
+    let Some(legacy) = legacy_data_dir() else {
+        return;
+    };
+    if let Err(e) = copy_legacy_data(&legacy, &data_dir()) {
+        eprintln!("logit: could not copy the previous app's data: {e}");
+    }
+}
+
+/// Copies `from`'s catalog, settings, quotas and `projects/` into `to`, unless `to` already has
+/// a catalog or `from` has none. Idempotent: a second call finds the catalog and stops.
+pub fn copy_legacy_data(from: &Path, to: &Path) -> std::io::Result<()> {
+    if to.join("catalog.json").exists() || !from.join("catalog.json").exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(to)?;
+    for name in ["catalog.json", "settings.json", "quota.json"] {
+        if from.join(name).is_file() {
+            std::fs::copy(from.join(name), to.join(name))?;
+        }
+    }
+    if from.join("projects").is_dir() {
+        copy_dir(&from.join("projects"), &to.join("projects"))?;
+    }
+    Ok(())
+}
+
+/// Copies the folder `from` into `to`, recursively, keeping what `to` already has.
+pub fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else if !target.exists() {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 fn now() -> u64 {
@@ -173,7 +231,7 @@ fn catalog_file() -> PathBuf {
     data_dir().join("catalog.json")
 }
 
-/// The projects aimux knows, for a first launch to start from: names and folders only.
+/// The projects the aimux TUI knows, for a first launch to start from: names and folders only.
 pub fn imported(aimux_projects: &Value) -> Vec<Project> {
     aimux_projects["projects"]
         .as_array()
@@ -367,7 +425,7 @@ fn seed(repo: &Path, target: &Path, patterns: &[String]) {
     }
 }
 
-/// A new worktree on `aimux/<name>`, named after the first free candidate, forked from `base`.
+/// A new worktree on `logit/<name>`, named after the first free candidate, forked from `base`.
 #[tauri::command(async)]
 pub fn workspace_create(
     store: State<'_, Store>,
@@ -451,22 +509,24 @@ pub fn make_worktree(
     let name = free_name(candidates, |c| {
         names.iter().any(|n| n == c)
             || root.join(c).exists()
-            || git(
-                repo,
-                &[
-                    "rev-parse",
-                    "--verify",
-                    "--quiet",
-                    &format!("refs/heads/aimux/{c}"),
-                ],
-            )
-            .is_ok()
+            || ["logit", "aimux"].iter().any(|prefix| {
+                git(
+                    repo,
+                    &[
+                        "rev-parse",
+                        "--verify",
+                        "--quiet",
+                        &format!("refs/heads/{prefix}/{c}"),
+                    ],
+                )
+                .is_ok()
+            })
     })
     .ok_or("every name is taken")?
     .to_string();
     let target = root.join(&name);
     std::fs::create_dir_all(root).map_err(|e| e.to_string())?;
-    let branch = format!("aimux/{name}");
+    let branch = format!("logit/{name}");
     let path = target.to_string_lossy().into_owned();
     // `--no-track`: a branch forked from origin/main must not push onto main.
     if let Err(error) = git(
@@ -914,7 +974,7 @@ mod tests {
 
     fn one_workspace() -> Catalog {
         serde_json::from_value(serde_json::json!({ "workspaces": [{
-            "id": "w", "projectId": "p", "name": "amber", "branch": "aimux/amber",
+            "id": "w", "projectId": "p", "name": "amber", "branch": "logit/amber",
             "base": "main", "path": "/wt/amber", "createdAt": 0
         }]}))
         .unwrap()
@@ -1006,7 +1066,7 @@ mod tests {
 
     #[test]
     fn seed_copies_matches_and_keeps_existing_files() {
-        let root = std::env::temp_dir().join(format!("aimux-seed-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("logit-seed-{}", std::process::id()));
         let (repo, target) = (root.join("repo"), root.join("wt"));
         std::fs::create_dir_all(repo.join("api")).unwrap();
         std::fs::create_dir_all(&target).unwrap();
@@ -1045,7 +1105,7 @@ mod tests {
 
     #[test]
     fn removing_refuses_only_over_changes_and_otherwise_always_succeeds() {
-        let root = std::env::temp_dir().join(format!("aimux-rm-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("logit-rm-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
@@ -1082,7 +1142,7 @@ mod tests {
 
     #[test]
     fn a_repository_without_commits_gets_an_empty_first_one_and_keeps_its_index() {
-        let root = std::env::temp_dir().join(format!("aimux-empty-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("logit-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
@@ -1107,7 +1167,7 @@ mod tests {
 
     #[test]
     fn a_worktree_forks_from_the_base_on_a_free_colour_and_gets_its_env() {
-        let root = std::env::temp_dir().join(format!("aimux-wt-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("logit-wt-{}", std::process::id()));
         let repo = root.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         sh(&repo, &["init", "-q", "-b", "main"]);
@@ -1125,7 +1185,9 @@ mod tests {
                 "one",
             ],
         );
-        sh(&repo, &["branch", "aimux/amber"]);
+        // amber's branch is this app's; basil's is left by the previous app, which takes it too.
+        sh(&repo, &["branch", "logit/amber"]);
+        sh(&repo, &["branch", "aimux/basil"]);
         std::fs::write(repo.join(".env"), "KEY=1").unwrap();
         let project = Project {
             id: "p".into(),
@@ -1133,7 +1195,7 @@ mod tests {
             name: "repo".into(),
             path: repo.to_string_lossy().into_owned(),
         };
-        let names = ["amber", "azure", "basil"].map(String::from);
+        let names = ["amber", "azure", "basil", "coral"].map(String::from);
         let taken = ["azure".to_string()];
         let wt = root.join("worktrees");
         let made = make_worktree(
@@ -1146,17 +1208,65 @@ mod tests {
             &[".env".into()],
         )
         .unwrap();
-        // amber's branch exists, azure is a workspace already: basil it is. No origin: main.
+        // amber's and basil's branches exist, azure is a workspace already: coral it is.
+        // No origin: main.
         assert_eq!(
             (made.name.as_str(), made.branch.as_str(), made.base.as_str()),
-            ("basil", "aimux/basil", "main")
+            ("coral", "logit/coral", "main")
         );
         assert_eq!(
-            std::fs::read_to_string(wt.join("basil/.env")).unwrap(),
+            std::fs::read_to_string(wt.join("coral/.env")).unwrap(),
             "KEY=1"
         );
         let head = git(&made.path, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap();
-        assert_eq!(head.trim(), "aimux/basil");
+        assert_eq!(head.trim(), "logit/coral");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_data_is_copied_once_without_its_worktrees() {
+        let root = std::env::temp_dir().join(format!("logit-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (old, new) = (root.join("aimux-desktop"), root.join("logit"));
+        std::fs::create_dir_all(old.join("projects/p1")).unwrap();
+        std::fs::create_dir_all(old.join("worktrees/p1/amber")).unwrap();
+        std::fs::write(old.join("catalog.json"), "{}").unwrap();
+        std::fs::write(old.join("settings.json"), "{\"a\":1}").unwrap();
+        std::fs::write(old.join("projects/p1/setup.sh"), "echo hi").unwrap();
+        std::fs::write(old.join("worktrees/p1/amber/file.txt"), "x").unwrap();
+        std::fs::write(old.join("host.log"), "log").unwrap();
+
+        copy_legacy_data(&old, &new).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(new.join("catalog.json")).unwrap(),
+            "{}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(new.join("projects/p1/setup.sh")).unwrap(),
+            "echo hi"
+        );
+        assert!(new.join("settings.json").is_file());
+        assert!(!new.join("quota.json").exists());
+        assert!(!new.join("worktrees").exists());
+        assert!(!new.join("host.log").exists());
+
+        // A catalog already there: nothing is copied over it.
+        std::fs::write(new.join("catalog.json"), "{\"mine\":true}").unwrap();
+        std::fs::write(old.join("settings.json"), "{\"a\":2}").unwrap();
+        copy_legacy_data(&old, &new).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(new.join("catalog.json")).unwrap(),
+            "{\"mine\":true}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(new.join("settings.json")).unwrap(),
+            "{\"a\":1}"
+        );
+
+        // No catalog to copy from: nothing happens.
+        let empty = root.join("empty");
+        copy_legacy_data(&empty, &root.join("fresh")).unwrap();
+        assert!(!root.join("fresh").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1165,7 +1275,7 @@ mod tests {
         let mut c = Catalog {
             workspaces: vec![Workspace {
                 base: "main".into(),
-                branch: "aimux/amber".into(),
+                branch: "logit/amber".into(),
                 created_at: 0,
                 id: "w".into(),
                 name: "amber".into(),
@@ -1181,7 +1291,7 @@ mod tests {
         let w = rename_workspace(&mut c, "w", "  Billing webhooks ").unwrap();
         assert_eq!(
             (w.name.as_str(), w.branch.as_str(), w.path.as_str()),
-            ("Billing webhooks", "aimux/amber", "/wt/amber")
+            ("Billing webhooks", "logit/amber", "/wt/amber")
         );
         assert_eq!(rename_workspace(&mut c, "w", " ").unwrap().name, "amber");
         assert!(rename_workspace(&mut c, "nope", "x").is_err());

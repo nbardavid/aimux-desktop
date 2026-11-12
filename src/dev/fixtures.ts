@@ -13,13 +13,13 @@ const HOUR = 60 * MIN
 const now = Date.now()
 
 export const HOME = '/Users/dev'
-export const TREES = `${HOME}/.aimux/worktrees`
+export const TREES = `${HOME}/.logit/worktrees`
 export const PATHS = {
-  amber: `${TREES}/aimux-desktop/amber`,
+  amber: `${TREES}/logit/amber`,
   basil: `${TREES}/pragma-once/basil`,
-  main: `${HOME}/dev/aimux-desktop`,
+  main: `${HOME}/dev/logit`,
   pragma: `${HOME}/dev/pragma-once`,
-  teal: `${TREES}/aimux-desktop/teal`,
+  teal: `${TREES}/logit/teal`,
   violet: `${TREES}/pragma-once/violet`,
 }
 
@@ -69,33 +69,33 @@ export function catalog(): Catalog {
       },
     ],
     projects: [
-      { id: 'p-aimux', lastOpenedAt: now, name: 'aimux-desktop', path: PATHS.main },
+      { id: 'p-logit', lastOpenedAt: now, name: 'logit', path: PATHS.main },
       { id: 'p-pragma', lastOpenedAt: now - HOUR, name: 'pragma-once', path: PATHS.pragma },
     ],
     workspaces: [
       {
         base: 'origin/main',
-        branch: 'aimux/amber',
+        branch: 'logit/amber',
         createdAt: now - 5 * HOUR,
         id: 'ws-amber',
         name: 'amber',
         path: PATHS.amber,
-        projectId: 'p-aimux',
+        projectId: 'p-logit',
         setup: { exitCode: 0, ranAt: now - 5 * HOUR },
       },
       {
         base: 'origin/main',
-        branch: 'aimux/teal',
+        branch: 'logit/teal',
         createdAt: now - 4 * HOUR,
         id: 'ws-teal',
         name: 'teal',
         path: PATHS.teal,
-        projectId: 'p-aimux',
+        projectId: 'p-logit',
         setup: { exitCode: 1, ranAt: now - 4 * HOUR },
       },
       {
         base: 'origin/main',
-        branch: 'aimux/violet',
+        branch: 'logit/violet',
         createdAt: now - 26 * HOUR,
         id: 'ws-violet',
         // Renamed in place: the colour bar still says violet.
@@ -107,7 +107,7 @@ export function catalog(): Catalog {
       // No pull request yet, two commits to push.
       {
         base: 'origin/main',
-        branch: 'aimux/basil',
+        branch: 'logit/basil',
         createdAt: now - 2 * HOUR,
         id: 'ws-basil',
         name: 'basil',
@@ -167,7 +167,7 @@ export const sent = (uuid: string, text: string, images: string[] = []) =>
       type: 'user',
       uuid,
     },
-    type: 'aimux_sent',
+    type: 'logit_sent',
   })
 /** A pasted screenshot: a context menu, its second row hovered. */
 const MENU_SHOT =
@@ -197,7 +197,7 @@ export const initAnswer = (id: string) =>
   })
 export const systemInit = (session: string, model: string) =>
   line({ model, session_id: session, subtype: 'init', type: 'system' })
-export const LIVE = line({ type: 'aimux_live' })
+export const LIVE = line({ type: 'logit_live' })
 
 const ANSWER = `The context menu re-implements focus and placement by hand, which is why a row could
 lose its highlight under a still mouse. Base UI's \`Menu\` handles both:
@@ -387,7 +387,7 @@ const NOTES = [
   ...NOTES_WORK,
   assistant('m-notes-1', [
     {
-      text: '## aimux 0.2\n\n- Slash commands with a `/` menu and command cards\n- `/resume` across the whole project\n- Self-updating releases\n\nWant me to open a PR with these in `CHANGELOG.md`?',
+      text: '## logit 0.2\n\n- Slash commands with a `/` menu and command cards\n- `/resume` across the whole project\n- Self-updating releases\n\nWant me to open a PR with these in `CHANGELOG.md`?',
       type: 'text',
     },
   ]),
@@ -500,7 +500,7 @@ TRANSCRIPTS['session-quotas'] = [
         {
           id: 'tool-q-edit',
           input: {
-            file_path: `${TREES}/aimux-desktop/crimson/src/app/quotas.tsx`,
+            file_path: `${TREES}/logit/crimson/src/app/quotas.tsx`,
             new_string:
               "  if (percent >= 85) return 'bg-critical'\n  if (percent >= 60) return 'bg-warn'",
             old_string:
@@ -656,7 +656,7 @@ export function asTranscript(lines: string[]): string[] {
       return [localCommand(`<local-command-stdout>${text}</local-command-stdout>`)]
     }
     if (m.type === 'assistant' || m.type === 'user') return [raw]
-    if (m.type !== 'aimux_sent') return []
+    if (m.type !== 'logit_sent') return []
     const sentLine = m.message as {
       uuid?: string
       message?: { content?: { type?: string; text?: string }[] }
@@ -739,11 +739,11 @@ export interface MockBranch {
 }
 
 export const GIT_BRANCH: Record<string, MockBranch> = {
-  [PATHS.amber]: { ahead: 2, behind: 0, branch: 'aimux/amber', remote: true, upstream: true },
-  [PATHS.basil]: { ahead: 2, behind: 0, branch: 'aimux/basil', remote: true, upstream: true },
-  [PATHS.teal]: { ahead: 0, behind: 0, branch: 'aimux/teal', remote: true, upstream: true },
+  [PATHS.amber]: { ahead: 2, behind: 0, branch: 'logit/amber', remote: true, upstream: true },
+  [PATHS.basil]: { ahead: 2, behind: 0, branch: 'logit/basil', remote: true, upstream: true },
+  [PATHS.teal]: { ahead: 0, behind: 0, branch: 'logit/teal', remote: true, upstream: true },
   // Merged, then a commit on top: the head offers no Push into a merged branch.
-  [PATHS.violet]: { ahead: 1, behind: 0, branch: 'aimux/violet', remote: true, upstream: true },
+  [PATHS.violet]: { ahead: 1, behind: 0, branch: 'logit/violet', remote: true, upstream: true },
 }
 
 /** `gh pr view --json …`, raw. */
@@ -754,7 +754,7 @@ export const PRS: Record<string, { state: string } & Record<string, unknown>> = 
     body: 'Menus, pickers and combos on Base UI.',
     changedFiles: 14,
     deletions: 268,
-    headRefName: 'aimux/amber',
+    headRefName: 'logit/amber',
     isDraft: false,
     mergeable: 'MERGEABLE',
     mergeStateStatus: 'UNSTABLE',
@@ -763,30 +763,30 @@ export const PRS: Record<string, { state: string } & Record<string, unknown>> = 
     statusCheckRollup: [
       {
         conclusion: 'SUCCESS',
-        detailsUrl: 'https://github.com/nbardavid/aimux-desktop/actions/runs/101/job/1',
+        detailsUrl: 'https://github.com/nbardavid/logit/actions/runs/101/job/1',
         name: 'lint',
         status: 'COMPLETED',
       },
       {
         conclusion: 'SUCCESS',
-        detailsUrl: 'https://github.com/nbardavid/aimux-desktop/actions/runs/101/job/2',
+        detailsUrl: 'https://github.com/nbardavid/logit/actions/runs/101/job/2',
         name: 'test',
         status: 'COMPLETED',
       },
       {
         conclusion: 'FAILURE',
-        detailsUrl: 'https://github.com/nbardavid/aimux-desktop/actions/runs/101/job/3',
+        detailsUrl: 'https://github.com/nbardavid/logit/actions/runs/101/job/3',
         name: 'build (macos-14)',
         status: 'COMPLETED',
       },
       {
         context: 'cargo test',
         state: 'SUCCESS',
-        targetUrl: 'https://ci.example.com/aimux-desktop/128',
+        targetUrl: 'https://ci.example.com/logit/128',
       },
     ],
     title: 'Port menus and pickers to Base UI',
-    url: 'https://github.com/nbardavid/aimux-desktop/pull/128',
+    url: 'https://github.com/nbardavid/logit/pull/128',
   },
   // Open, green and mergeable: the head's band goes pale green.
   [PATHS.teal]: {
@@ -795,7 +795,7 @@ export const PRS: Record<string, { state: string } & Record<string, unknown>> = 
     body: 'The 0.4 release notes, from the merged pull requests.',
     changedFiles: 2,
     deletions: 4,
-    headRefName: 'aimux/teal',
+    headRefName: 'logit/teal',
     isDraft: false,
     mergeable: 'MERGEABLE',
     mergeStateStatus: 'CLEAN',
@@ -806,7 +806,7 @@ export const PRS: Record<string, { state: string } & Record<string, unknown>> = 
       { conclusion: 'SUCCESS', name: 'test', status: 'COMPLETED' },
     ],
     title: 'Release notes for 0.4',
-    url: 'https://github.com/nbardavid/aimux-desktop/pull/131',
+    url: 'https://github.com/nbardavid/logit/pull/131',
   },
   [PATHS.violet]: {
     additions: 40,
@@ -814,7 +814,7 @@ export const PRS: Record<string, { state: string } & Record<string, unknown>> = 
     body: '',
     changedFiles: 3,
     deletions: 12,
-    headRefName: 'aimux/violet',
+    headRefName: 'logit/violet',
     isDraft: false,
     mergeable: 'MERGEABLE',
     mergeStateStatus: 'CLEAN',
@@ -944,7 +944,7 @@ export function longFixture() {
     branch: {
       ahead: 3,
       behind: 0,
-      branch: 'aimux/indigo-migrate-billing-webhooks-onto-the-new-event-bus',
+      branch: 'logit/indigo-migrate-billing-webhooks-onto-the-new-event-bus',
       remote: true,
       upstream: true,
     },
@@ -979,7 +979,7 @@ export function longFixture() {
     ),
     workspace: {
       base: 'origin/main',
-      branch: 'aimux/indigo-migrate-billing-webhooks-onto-the-new-event-bus',
+      branch: 'logit/indigo-migrate-billing-webhooks-onto-the-new-event-bus',
       createdAt: now - 2 * HOUR,
       id: 'ws-indigo',
       name: 'indigo',
@@ -995,8 +995,8 @@ export const BRANCHES = {
     'main',
     'develop',
     'release/0.2',
-    'aimux/amber',
-    'aimux/teal',
+    'logit/amber',
+    'logit/teal',
     'feat/dark-mode',
     'fix/resume-order',
   ],
@@ -1037,7 +1037,7 @@ export const SESSIONS = [
     updatedAt: now - 3 * 24 * HOUR,
   },
   {
-    cwd: `${TREES}/aimux-desktop/crimson`,
+    cwd: `${TREES}/logit/crimson`,
     firstPrompt: 'Make the quota bars warn at 60% and go red at 85%.',
     id: 'session-quotas',
     sizeBytes: 140_000,
@@ -1073,12 +1073,12 @@ export function quotaCache(): QuotaCache {
 }
 
 export const SETTINGS = {
-  path: `${HOME}/Library/Application Support/aimux/settings.json`,
+  path: `${HOME}/Library/Application Support/logit/settings.json`,
   settings: { 'git.fetchBase': false },
 }
 
 const ESC = '\u001B['
-export const TERMINAL_PROMPT = `${ESC}1;32m➜${ESC}0m  ${ESC}1;36maimux-desktop${ESC}0m ${ESC}1;34mgit:(${ESC}0;31maimux/amber${ESC}1;34m)${ESC}0m `
+export const TERMINAL_PROMPT = `${ESC}1;32m➜${ESC}0m  ${ESC}1;36mlogit${ESC}0m ${ESC}1;34mgit:(${ESC}0;31mlogit/amber${ESC}1;34m)${ESC}0m `
 export const TERMINAL_HISTORY = [
   'Last login: Thu Nov  5 09:12:44 on ttys004\r\n',
   `${TERMINAL_PROMPT}bun test src\r\n`,

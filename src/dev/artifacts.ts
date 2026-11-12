@@ -34,8 +34,8 @@ export const PUBLISH_LINES = [
   ]),
   result('tool-quickstart', 'Quickstart. Otherwise make a plain page.'),
   assistant('m-art-2', [
-    tool('tool-page', 'Write', { content: '<title>aimux 0.2</title>…', file_path: SCRATCH }),
-    tool('tool-publish', 'Artifact', { file_path: SCRATCH, title: 'aimux 0.2 at a glance' }),
+    tool('tool-page', 'Write', { content: '<title>logit 0.2</title>…', file_path: SCRATCH }),
+    tool('tool-publish', 'Artifact', { file_path: SCRATCH, title: 'logit 0.2 at a glance' }),
   ]),
   result('tool-page', `File created successfully at: ${SCRATCH}`),
   result('tool-publish', `Published ${SCRATCH} at ${URL} (Version 1, version id 1-9d34).`),

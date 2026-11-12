@@ -11,7 +11,7 @@ export interface Layout {
   browserWidth: number | null
 }
 
-const KEY = 'aimux.layout'
+const KEY = 'logit.layout'
 const DEFAULTS: Layout = {
   browserWidth: null,
   gitOpen: true,

@@ -5,9 +5,9 @@ import { $ } from 'bun'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const REPO = 'nbardavid/aimux-desktop'
+const REPO = 'nbardavid/logit'
 /** The asset name installed apps download; kept from the old CI releases. */
-const ARCHIVE = 'aimux_aarch64.app.tar.gz'
+const ARCHIVE = 'logit_aarch64.app.tar.gz'
 
 /** The version after `current` for `step`, or null when `step` is neither a part nor x.y.z. */
 export function nextVersion(current: string, step: string): string | null {
@@ -54,10 +54,10 @@ if (import.meta.main) {
   }
 
   const bundle = 'src-tauri/target/release/bundle/macos'
-  const out = join(tmpdir(), `aimux-release-${version}`)
+  const out = join(tmpdir(), `logit-release-${version}`)
   await $`rm -rf ${out} && mkdir -p ${out}`
-  await $`cp ${bundle}/aimux.app.tar.gz ${join(out, ARCHIVE)}`
-  const signature = (await Bun.file(`${bundle}/aimux.app.tar.gz.sig`).text()).trim()
+  await $`cp ${bundle}/logit.app.tar.gz ${join(out, ARCHIVE)}`
+  const signature = (await Bun.file(`${bundle}/logit.app.tar.gz.sig`).text()).trim()
   const manifest = updateManifest(version, signature, new Date().toISOString())
   await Bun.write(join(out, 'latest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 
@@ -65,6 +65,6 @@ if (import.meta.main) {
   await $`git tag v${version}`
   await $`git push origin main v${version}`
   const assets = [join(out, ARCHIVE), join(out, 'latest.json')]
-  await $`gh release create v${version} -R ${REPO} --title ${`aimux v${version}`} --notes '' ${assets}`
+  await $`gh release create v${version} -R ${REPO} --title ${`logit v${version}`} --notes '' ${assets}`
   await $`echo ${`v${version} published: https://github.com/${REPO}/releases/tag/v${version}`}`
 }

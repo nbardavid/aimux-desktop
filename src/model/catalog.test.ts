@@ -12,7 +12,7 @@ import {
 
 const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
   base: 'main',
-  branch: `aimux/${id}`,
+  branch: `logit/${id}`,
   createdAt,
   id,
   name: id,

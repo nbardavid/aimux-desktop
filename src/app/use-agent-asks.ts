@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useEffect, useRef } from 'react'
 
 /**
- * What a chat's agent asks of the window through aimux's MCP server (relayed by the host):
+ * What a chat's agent asks of the window through logit's MCP server (relayed by the host):
  * a new workspace, as the composer makes one, or a prompt for a chat it started.
  */
 export type AgentAsk = { askId: number } & (
@@ -22,7 +22,7 @@ export type AgentAsk = { askId: number } & (
 type Handle = (ask: AgentAsk) => Promise<object>
 
 const NOT_READY: Handle = async () => {
-  throw new Error('aimux is still starting.')
+  throw new Error('logit is still starting.')
 }
 
 /**

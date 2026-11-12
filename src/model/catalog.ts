@@ -19,7 +19,7 @@ export interface Workspace {
   setup?: { exitCode: number | null; ranAt: number } | null
   /** What its chats published with Claude Code's `Artifact` tool: the right panel's tabs. */
   artifacts?: Artifact[]
-  /** The chat whose agent created it through aimux's MCP server. */
+  /** The chat whose agent created it through logit's MCP server. */
   parentChat?: string
   /** Put aside by the user: muted in the sidebar until a message is sent in it. */
   paused?: boolean

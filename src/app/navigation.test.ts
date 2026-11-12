@@ -13,7 +13,7 @@ const project = (id: string, name: string): Project => ({
 })
 const ws = (id: string, projectId: string): Workspace => ({
   base: 'main',
-  branch: `aimux/${id}`,
+  branch: `logit/${id}`,
   createdAt: 0,
   id,
   name: id,
@@ -21,7 +21,7 @@ const ws = (id: string, projectId: string): Workspace => ({
   projectId,
 })
 
-const projects = [project('p1', 'aimux-desktop'), project('p2', 'pragma-once')]
+const projects = [project('p1', 'logit'), project('p2', 'pragma-once')]
 const workspaces = {
   p1: [ws('amber', 'p1'), ws('teal', 'p1')],
   p2: [ws('violet', 'p2')],
@@ -47,13 +47,13 @@ test('⌘P lists workspaces in sidebar order, then chats, then projects', () => 
     'project:p2',
   ])
   expect(items[0]).toMatchObject({
-    label: 'amber · aimux-desktop',
+    label: 'amber · logit',
     meta: 'current',
   })
   expect(items[1]).toMatchObject({ meta: undefined, signal: 'waiting' })
   expect(items[3]).toMatchObject({
     label: 'Port the menus',
-    sub: 'aimux-desktop · amber',
+    sub: 'logit · amber',
   })
   expect(items[5]).toMatchObject({
     meta: '1 workspace',

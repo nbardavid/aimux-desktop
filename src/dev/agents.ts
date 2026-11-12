@@ -50,7 +50,7 @@ export const AGENT_DONE_LINES = [
   toolResult('sub-log', 'Merge pull request #3…\nMerge pull request #4…', 'agent-prs'),
   assistant(
     'm-sub-2',
-    [tool('sub-read', 'Read', { file_path: '/Users/dev/aimux/CHANGELOG.md' })],
+    [tool('sub-read', 'Read', { file_path: '/Users/dev/logit/CHANGELOG.md' })],
     'agent-prs'
   ),
   toolResult('sub-read', '# Changelog', 'agent-prs'),

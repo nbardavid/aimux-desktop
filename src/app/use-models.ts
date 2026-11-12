@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { parseCommands, type SlashCommand } from '../chat/model'
 import { FALLBACK_MODELS, type ModelInfo, parseModels } from '../model/agents'
 
-const KEY = 'aimux.models'
+const KEY = 'logit.models'
 
 interface Offer {
   models: ModelInfo[]

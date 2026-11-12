@@ -242,7 +242,7 @@ function About({ update }: { update: Update }) {
     <div className={rowsClass}>
       <div className={rowClass}>
         <div className={rowText}>
-          <span className="font-medium">{version === null ? 'aimux' : `aimux ${version}`}</span>
+          <span className="font-medium">{version === null ? 'logit' : `logit ${version}`}</span>
           {/* The line cross-fades as the state moves on. */}
           <span
             key={status.text}

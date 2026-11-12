@@ -1,6 +1,6 @@
 //! A new workspace named from its first prompt, as the aimux TUI does: one quick headless
 //! Claude call gives a title (the sidebar's name) and a `<type>/<subject>` branch. The folder
-//! keeps its colour. Any failure leaves the colour name and the `aimux/<colour>` branch.
+//! keeps its colour. Any failure leaves the colour name and the `logit/<colour>` branch.
 
 use std::io::Read;
 use std::path::Path;
@@ -118,7 +118,7 @@ fn ask_claude(request: &str) -> Option<String> {
             cmd.env_remove(key);
         }
     }
-    cmd.env("CLAUDE_CODE_ENTRYPOINT", "aimux-desktop");
+    cmd.env("CLAUDE_CODE_ENTRYPOINT", "logit");
     let mut child = cmd.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
     let reader = std::thread::spawn(move || {
@@ -173,7 +173,8 @@ pub fn workspace_autoname(
             return Ok(None);
         }
         if let Some(to) = branch {
-            let renamed = w.branch == format!("aimux/{colour}")
+            let renamed = [format!("logit/{colour}"), format!("aimux/{colour}")]
+                .contains(&w.branch)
                 && Command::new("git")
                     .args(["branch", "-m", &w.branch, &to])
                     .current_dir(&w.path)
@@ -233,6 +234,6 @@ mod tests {
             Some("feat/add-one-two-three-four".into())
         );
         assert_eq!(clamp_branch("feat/x"), None);
-        assert_eq!(clamp_branch("aimux/amber-two"), None);
+        assert_eq!(clamp_branch("logit/amber-two"), None);
     }
 }

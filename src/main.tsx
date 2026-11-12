@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { App } from './app'
+import { migrateLegacyStorage } from './app/legacy-storage'
 import '@fontsource/geist-mono/400.css'
 import '@fontsource/geist-mono/500.css'
 import '@fontsource/geist-mono/600.css'
@@ -16,6 +17,7 @@ const preview = import.meta.env.DEV && !('__TAURI_INTERNALS__' in window)
 const gallery = preview && new URLSearchParams(location.search).has('gallery')
 
 async function start() {
+  migrateLegacyStorage()
   if (preview) await import('./dev/mock-ipc')
   const Root = gallery ? (await import('./dev/gallery')).Gallery : App
   const root = document.querySelector('#root')

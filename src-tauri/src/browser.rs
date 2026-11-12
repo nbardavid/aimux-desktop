@@ -222,7 +222,7 @@ fn id_of(label: &str) -> String {
 static POPUPS: AtomicU32 = AtomicU32::new(0);
 
 /// What `window.close()` becomes in a popup: wry ignores the real one.
-const CLOSE_SENTINEL: &str = "aimux-close";
+const CLOSE_SENTINEL: &str = "logit-close";
 
 /// A new window a page asks for: sign-in gets a small popup of its own (so `window.opener`
 /// works); any other web link opens in the default browser; anything else is refused.

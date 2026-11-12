@@ -67,7 +67,7 @@ const NEW_TAB: PickerItem[] = [
   { key: 'terminal', label: 'Terminal', meta: '⇧⌘T' },
 ]
 
-const CHAT_SETTINGS = 'aimux.chat'
+const CHAT_SETTINGS = 'logit.chat'
 
 /** The chat an empty workspace offers: nothing runs until its first Enter. */
 const DRAFT: ChatState = { ...initialChat, status: 'idle' }
@@ -461,7 +461,7 @@ export function App() {
     launches.start(pid, base, prompt)
   }
 
-  /** An agent's ask (aimux's MCP): a workspace as the composer makes one, or a follow-up. */
+  /** An agent's ask (logit's MCP): a workspace as the composer makes one, or a follow-up. */
   agentAsk.current = async (ask: AgentAsk) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
     if (ask.op === 'chat_send') {

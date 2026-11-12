@@ -43,28 +43,28 @@ const ARTIFACT_ENV: [(&str, &str); 2] = [
     ("CLAUDE_CODE_ARTIFACT_AUTO_OPEN", "0"),
 ];
 
-/// aimux's own MCP server (`aimux --mcp <chat>`, this binary) for chat `chat`, its tools
+/// logit's own MCP server (`logit --mcp <chat>`, this binary) for chat `chat`, its tools
 /// allowed without asking: what they do (workspaces, prompts) shows in the window.
-fn aimux_mcp(chat: Option<&str>) -> Vec<String> {
+fn logit_mcp(chat: Option<&str>) -> Vec<String> {
     let (Ok(exe), Some(chat)) = (std::env::current_exe(), chat) else {
         return Vec::new();
     };
     let config = serde_json::json!({
-        "mcpServers": { "aimux": { "command": exe, "args": ["--mcp", chat] } }
+        "mcpServers": { "logit": { "command": exe, "args": ["--mcp", chat] } }
     });
     vec![
         "--mcp-config".into(),
         config.to_string(),
         "--allowedTools".into(),
-        "mcp__aimux".into(),
+        "mcp__logit".into(),
     ]
 }
 
-/// `chat`: the aimux chat it runs, which then gets aimux's MCP server.
+/// `chat`: the logit chat it runs, which then gets logit's MCP server.
 pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<Child, String> {
     let mut cmd = Command::new("claude");
     cmd.args(args)
-        .args(aimux_mcp(chat))
+        .args(logit_mcp(chat))
         .current_dir(cwd)
         .env("PATH", tool_path())
         .stdin(Stdio::piped())
@@ -77,10 +77,10 @@ pub fn spawn_claude(cwd: &str, args: Vec<String>, chat: Option<&str>) -> Result<
         }
     }
     cmd.envs(ARTIFACT_ENV);
-    // Name aimux as the client instead of the headless default `sdk-cli`, which drains the 5h
+    // Name logit as the client instead of the headless default `sdk-cli`, which drains the 5h
     // window ~2x faster for the same tokens (anthropics/claude-code#97074; Orca does the same).
     // Set after the CLAUDE_CODE_* scrub above so it sticks.
-    cmd.env("CLAUDE_CODE_ENTRYPOINT", "aimux-desktop");
+    cmd.env("CLAUDE_CODE_ENTRYPOINT", "logit");
     // Compacts by itself past the size Settings picked, instead of filling the 1M window.
     if let Some(tokens) = crate::store::compact_window() {
         cmd.env("CLAUDE_CODE_AUTO_COMPACT_WINDOW", tokens.to_string());
@@ -157,7 +157,7 @@ pub fn transcript_file(session_id: &str) -> Result<std::path::PathBuf, String> {
 
 /// The sub-agents' transcripts Claude Code keeps beside a session's (`subagents/agent-*.jsonl`,
 /// each with a `.meta.json` naming the call that started it): every line tagged with that
-/// call's id as `aimuxAgent`.
+/// call's id as `logitAgent`.
 fn agent_lines(dir: &std::path::Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -182,7 +182,7 @@ fn agent_lines(dir: &std::path::Path) -> Vec<String> {
         };
         for line in raw.lines() {
             if let Ok(serde_json::Value::Object(mut m)) = serde_json::from_str(line) {
-                m.insert("aimuxAgent".into(), call.into());
+                m.insert("logitAgent".into(), call.into());
                 lines.push(serde_json::Value::Object(m).to_string());
             }
         }
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn agent_lines_tag_each_line_with_its_call() {
-        let dir = std::env::temp_dir().join(format!("aimux-agents-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("logit-agents-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("agent-a1.meta.json"), r#"{"toolUseId":"toolu_1"}"#).unwrap();
         std::fs::write(
@@ -207,7 +207,7 @@ mod tests {
         std::fs::write(dir.join("agent-a2.jsonl"), "{\"type\":\"user\"}\n").unwrap();
         let lines = agent_lines(&dir);
         std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(lines, [r#"{"aimuxAgent":"toolu_1","type":"user"}"#]);
+        assert_eq!(lines, [r#"{"logitAgent":"toolu_1","type":"user"}"#]);
         assert!(agent_lines(std::path::Path::new("/nope")).is_empty());
     }
 

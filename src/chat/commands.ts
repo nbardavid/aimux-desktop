@@ -55,11 +55,11 @@ export function availableCommands(chat: SlashCommand[], appWide: SlashCommand[])
 }
 
 /**
- * The `/` menu's two groups: aimux (what the app does itself) and Claude Code (the rest).
+ * The `/` menu's two groups: logit (what the app does itself) and Claude Code (the rest).
  * Claude Code flags its bundled skills `builtin` too: commands and skills can't be told apart.
  */
-export const commandGroup = (c: SlashCommand): 'aimux' | 'Claude Code' =>
-  isAppCommand(c.name) ? 'aimux' : 'Claude Code'
+export const commandGroup = (c: SlashCommand): 'logit' | 'Claude Code' =>
+  isAppCommand(c.name) ? 'logit' : 'Claude Code'
 
 /** How long a description may run in the menu, "…" included. */
 const DESCRIPTION_MAX = 80

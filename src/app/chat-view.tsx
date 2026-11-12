@@ -219,7 +219,7 @@ function stepOf(e: KeyboardEvent): number {
   return 0
 }
 
-const DRAFTS = 'aimux.chat.drafts'
+const DRAFTS = 'logit.chat.drafts'
 
 /** Unsent prompts saved by an earlier launch, by chat: their text only. */
 function savedTexts(): Record<string, string> {

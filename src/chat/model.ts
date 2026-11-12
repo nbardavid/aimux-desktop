@@ -384,7 +384,7 @@ function onAgentLine(state: ChatState, parent: string, m: Json): ChatState {
   return { ...state, agents: { ...state.agents, [parent]: next.turns } }
 }
 
-/** Folds one line of Claude Code's stdout (or the host's `aimux_*` lines) into the chat. */
+/** Folds one line of Claude Code's stdout (or the host's `logit_*` lines) into the chat. */
 export function reduceLine(state: ChatState, line: string, now = Date.now()): ChatState {
   let m: Json
   try {
@@ -515,10 +515,10 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         stopping: false,
       }
     }
-    case 'aimux_stderr': {
+    case 'logit_stderr': {
       return { ...state, errors: [...state.errors, str(m.text)].slice(-20) }
     }
-    case 'aimux_exit': {
+    case 'logit_exit': {
       // What was queued was never answered: it reads as the last prompts.
       const turns = [...state.turns, ...state.queued]
       return {
@@ -532,7 +532,7 @@ export function reduceLine(state: ChatState, line: string, now = Date.now()): Ch
         turns,
       }
     }
-    case 'aimux_sent': {
+    case 'logit_sent': {
       // What a window wrote to Claude, replayed to the next window: its prompts and answers.
       const sent = obj(m.message)
       if (sent.type === 'control_response')
@@ -654,8 +654,8 @@ export function replayTranscript(lines: readonly string[]): ChatState {
     } catch {
       continue
     }
-    if (typeof m.aimuxAgent === 'string') {
-      state = replayAgentLine(state, m.aimuxAgent, m)
+    if (typeof m.logitAgent === 'string') {
+      state = replayAgentLine(state, m.logitAgent, m)
       continue
     }
     // The compaction's summary is Claude's memory, not a prompt anyone typed.

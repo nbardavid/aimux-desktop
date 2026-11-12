@@ -391,7 +391,7 @@ describe('a prompt sent while Claude works', () => {
   test('a Claude that exits leaves the queued prompts in the transcript', () => {
     let s = sendTurn({ ...initialChat, status: 'idle' }, 'one', 'u1')
     s = sendTurn(s, 'two', 'u2')
-    s = reduceLine(s, JSON.stringify({ type: 'aimux_exit' }))
+    s = reduceLine(s, JSON.stringify({ type: 'logit_exit' }))
     expect(s.turns.map((t) => t.id)).toEqual(['u1', 'u2'])
     expect(s.queued).toEqual([])
   })

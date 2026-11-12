@@ -23,7 +23,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &Submenu::with_items(
                 app,
-                "aimux",
+                "logit",
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, None)?,
@@ -63,7 +63,46 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )
 }
 
+/// The previous app's webview data (its WebKit storage and cookies), copied under this app's
+/// bundle identifier once, so the window opens as before. Copies, never moves; errors are ignored.
+fn migrate_webview_data() {
+    let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let (old, new) = if cfg!(debug_assertions) {
+        ("dev.aimux.desktop.dev", "dev.logit.desktop.dev")
+    } else {
+        ("dev.aimux.desktop", "dev.logit.desktop")
+    };
+    let copy = |from: std::path::PathBuf, to: std::path::PathBuf| {
+        if !from.exists() || to.exists() {
+            return;
+        }
+        let done = if from.is_dir() {
+            store::copy_dir(&from, &to)
+        } else {
+            std::fs::copy(&from, &to).map(drop)
+        };
+        if let Err(e) = done {
+            eprintln!("logit: could not copy {}: {e}", from.display());
+        }
+    };
+    let library = home.join("Library");
+    copy(
+        library.join("WebKit").join(old),
+        library.join("WebKit").join(new),
+    );
+    let storage = library.join("HTTPStorages");
+    copy(
+        storage.join(format!("{old}.binarycookies")),
+        storage.join(format!("{new}.binarycookies")),
+    );
+    copy(storage.join(old), storage.join(new));
+}
+
 pub fn run() {
+    store::migrate_legacy();
+    migrate_webview_data();
     tauri::Builder::default()
         .menu(menu)
         .plugin(tauri_plugin_notification::init())

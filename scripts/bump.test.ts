@@ -21,7 +21,7 @@ test('the update manifest points both macOS targets at the signed archive', () =
   const manifest = updateManifest('0.3.0', 'SIG', '2026-11-06T00:00:00.000Z')
   const target = {
     signature: 'SIG',
-    url: 'https://github.com/nbardavid/aimux-desktop/releases/download/v0.3.0/aimux_aarch64.app.tar.gz',
+    url: 'https://github.com/nbardavid/logit/releases/download/v0.3.0/logit_aarch64.app.tar.gz',
   }
   expect(manifest).toEqual({
     notes: '',

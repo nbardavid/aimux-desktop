@@ -12,7 +12,7 @@ test('a first prompt names its tab: whole when short, else cut at a word with an
 
 describe('historyBefore', () => {
   const main = (n: number) => JSON.stringify({ type: 'user', uuid: `m${n}` })
-  const agent = JSON.stringify({ aimuxAgent: 't1', type: 'assistant' })
+  const agent = JSON.stringify({ logitAgent: 't1', type: 'assistant' })
 
   test("the host's count is of the session's own lines: the sub-agents' never shift the cut", () => {
     // Started with 2 lines and 1 sub-agent line; 2 more were written since.

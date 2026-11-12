@@ -75,18 +75,22 @@ fn connect() -> Result<UnixStream, String> {
     connect_or_spawn(&sock(), &exe)
 }
 
-/// Sends `request` on a new connection, for streams and the presence.
-fn open(request: &Request) -> Result<UnixStream, String> {
-    let mut s = connect()?;
+/// Writes `request` as a line on `s`, which then carries the answer or the stream.
+fn send(mut s: UnixStream, request: &Request) -> Result<UnixStream, String> {
     let line = serde_json::to_string(request).map_err(|e| e.to_string())?;
     writeln!(s, "{line}").map_err(|e| e.to_string())?;
     Ok(s)
 }
 
-/// The host's one-line answer to `request`, with its `error` as `Err`.
-fn call(request: &Request) -> Result<Value, String> {
+/// Sends `request` on a new connection, for streams and the presence.
+fn open(request: &Request) -> Result<UnixStream, String> {
+    send(connect()?, request)
+}
+
+/// The host's one-line answer to `request` on `s`, with its `error` as `Err`.
+fn answer(s: UnixStream, request: &Request) -> Result<Value, String> {
     let mut line = String::new();
-    BufReader::new(open(request)?)
+    BufReader::new(send(s, request)?)
         .read_line(&mut line)
         .map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(&line)
@@ -94,6 +98,33 @@ fn call(request: &Request) -> Result<Value, String> {
     match v["error"].as_str() {
         Some(e) => Err(e.into()),
         None => Ok(v),
+    }
+}
+
+/// The host's answer to `request`, from the host of this app's socket.
+fn call(request: &Request) -> Result<Value, String> {
+    answer(connect()?, request)
+}
+
+/// The answer of the host listening on `sock`, which must already be there: nothing is spawned.
+fn call_at(sock: &Path, request: &Request) -> Result<Value, String> {
+    answer(
+        UnixStream::connect(sock).map_err(|e| e.to_string())?,
+        request,
+    )
+}
+
+/// The previous app's host socket, when a host of it answers: its chats still run there.
+fn live_legacy_sock() -> Option<PathBuf> {
+    let sock = store::legacy_data_dir()?.join("host.sock");
+    UnixStream::connect(&sock).is_ok().then_some(sock)
+}
+
+/// Asks the host on `sock` to shut down and waits for its answer. Nothing answering is fine.
+fn shut_down(sock: &Path) {
+    if let Ok(mut s) = UnixStream::connect(sock) {
+        let _ = writeln!(s, r#"{{"op":"shutdown"}}"#);
+        let _ = BufReader::new(s).read_line(&mut String::new());
     }
 }
 
@@ -130,6 +161,16 @@ fn hold_presence(presence: &Presence, app: &AppHandle) -> Result<(), String> {
 /// counts the window as there from now on.
 #[tauri::command(async)]
 pub fn host_status(presence: State<'_, Presence>, app: AppHandle) -> Result<HostStatus, String> {
+    // Before anything could start a host: the previous app's host runs chats the window must
+    // see, and only the window can say whether a restart cuts them (`hostDecision`).
+    if let Some(legacy) = live_legacy_sock() {
+        let list =
+            serde_json::from_value(call_at(&legacy, &Request::List)?).map_err(|e| e.to_string())?;
+        return Ok(HostStatus {
+            protocol_ok: false,
+            list,
+        });
+    }
     let protocol_ok = call(&Request::Hello)?["protocol"] == HOST_PROTOCOL;
     let list = serde_json::from_value(call(&Request::List)?).map_err(|e| e.to_string())?;
     if protocol_ok {
@@ -142,13 +183,14 @@ pub fn host_status(presence: State<'_, Presence>, app: AppHandle) -> Result<Host
 #[tauri::command(async)]
 pub fn host_restart(presence: State<'_, Presence>, app: AppHandle) -> Result<(), String> {
     let sock = sock();
-    // Nothing answering is fine: there is nothing to stop.
-    if let Ok(mut s) = UnixStream::connect(&sock) {
-        let _ = writeln!(s, r#"{{"op":"shutdown"}}"#);
-        let _ = BufReader::new(s).read_line(&mut String::new());
+    // The previous app's host stops too, with the chats it runs.
+    let legacy = live_legacy_sock();
+    if let Some(legacy) = &legacy {
+        shut_down(legacy);
     }
+    shut_down(&sock);
     for _ in 0..SPAWN_WAIT.as_millis() / POLL.as_millis() {
-        if !sock.exists() {
+        if !sock.exists() && !legacy.as_ref().is_some_and(|l| l.exists()) {
             break;
         }
         std::thread::sleep(POLL);
@@ -172,7 +214,7 @@ fn open_stream(request: &Request) -> Result<(BufReader<UnixStream>, String), Str
 }
 
 /// The chat's Claude, started from `start` unless the host runs it already: its lines since it
-/// started, `aimux_live`, then what it prints from now on.
+/// started, `logit_live`, then what it prints from now on.
 #[tauri::command(async)]
 pub fn chat_open(
     id: String,
@@ -187,14 +229,14 @@ pub fn chat_open(
             .map_while(Result::ok)
         {
             let line = line.trim_end().to_string();
-            exited = line == r#"{"type":"aimux_exit"}"#;
+            exited = line == r#"{"type":"logit_exit"}"#;
             if on_line.send(line).is_err() {
                 return;
             }
         }
         // The host went away with it.
         if !exited {
-            let _ = on_line.send(r#"{"type":"aimux_exit"}"#.into());
+            let _ = on_line.send(r#"{"type":"logit_exit"}"#.into());
         }
     });
     Ok(())

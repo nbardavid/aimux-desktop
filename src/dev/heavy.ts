@@ -66,7 +66,7 @@ export function heavyFixture(workspaces = 12, turns = 300) {
     project: { id: 'p-heavy', lastOpenedAt: now + 2 * HOUR, name: 'heavy', path },
     workspaces: ids.map((id, i) => ({
       base: 'origin/main',
-      branch: `aimux/${id}`,
+      branch: `logit/${id}`,
       createdAt: now - HOUR,
       id: `ws-${id}`,
       name: `heavy-${i}`,

@@ -1,4 +1,4 @@
-//! `aimux --mcp <chat>`: the app's MCP server, over stdio, for the Claude of one aimux chat.
+//! `logit --mcp <chat>`: the app's MCP server, over stdio, for the Claude of one logit chat.
 //! It lets that agent orchestrate: start workspaces with a prompt, follow their chats, wait for
 //! them and read what they answered. Reading comes from the catalog, the host's chat states and
 //! Claude Code's transcripts; creating and sending go through the window (via the host's
@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use crate::host::HostChat;
 use crate::store::{self, Catalog, ChatRecord, Workspace};
 
-const SERVER: &str = "aimux";
+const SERVER: &str = "logit";
 /// How many workspaces one chat may create.
 const MAX_CREATED: usize = 5;
 const DEFAULT_WAIT: u64 = 600;
@@ -63,7 +63,7 @@ fn answer(chat: &str, msg: &Value) -> Option<Value> {
     })
 }
 
-const INSTRUCTIONS: &str = "aimux runs this chat in a workspace: a git worktree of a project, \
+const INSTRUCTIONS: &str = "logit runs this chat in a workspace: a git worktree of a project, \
 shown in the user's sidebar. Other workspaces of the same project each run their own Claude. \
 To split work, start workspaces with workspace_create (each gets its own branch and an agent \
 working on the prompt), then wait_for them and read their answers with chat_read. \
@@ -165,7 +165,7 @@ fn here() -> Result<Here, String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let catalog = store::saved_catalog();
     let workspace = workspace_of(&catalog, &cwd.to_string_lossy())
-        .ok_or("this chat is not in an aimux workspace")?
+        .ok_or("this chat is not in a logit workspace")?
         .clone();
     Ok(Here { catalog, workspace })
 }
@@ -241,14 +241,14 @@ fn where_am_i() -> Result<String, String> {
 
 fn ask_host(request: &Value) -> Result<Value, String> {
     let mut s = UnixStream::connect(store::data_dir().join("host.sock"))
-        .map_err(|_| "aimux is not running: ask the user to open it.".to_string())?;
+        .map_err(|_| "logit is not running: ask the user to open it.".to_string())?;
     writeln!(s, "{request}").map_err(|e| e.to_string())?;
     let mut line = String::new();
     BufReader::new(&s)
         .read_line(&mut line)
         .map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(&line)
-        .map_err(|_| "aimux's background host did not answer.".to_string())?;
+        .map_err(|_| "logit's background host did not answer.".to_string())?;
     match v["error"].as_str() {
         Some(e) => Err(e.into()),
         None => Ok(v),
@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn it_answers_initialize_and_lists_its_tools() {
         let init = answer("c", &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "2025-06-18" } })).unwrap();
-        assert_eq!(init["result"]["serverInfo"]["name"], "aimux");
+        assert_eq!(init["result"]["serverInfo"]["name"], "logit");
         let note = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
         assert!(answer("c", &note).is_none());
         let list = answer(

@@ -124,6 +124,13 @@ pub fn claude_sessions(project_id: String) -> Result<Vec<Session>, String> {
         PathBuf::from(&project.path),
         data.join("worktrees").join(&project.id),
     ];
+    // The previous app's workspaces of this project keep their sessions listed.
+    if let Some(legacy) = crate::store::legacy_data_dir() {
+        let legacy = legacy.join("worktrees").join(&project.id);
+        if legacy.exists() {
+            roots.push(legacy);
+        }
+    }
     let listed = std::process::Command::new("git")
         .args(["worktree", "list", "--porcelain"])
         .current_dir(&project.path)
@@ -167,7 +174,7 @@ mod tests {
     #[test]
     fn lists_the_projects_sessions_newest_first() {
         use serde_json::json;
-        let root = std::env::temp_dir().join(format!("aimux-sessions-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("logit-sessions-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let user = |cwd: &str, text: &str| json!({ "cwd": cwd, "type": "user", "message": { "role": "user", "content": text } });
         transcript(

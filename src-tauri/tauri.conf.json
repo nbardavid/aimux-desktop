@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "aimux",
+  "productName": "logit",
   "version": "../package.json",
-  "identifier": "dev.aimux.desktop",
+  "identifier": "dev.logit.desktop",
   "build": {
     "beforeDevCommand": "bun run web:dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "aimux",
+        "title": "logit",
         "width": 1440,
         "height": 900,
         "minWidth": 1000,
@@ -38,9 +38,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZEQjEzOUVCRUE2RDQwQzEKUldUQlFHM3E2em14YlpWWk1VeHpQd2ZXdWY1TkZZQ2Zwa1RxM3ViZHhTaVlKK2htcWxLU3F5aEMK",
-      "endpoints": [
-        "https://github.com/nbardavid/aimux-desktop/releases/latest/download/latest.json"
-      ]
+      "endpoints": ["https://github.com/nbardavid/logit/releases/latest/download/latest.json"]
     }
   }
 }

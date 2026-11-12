@@ -1,4 +1,4 @@
-# aimux desktop — design
+# logit desktop — design
 
 The bar: a product, not a tool. Everything on screen is deliberate, aligned and finished;
 everything that moves, moves smoothly and for a reason. If a detail looks "good enough", it

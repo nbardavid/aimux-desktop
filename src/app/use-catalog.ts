@@ -14,7 +14,7 @@ export type CatalogStatus =
   | { kind: 'ready' }
   | { kind: 'error'; message: string }
 
-const SELECTION = 'aimux.selection'
+const SELECTION = 'logit.selection'
 const EMPTY: Catalog = { chats: [], projects: [], workspaces: [] }
 
 interface Selection {

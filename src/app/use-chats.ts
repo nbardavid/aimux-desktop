@@ -80,17 +80,17 @@ export function titleOf(text: string): string {
 function isLive(line: string): boolean {
   try {
     return (
-      line.includes('aimux_live') && (JSON.parse(line) as { type?: unknown }).type === 'aimux_live'
+      line.includes('logit_live') && (JSON.parse(line) as { type?: unknown }).type === 'logit_live'
     )
   } catch {
     return false
   }
 }
 
-/** A sub-agent's line, which `chat_history` appends after the session's own (`aimuxAgent`). */
+/** A sub-agent's line, which `chat_history` appends after the session's own (`logitAgent`). */
 function isAgentLine(line: string): boolean {
   try {
-    return 'aimuxAgent' in (JSON.parse(line) as object)
+    return 'logitAgent' in (JSON.parse(line) as object)
   } catch {
     return false
   }

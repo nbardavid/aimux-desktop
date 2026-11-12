@@ -112,7 +112,7 @@ test('an alias the query matched shows only when the name does not hold it', () 
   expect(matchedAlias(c('config'), 'co')).toBeUndefined()
 })
 
-test('the / menu groups: the app’s five as aimux, then all of Claude Code’s by name', () => {
+test('the / menu groups: the app’s five as logit, then all of Claude Code’s by name', () => {
   const list = availableCommands(
     [
       c('ponytail', { builtin: false }),
@@ -124,7 +124,7 @@ test('the / menu groups: the app’s five as aimux, then all of Claude Code’s 
   )
   // By the name as shown: `superpowers:brainstorming` is `/brainstorming`.
   expect(list.map((x) => `${commandGroup(x)}:${x.name}`)).toEqual([
-    ...APP_COMMANDS.map((x) => `aimux:${x.name}`),
+    ...APP_COMMANDS.map((x) => `logit:${x.name}`),
     'Claude Code:superpowers:brainstorming',
     'Claude Code:compact',
     'Claude Code:ponytail',

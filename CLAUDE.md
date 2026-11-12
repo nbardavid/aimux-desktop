@@ -1,4 +1,4 @@
-# aimux desktop
+# logit
 
 ## The goal
 
@@ -24,7 +24,7 @@ branding.
   do keeps working. No Codex, no other assistants, no Claude Code TUI inside a terminal tab.
 - **Everything is a worktree.** The main checkout is the project, never a workspace. No "root".
 - **Workspaces are named from their first prompt**, as the aimux TUI does: each is made on a
-  colour from a fixed pool (folder and `aimux/amber` branch), then one quick headless Claude
+  colour from a fixed pool (folder and `logit/amber` branch), then one quick headless Claude
   call (haiku, `naming.rs`) gives it a title and a `<type>/<subject>` branch. The folder keeps
   the colour, which stays the colour word in the sidebar. Any failure keeps the colour. The
   user can rename a workspace in place (the name only). The composer does not show the
@@ -56,7 +56,7 @@ branding.
 - **Quotas** come from Claude's OAuth usage endpoint (poll every 180 s at most, or it
   throttles). A chat's cost is Claude Code's API-price estimate, not what the subscription
   bills.
-- **Client label.** Every `claude` we launch sets `CLAUDE_CODE_ENTRYPOINT=aimux-desktop`
+- **Client label.** Every `claude` we launch sets `CLAUDE_CODE_ENTRYPOINT=logit`
   (`chat.rs`), naming the app instead of the headless default `sdk-cli`, which drains the 5h
   window about twice as fast for the same tokens (anthropics/claude-code#97074). Never
   pretend to be another client (`cli`, `claude-vscode`).
@@ -71,10 +71,10 @@ branding.
   back to the front (at most every ten minutes) and every hour, and from Settings › About; a
   newer one shows an "Update to x.y.z" pill in the top bar. One click installs and restarts
   the window only. Updates are signed; a dev build never updates.
-- **Dev and prod are two apps**: the installed "aimux" is prod; `bun run dev` is "aimux Dev",
+- **Dev and prod are two apps**: the installed "logit" is prod; `bun run dev` is "logit Dev",
   with its own identifier, data folder (profile `dev`) and host. The owner works on this
   repo from prod.
-- **Open source**: public at `nbardavid/aimux-desktop`, MIT, crediting BrimVeyn/aimux where
+- **Open source**: public at `nbardavid/logit`, MIT, crediting BrimVeyn/aimux where
   it started (its `desktop/` history is kept).
 - **The look**: light, flat, white surfaces, system font, warm neutrals. Never a hatched or
   decorative background. Dark mode is not done yet.
@@ -89,9 +89,9 @@ branding.
   readable by the user alone.
 - UI buttons call explicit host commands that do the real thing; never simulate keystrokes.
 - English everywhere: UI, code, commits, docs. The owner chats in French and dictates by
-  voice (expect odd words; "n8n" or "Emacs" have meant aimux).
+  voice (expect odd words; "n8n" or "Emacs" have meant aimux, the old name).
 - bun only, never npm.
-- Try things in a dev build or with `AIMUX_PROFILE=gui-dev`: both get their own data folder
+- Try things in a dev build or with `LOGIT_PROFILE=gui-dev`: both get their own data folder
   and host, so the owner's real projects and running work stay untouched.
 - Commit only when asked, one approval per commit. Pushing needs its own approval. No
   Co-Authored-By line.
@@ -103,7 +103,7 @@ branding.
 - Checks: `bun run lint && bun run format && bun test && (cd src-tauri && cargo test)`.
 - Build (signs the update archive): `TAURI_SIGNING_PRIVATE_KEY=~/.tauri/aimux-desktop.key bun run build`.
   Launch for a trial:
-  `open --env AIMUX_PROFILE=gui-dev src-tauri/target/release/bundle/macos/aimux.app`.
+  `open --env LOGIT_PROFILE=gui-dev src-tauri/target/release/bundle/macos/logit.app`.
 - Release: `bun bump patch|minor|major` (semver; builds and signs locally, then commits, tags,
   pushes and publishes the GitHub release with `gh`; no CI).
   Needs the owner's go-ahead like any push.
