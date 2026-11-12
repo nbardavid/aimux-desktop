@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
@@ -40,9 +40,11 @@ import { useCatalog } from './app/use-catalog'
 import { chatSignal, type ChatTab, turnsEnded, useChats } from './app/use-chats'
 import { type FileChange, useGit } from './app/use-git'
 import { HOST_BLOCKED, useHost } from './app/use-host'
+import { useLaunches } from './app/use-launches'
 import { LIMITS, SIDE_WIDTH, sideWidthNow, useLayout } from './app/use-layout'
 import { useModels } from './app/use-models'
 import { useQuotas } from './app/use-quotas'
+import { useSetupRun } from './app/use-setup-run'
 import { useTerminals } from './app/use-terminals'
 import { DOCK_TAGS } from './app/workspace-dock'
 import { availableCommands } from './chat/commands'
@@ -210,13 +212,7 @@ export function App() {
     return [...catalog.chats.filter((r) => !live.has(r.id)), ...live.values()]
   }, [catalog.chats, chats.chats])
 
-  /** A setup script's end is kept for the git panel, even when the window missed it. */
-  const { reload } = store
-  const setupRan = useCallback(
-    (workspaceId: string) => (exitCode: number | null) =>
-      void invoke('setup_ran', { exitCode, workspaceId }).then(reload),
-    [reload]
-  )
+  const { runSetup, setupRan } = useSetupRun(host.state.kind === 'ready', store.reload, terminals)
 
   // Chats an earlier launch left open come back, in the worktrees that still exist: live when
   // the background host still runs them, asleep otherwise. Its terminals come back as tabs.
@@ -260,6 +256,9 @@ export function App() {
       title: t.title,
     })),
   ].toSorted((a, b) => a.at - b.at)
+  // Workspaces the composer is getting ready: shown in place of their chat until it starts.
+  const launches = useLaunches()
+  const launch = launches.view(ws?.id)
   const active = tabItems.find((t) => t.id === activeByWs[ws?.id ?? '']) ?? tabItems[0]
   const chat = active?.chat === true ? wsChats.find((c) => c.record.id === active.id) : undefined
   const term = active?.chat === false ? wsTerms.find((t) => t.id === active.id) : undefined
@@ -445,30 +444,19 @@ export function App() {
     else selectTab(ws.id, terminals.create({ cwd: ws.path, workspaceId: ws.id }))
   }
 
-  /** The project's setup script in `w`'s dock; how it ended is kept for the git panel. */
-  const runSetup = async (w: Workspace) => {
-    if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
-    const script = await invoke<string>('ensure_setup_script', { projectId: w.projectId })
-    const id = terminals.create({
-      command: `bash '${script.replaceAll("'", "'\\''")}'`,
-      cwd: w.path,
-      onExit: setupRan(w.id),
-      tag: 'setup',
-      title: 'Setup',
-      workspaceId: w.id,
-    })
-    return id
+  launches.deps.current = {
+    createWorkspace: (pid, base) =>
+      store.createWorkspace(pid, nameCandidates((workspaces[pid] ?? []).map((w) => w.name)), base),
+    reopenComposer: setComposeIn,
+    runSetup,
+    startChat: newChat,
   }
 
-  /** The composer's Create: a worktree, its setup, a chat in it with the prompt sent. */
+  /** The composer's Create: it closes at once, the workspace gets ready where its chat will be. */
   const startWork = async (pid: string, base: string | null, prompt: string) => {
     if (host.state.kind !== 'ready') throw new Error(HOST_BLOCKED)
     setMode('normal')
-    const taken = (workspaces[pid] ?? []).map((w) => w.name)
-    const created = await store.createWorkspace(pid, nameCandidates(taken), base)
-    const hasScript = await invoke<{ exists: boolean }>('setup_status', { projectId: pid })
-    if (hasScript.exists) await runSetup(created)
-    newChat(created, prompt)
+    launches.start(pid, base, prompt)
   }
 
   /** An agent's ask (aimux's MCP): a workspace as the composer makes one, or a follow-up. */
@@ -932,7 +920,8 @@ export function App() {
                       )
                     )
                   )}
-                  {chat && (
+                  {launch}
+                  {launch === null && chat && (
                     <ChatView
                       above={toastsOverChat}
                       id={chat.record.id}
@@ -955,8 +944,10 @@ export function App() {
                       place={ws?.name}
                     />
                   )}
-                  {term && <TerminalView tabId={term.id} attach={terminals.attach} />}
-                  {ws === undefined && (
+                  {launch === null && term && (
+                    <TerminalView tabId={term.id} attach={terminals.attach} />
+                  )}
+                  {launch === null && ws === undefined && (
                     <div className={QUIET}>
                       <span className={EMPTY_TITLE}>{project?.name ?? 'No project'}</span>
                       <span className="text-base">Every piece of work gets its own worktree.</span>
@@ -970,7 +961,7 @@ export function App() {
                       </Button>
                     </div>
                   )}
-                  {ws !== undefined && active === undefined && (
+                  {launch === null && ws !== undefined && active === undefined && (
                     // No tab yet: the chat composer itself, focused; the first Enter makes
                     // the chat, on the model picked here (the one new chats start on).
                     <ChatView

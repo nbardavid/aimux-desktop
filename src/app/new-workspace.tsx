@@ -66,6 +66,11 @@ function saveDrafts(all: Record<string, string>) {
   }
 }
 
+/** A launch that failed before its workspace existed: the next composer reopens on its prompt. */
+export function keepDraft(projectId: string, prompt: string) {
+  saveDrafts({ ...loadDrafts(), [projectId]: prompt })
+}
+
 interface Branches {
   branches: string[]
   default: string | null
