@@ -169,8 +169,15 @@ export function useChats(hooks: Hooks) {
 
   const onLine = useCallback(
     (id: string, line: string) => {
+      // Claude Code's own measure of the context, for the composer's meter: asked of a running
+      // Claude only (never to wake one), after each turn and once it is there to answer.
+      const measure = () =>
+        queueMicrotask(() => {
+          void invoke('chat_send', { id, line: contextUsageLine(`${USAGE}${crypto.randomUUID()}`) })
+        })
       if (isLive(line)) {
         live.current.add(id)
+        measure()
         return
       }
       const replaying = !live.current.has(id)
@@ -181,6 +188,9 @@ export function useChats(hooks: Hooks) {
         const followed = followModel(c, state, latest.current.hooks)
         const asked = state.pending.length > c.state.pending.length
         const finished = c.state.status === 'working' && state.status === 'idle'
+        // `initialize` answered: a resumed chat holds its whole past before any new turn.
+        const ready = /"request_id":\s*"init-/.test(line)
+        if ((finished && !replaying) || ready) measure()
         const withSession = sessionId === followed.sessionId ? followed : { ...followed, sessionId }
         // A result just in: the workspace's age restarts (not for a replayed one).
         const record =
@@ -201,10 +211,7 @@ export function useChats(hooks: Hooks) {
         }
         // Just compacted: measure what is left, so the meter drops at once.
         const emptied = c.state.context !== null || c.state.usage !== null
-        if (emptied && state.context === null && state.usage === null && !replaying) {
-          const ask = contextUsageLine(`${USAGE}${crypto.randomUUID()}`)
-          queueMicrotask(() => void invoke('chat_send', { id, line: ask }))
-        }
+        if (emptied && state.context === null && state.usage === null && !replaying) measure()
         return next
       })
     },
