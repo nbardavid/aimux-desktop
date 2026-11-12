@@ -134,6 +134,26 @@ export function useCatalog() {
     [reload]
   )
 
+  /** Put aside (muted in the sidebar) or taken back up. */
+  const pauseWorkspace = useCallback(
+    async (id: string, paused: boolean) => {
+      await invoke('workspace_pause', { id, paused })
+      await reload()
+    },
+    [reload]
+  )
+
+  /** A paused workspace taken back up; any other is left as it is. */
+  const unpause = useCallback(
+    (id: string) => {
+      if (catalog.workspaces.find((w) => w.id === id)?.paused !== true) return
+      pauseWorkspace(id, false).catch(() => {
+        // Stays muted; the menu's Resume still works.
+      })
+    },
+    [catalog.workspaces, pauseWorkspace]
+  )
+
   /** A publish seen in a chat; `live` (not replayed) also reopens a closed tab. */
   const addArtifact = useCallback(
     async (workspaceId: string, url: string, title: string, chatId: string, live: boolean) => {
@@ -183,6 +203,7 @@ export function useCatalog() {
     closeArtifact,
     createWorkspace,
     forgetChat,
+    pauseWorkspace,
     project,
     projects,
     reload,
@@ -194,6 +215,7 @@ export function useCatalog() {
     seeArtifact,
     select,
     status,
+    unpause,
     workspace,
   }
 }

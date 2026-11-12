@@ -430,7 +430,9 @@ function WorkspaceRow(
     e.preventDefault()
     props.onMenu({ kind: 'workspace', project, workspace: ws, ...at(e) })
   }
-  const status = ageLabel(facts.activeAt, now)
+  const paused = ws.paused === true
+  // Put aside: muted, and says so where its age was.
+  const status = paused ? 'Paused' : ageLabel(facts.activeAt, now)
   // Keyed by the signal, so a change cross-fades in place.
   const icon = (
     <span
@@ -474,7 +476,11 @@ function WorkspaceRow(
             render={
               <button
                 type="button"
-                className={row}
+                className={cn(
+                  row,
+                  'transition-opacity duration-160 ease-out',
+                  paused && 'opacity-50'
+                )}
                 aria-current={active}
                 data-workspace={ws.id}
                 onClick={() => props.onSelect(project.id, ws.id)}

@@ -21,6 +21,8 @@ export interface Workspace {
   artifacts?: Artifact[]
   /** The chat whose agent created it through aimux's MCP server. */
   parentChat?: string
+  /** Put aside by the user: muted in the sidebar until a message is sent in it. */
+  paused?: boolean
 }
 
 /** A published artifact: its claude.ai page, a tab of the right panel until closed. */
