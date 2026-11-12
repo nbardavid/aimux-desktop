@@ -12,8 +12,8 @@ const MIN = 60_000
 const HOUR = 60 * MIN
 const now = Date.now()
 
-const HOME = '/Users/dev'
-const TREES = `${HOME}/.aimux/worktrees`
+export const HOME = '/Users/dev'
+export const TREES = `${HOME}/.aimux/worktrees`
 export const PATHS = {
   amber: `${TREES}/aimux-desktop/amber`,
   basil: `${TREES}/pragma-once/basil`,
@@ -151,7 +151,7 @@ export const HOST_STATUS = {
 // Lines of Claude Code's stream-json, as the host replays them on `chat_open`.
 
 const line = (value: unknown) => JSON.stringify(value)
-const sent = (uuid: string, text: string, images: string[] = []) =>
+export const sent = (uuid: string, text: string, images: string[] = []) =>
   line({
     message: {
       message: {
@@ -172,9 +172,9 @@ const sent = (uuid: string, text: string, images: string[] = []) =>
 /** A pasted screenshot: a context menu, its second row hovered. */
 const MENU_SHOT =
   'iVBORw0KGgoAAAANSUhEUgAAAPAAAACWCAIAAABvmpKCAAAB7ElEQVR42u3dMQ5AQBRFUZsR1mADtmxLKGlosATJRGL+Py+30cqJZIqJ5jwPKUyNVyCgJaAloCWgBbQEtAS0BLQEtICWgJaAloCWgBbQEtAS0BLQ0u9Ar8uswGUEfVnQAW1AA21AA21AA21AAw000AY00AY00AY00AY00EADbUDHBt13bbCABhpooIEGGmiggQbaodCANqCBNqCBNqCBNqCBNqANaKANaKANaKANaKCBTg563zdVHdBAAw20gAZaQAMtoIEGGmiggU4HOt4VrJKABhpooIEGGmiggQbaodChEGgBDbSABlpAAw000AIaaAHtCpa5ggW0AQ000EAb0EAb0EAb0EAb0EADDbQBDbQBDbQB7ceb2X+tCTTQQAMNNNBAAw20Q6EBDbQBDTTQQBvQQBvQQBvQQBvQQAMNtAENtAENtAFdCPp5VNUB7QvtCw20AQ20AQ20AQ20AW1AA21AA21AA21AAw000AY00AZ0laCncdDLgAYaaKCBBhpooIEG2hwKgTaggTaggTaggQYaaAMaaAMaaAMaaAMaaKCBNqCBNqCBNqCBNqANaKANaKANaKANaKCBBtqABtqABtqA/ga0ApcOtAS0BLSAloCWgJaAloAW0BLQEtAS0BLQAloCWgJaAloCWkG7AXeSjelxh8INAAAAAElFTkSuQmCC'
-const assistant = (id: string, content: unknown[], model = 'claude-opus-5-5') =>
+export const assistant = (id: string, content: unknown[], model = 'claude-opus-5-5') =>
   line({ message: { content, id, model, role: 'assistant' }, type: 'assistant' })
-const toolResult = (id: string, content: string, isError = false) =>
+export const toolResult = (id: string, content: string, isError = false) =>
   line({
     message: {
       content: [{ content, is_error: isError, tool_use_id: id, type: 'tool_result' }],
@@ -182,7 +182,7 @@ const toolResult = (id: string, content: string, isError = false) =>
     },
     type: 'user',
   })
-const result = (cost: number, ms: number) =>
+export const result = (cost: number, ms: number) =>
   line({
     duration_ms: ms,
     is_error: false,
@@ -190,12 +190,12 @@ const result = (cost: number, ms: number) =>
     total_cost_usd: cost,
     type: 'result',
   })
-const initAnswer = (id: string) =>
+export const initAnswer = (id: string) =>
   line({
     response: { request_id: `init-${id}`, response: INIT, subtype: 'success' },
     type: 'control_response',
   })
-const systemInit = (session: string, model: string) =>
+export const systemInit = (session: string, model: string) =>
   line({ model, session_id: session, subtype: 'init', type: 'system' })
 export const LIVE = line({ type: 'aimux_live' })
 

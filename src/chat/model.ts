@@ -247,22 +247,22 @@ function blockOf(raw: unknown): Block | null {
 }
 
 function withTurn(state: ChatState, id: string, edit: (turn: Turn) => Turn): ChatState {
-  const at = state.turns.findIndex((t) => t.id === id)
-  const turns =
-    at === -1
-      ? [...state.turns, edit({ blocks: [], id, role: 'assistant' })]
-      : state.turns.map((t, i) => (i === at ? edit(t) : t))
+  // From the end, where the turn being written is; `with` copies natively (replays are long).
+  const at = state.turns.findLastIndex((t) => t.id === id)
+  const turn = state.turns[at]
+  const turns = turn
+    ? state.turns.with(at, edit(turn))
+    : [...state.turns, edit({ blocks: [], id, role: 'assistant' })]
   return { ...state, turns }
 }
 
 function editTool(state: ChatState, toolId: string, edit: (b: Block & { kind: 'tool' }) => Block) {
-  return {
-    ...state,
-    turns: state.turns.map((turn) => ({
-      ...turn,
-      blocks: turn.blocks.map((b) => (b.kind === 'tool' && b.id === toolId ? edit(b) : b)),
-    })),
-  }
+  const own = (b: Block) => b.kind === 'tool' && b.id === toolId
+  const at = state.turns.findLastIndex((t) => t.blocks.some(own))
+  const turn = state.turns[at]
+  if (!turn) return state
+  const blocks = turn.blocks.map((b) => (b.kind === 'tool' && b.id === toolId ? edit(b) : b))
+  return { ...state, turns: state.turns.with(at, { ...turn, blocks }) }
 }
 
 /** The assistant turn being streamed: the last one, named by `message_start`. */
@@ -325,7 +325,7 @@ function onAssistant(prior: ChatState, message: Json): ChatState {
   const state = withUsage(prior, message.usage)
   const id = str(message.id)
   const content = Array.isArray(message.content) ? message.content : []
-  const known = state.turns.find((t) => t.id === id)
+  const known = state.turns.findLast((t) => t.id === id)
   if (!known) {
     const blocks = content.map(blockOf).filter((b): b is Block => b !== null)
     // A local command answers with a `<synthetic>` message: its output, not Claude speaking.
@@ -568,9 +568,10 @@ const isNote = (turn: Turn | undefined) => turn?.blocks[0]?.kind === 'note'
 
 /** Marks the exchange that ends before turn `upto` as over: on its last turn, notes aside. */
 function withEnd(state: ChatState, upto: number, end: TurnEnd): ChatState {
-  const at = state.turns.slice(0, upto).findLastIndex((t) => !isNote(t))
-  if (at === -1) return state
-  return { ...state, turns: state.turns.map((t, i) => (i === at ? { ...t, end } : t)) }
+  let at = Math.min(upto, state.turns.length) - 1
+  while (at >= 0 && isNote(state.turns[at])) at--
+  const turn = state.turns[at]
+  return turn ? { ...state, turns: state.turns.with(at, { ...turn, end }) } : state
 }
 
 /** The model `/model` switched to, from what it printed ("Set model to Sonnet 5.5"). */

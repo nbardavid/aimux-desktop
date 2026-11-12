@@ -1,7 +1,7 @@
 // The browser preview (`bun run web:dev` opened in a browser): Tauri's IPC answered from
 // fixtures, so every screen can be looked at and screenshotted without the app. Loaded by
 // main.tsx only in vite dev and only outside Tauri. Query flags reach the states fixtures
-// alone cannot: `?empty` no project, `?bare` a project without workspaces, `?restart` a host
+// alone cannot: `?empty` no project, `?bare` a project without workspaces, `?heavy` 12 long running chats (start profiling), `?restart` a host
 // from an older protocol holding work (the restart bar), `?update` a release waiting (the
 // pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
 // (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
@@ -51,6 +51,7 @@ import {
   TRANSCRIPTS,
   turnEnd,
 } from './fixtures'
+import { heavyFixture } from './heavy'
 
 /** A `Channel` handed over by `invoke`: the mock gets the object itself, not its id. */
 interface Channel {
@@ -87,6 +88,14 @@ if (flags.has('long')) {
   hostList.terms.push(...long.terms)
   GIT_STATUS[long.path] = long.files
   GIT_BRANCH[long.path] = long.branch
+}
+if (flags.has('heavy')) {
+  const heavy = heavyFixture(12, Number(flags.get('heavy')) || 300)
+  store.projects.push(heavy.project)
+  store.workspaces.push(...heavy.workspaces)
+  store.chats.push(...heavy.chats)
+  hostList.chats.push(...heavy.hosted)
+  Object.assign(HOSTED_LINES, heavy.lines)
 }
 if (flags.has('empty-inbox')) {
   for (const c of hostList.chats) Object.assign(c, { unread: false, waiting: false })

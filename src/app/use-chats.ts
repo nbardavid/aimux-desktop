@@ -124,6 +124,20 @@ function settleUnqueue(line: string, waiting: Map<string, (cancelled: boolean) =
   }
 }
 
+/** Lines applied per render while a replay pours in. */
+const SLICE = 400
+
+/** The states cut to the turns that changed between them (same reference = untouched). */
+function touched(before: ChatState, after: ChatState): [ChatState, ChatState] {
+  if (before.turns === after.turns) return [before, before]
+  const turns = after.turns.filter((t, i) => t !== before.turns[i])
+  const ids = new Set(turns.map((t) => t.id))
+  return [
+    { ...before, turns: before.turns.filter((t) => ids.has(t.id)) },
+    { ...after, turns },
+  ]
+}
+
 /** The record, following a model Claude Code newly reports (`/model` typed, a resume). */
 function followModel(c: ChatTab, state: ChatState, hooks: Hooks): ChatRecord {
   if (state.model === null || state.model === c.state.model) return c.record
@@ -173,9 +187,11 @@ export function useChats(hooks: Hooks) {
 
   // Lines in since the last frame, applied together by `flush`.
   const queuedRef = useRef<{ apply: (c: ChatTab) => ChatTab; id: string }[]>([])
-  const flush = useCallback(() => {
-    const batch = queuedRef.current.splice(0)
+  const flush = useCallback(function flush() {
+    // A slice at a time: a long replay leaves the window answering between slices.
+    const batch = queuedRef.current.splice(0, SLICE)
     if (batch.length === 0) return
+    if (queuedRef.current.length > 0) setTimeout(flush, 0)
     setChats((list) =>
       list.map((c) => {
         let next = c
@@ -224,11 +240,13 @@ export function useChats(hooks: Hooks) {
           if ((asked || finished) && !replaying) {
             queueMicrotask(() => latest.current.hooks.onAttention(next, asked ? 'waiting' : 'done'))
           }
-          for (const artifact of newPublishes(blocksOf(c.state), blocksOf(state))) {
+          // Only the turns this line touched: the whole chat per line made a replay quadratic.
+          const [was, now] = touched(c.state, state)
+          for (const artifact of newPublishes(blocksOf(was), blocksOf(now))) {
             queueMicrotask(() => latest.current.hooks.onArtifact(next, artifact, !replaying))
           }
           // A `!` command's output: into the conversation, for Claude's next prompt.
-          for (const shell of shellsDone(c.state, state)) {
+          for (const shell of shellsDone(was, now)) {
             if (replaying) continue
             const told = shellContextLine(shell.command, shell.output ?? '', shell.exitCode)
             queueMicrotask(() => void invoke('chat_send', { id, line: told }))
