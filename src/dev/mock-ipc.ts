@@ -451,6 +451,12 @@ function handle(cmd: string, args: Args): unknown {
       w.name = str(args.name).trim() || w.branch.replace(/^aimux\//, '')
       return structuredClone(w)
     }
+    case 'workspace_pause': {
+      const w = store.workspaces.find((x) => x.id === args.id)
+      if (!w) throw new Error('unknown workspace')
+      w.paused = args.paused === true
+      return structuredClone(w)
+    }
     case 'catalog_reorder': {
       const ids = args.ids as string[]
       const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)

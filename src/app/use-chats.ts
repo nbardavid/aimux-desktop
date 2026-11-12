@@ -22,6 +22,7 @@ import {
   reduceLine,
   replayTranscript,
   resolvePermission,
+  runningAgents,
   sendTurn,
   shellContextLine,
   shellLine,
@@ -58,6 +59,8 @@ interface Hooks {
   canStart: () => boolean
   /** The record's model for the one Claude Code says it runs (see `reportedModel`). */
   modelOf: (reported: string, current: string) => string
+  /** A prompt went out in this workspace: a paused one is taken back up. */
+  onSent: (workspaceId: string) => void
 }
 
 const TITLE_LENGTH = 40
@@ -130,7 +133,8 @@ function followModel(c: ChatTab, state: ChatState, hooks: Hooks): ChatRecord {
 
 export function chatSignal(chat: ChatTab): Signal | null {
   if (chat.state.pending.length > 0) return 'waiting'
-  if (chat.state.status === 'working') return 'working'
+  // A sub-agent still at work keeps the chat working, its main turn over or not.
+  if (chat.state.status === 'working' || runningAgents(chat.state).length > 0) return 'working'
   return chat.unread ? 'done' : null
 }
 
@@ -366,6 +370,7 @@ export function useChats(hooks: Hooks) {
     (id: string, text: string, images: readonly Image[] = []) => {
       const uuid = crypto.randomUUID()
       edit(id, (c) => {
+        queueMicrotask(() => latest.current.hooks.onSent(c.record.workspaceId))
         // The first real prompt names the tab; a command or an image alone does not.
         const names = c.record.title === 'New chat' && text !== '' && parseCommand(text) === null
         const record = {

@@ -205,6 +205,7 @@ export function App() {
       })()
     },
     onRecord: store.saveChat,
+    onSent: store.unpause,
   })
   // The sidebar's ages and task titles: the open chats' live records over the saved ones.
   const sidebarChats = useMemo(() => {
@@ -519,9 +520,12 @@ export function App() {
     items.push({ label: 'Show in Finder', run: async () => revealItemInDir(path) })
     items.push({ label: 'Copy path', run: () => copy(path) })
     if (row.kind === 'workspace') {
-      const { branch, id } = row.workspace
+      const { branch, id, name } = row.workspace
+      const paused = row.workspace.paused === true
+      const pause = () => store.pauseWorkspace(id, !paused).catch(fail(`Couldn't update ${name}`))
       items.push({ label: 'Copy branch name', run: () => copy(branch) })
-      items.unshift({ label: 'Rename', run: () => setRenamingWs(id) }, 'separator')
+      const toggle = { label: paused ? 'Resume' : 'Pause', run: pause }
+      items.unshift({ label: 'Rename', run: () => setRenamingWs(id) }, toggle, 'separator')
     }
     if (row.kind === 'project') {
       const owned = workspaces[row.project.id] ?? []

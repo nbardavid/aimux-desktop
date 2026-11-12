@@ -94,6 +94,7 @@ pub fn run() {
             store::workspace_create,
             store::workspace_remove,
             store::workspace_rename,
+            store::workspace_pause,
             store::chat_save,
             store::artifact_add,
             store::artifact_close,

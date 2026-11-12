@@ -47,6 +47,9 @@ pub struct Workspace {
     /// The chat whose agent created it (through aimux's MCP), if one did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_chat: Option<String>,
+    /// Put aside by the user: drawn muted until a message is sent in it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub paused: bool,
 }
 
 /// A published artifact: its claude.ai page, open as a tab of the right panel until closed.
@@ -496,6 +499,7 @@ pub fn make_worktree(
         setup: None,
         artifacts: Vec::new(),
         parent_chat: None,
+        paused: false,
     })
 }
 
@@ -595,6 +599,26 @@ pub fn workspace_rename(
     name: String,
 ) -> Result<Workspace, String> {
     edit(&store, |c| rename_workspace(c, &id, &name))
+}
+
+/// A workspace put aside (muted in the sidebar) or taken back up.
+pub fn pause_workspace(c: &mut Catalog, id: &str, paused: bool) -> Result<Workspace, String> {
+    let w = c
+        .workspaces
+        .iter_mut()
+        .find(|w| w.id == id)
+        .ok_or("unknown workspace")?;
+    w.paused = paused;
+    Ok(w.clone())
+}
+
+#[tauri::command]
+pub fn workspace_pause(
+    store: State<'_, Store>,
+    id: String,
+    paused: bool,
+) -> Result<Workspace, String> {
+    edit(&store, |c| pause_workspace(c, &id, paused))
 }
 
 #[tauri::command]
@@ -1150,6 +1174,7 @@ mod tests {
                 setup: None,
                 artifacts: Vec::new(),
                 parent_chat: None,
+                paused: false,
             }],
             ..Catalog::default()
         };
@@ -1160,6 +1185,9 @@ mod tests {
         );
         assert_eq!(rename_workspace(&mut c, "w", " ").unwrap().name, "amber");
         assert!(rename_workspace(&mut c, "nope", "x").is_err());
+        assert!(pause_workspace(&mut c, "w", true).unwrap().paused);
+        assert!(!pause_workspace(&mut c, "w", false).unwrap().paused);
+        assert!(pause_workspace(&mut c, "nope", true).is_err());
     }
 
     #[test]
