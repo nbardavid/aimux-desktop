@@ -566,7 +566,9 @@ export function GitPanel(props: GitPanelProps) {
         />
       </div>
       {isBrowser(shown) && props.browser}
+      {/* A fresh container per workspace and view: WKWebView kept painting the old one. */}
       <div
+        key={`${path ?? ''}:${isBrowser(shown) ? 'browser' : shown}`}
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3"
         hidden={isBrowser(shown)}
       >

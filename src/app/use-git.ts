@@ -79,12 +79,20 @@ export function useGit(activePath: string | undefined, paths: string[], settled 
     let live = true
     let timer: ReturnType<typeof setTimeout> | undefined
     let last = 0
+    // Reads can overlap (a focus during a poll): only the latest one's answer counts.
+    let latest = 0
     const read = async () => {
       clearTimeout(timer)
       last = Date.now()
-      const raw = await invoke<string | null>('pr_view', { path: activePath }).catch(() => null)
-      if (!live) return
-      const next = raw === null ? null : toPullRequest(raw)
+      const seq = ++latest
+      let next = prs.current.get(activePath) ?? null
+      try {
+        const raw = await invoke<string | null>('pr_view', { path: activePath })
+        next = raw === null ? null : toPullRequest(raw)
+      } catch {
+        // gh didn't answer (offline, asleep): what showed stays, the next poll tries again.
+      }
+      if (!live || seq !== latest) return
       prs.current.set(activePath, next)
       setPr(next)
       const pending = next?.checks.some((c) => c.state === 'pending') === true

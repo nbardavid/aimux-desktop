@@ -2,8 +2,10 @@
 //! webview names a workspace path and a file, never a git subcommand.
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
@@ -161,14 +163,52 @@ pub fn git_diff(path: String, file: String, untracked: bool) -> Result<String, S
     run("git", &path, args).map(|(_, out)| out)
 }
 
-/// The branch's pull request as `gh` reports it, or `None` without gh or without a PR.
+/// How long `gh` may take: past it (a network gone quiet after sleep), it is killed, so the
+/// panel's polling never waits on a request that will not answer.
+const GH_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// `run`, killed after `limit`: `None` when it did not finish or failed to start.
+fn run_within(program: &str, cwd: &str, args: &[&str], limit: Duration) -> Option<(bool, String)> {
+    let mut child = Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .env("PATH", tool_path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Read stdout on the side: a full pipe would block the child before it exits.
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        let _ = stdout.read_to_string(&mut out);
+        out
+    });
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    Some((status.success(), reader.join().unwrap_or_default()))
+}
+
+/// The branch's pull request as `gh` reports it, or `None` without gh or without a PR. An
+/// error when gh did not answer in time: the panel keeps what it showed.
 #[tauri::command(async)]
-pub fn pr_view(path: String) -> Option<String> {
+pub fn pr_view(path: String) -> Result<Option<String>, String> {
     let fields = "number,title,state,isDraft,url,additions,deletions,changedFiles,body,\
                   statusCheckRollup,mergeable,mergeStateStatus,baseRefName,headRefName";
-    match run("gh", &path, &["pr", "view", "--json", fields]) {
-        Ok((true, out)) => Some(out),
-        _ => None,
+    match run_within("gh", &path, &["pr", "view", "--json", fields], GH_TIMEOUT) {
+        Some((true, out)) => Ok(Some(out)),
+        Some((false, _)) => Ok(None),
+        None => Err("gh did not answer".into()),
     }
 }
 
@@ -242,6 +282,20 @@ mod tests {
                 ('R', false, true, false, "b.ts".to_string()),
                 ('M', false, true, true, "both.ts".to_string()),
             ]
+        );
+    }
+
+    #[test]
+    fn a_command_past_its_limit_is_killed() {
+        let started = Instant::now();
+        assert_eq!(
+            run_within("sleep", "/", &["5"], Duration::from_millis(200)),
+            None
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(
+            run_within("echo", "/", &["hi"], Duration::from_secs(5)),
+            Some((true, "hi\n".to_string()))
         );
     }
 
