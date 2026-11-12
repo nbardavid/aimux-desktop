@@ -24,7 +24,9 @@ export function withTaskEvent(
 ): Record<string, Task> | null {
   const id = str(m.task_id)
   if (id === '' || !str(m.subtype).startsWith('task_')) return null
-  const call = str(m.tool_use_id) || (Object.entries(tasks).find(([, t]) => t.id === id)?.[0] ?? '')
+  // A resumed sub-agent keeps its task id under a new call: without a call id, the latest one.
+  const call =
+    str(m.tool_use_id) || (Object.entries(tasks).findLast(([, t]) => t.id === id)?.[0] ?? '')
   if (call === '') return null
   const known: Task = tasks[call] ?? {
     id,

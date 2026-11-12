@@ -937,8 +937,10 @@ const shownBlock = (b: Block) =>
   b.kind !== 'command' && (b.kind !== 'thinking' || b.text.trim() !== '')
 
 /** A call that starts a sub-agent: shown as its own card, never folded into a group. */
+const AGENT_TOOLS = new Set(['Agent', 'Task'])
+
 export const isAgentCall = (b: Block): b is Block & { kind: 'tool' } =>
-  b.kind === 'tool' && (b.name === 'Agent' || b.name === 'Task')
+  b.kind === 'tool' && AGENT_TOOLS.has(b.name)
 
 const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit', 'Write'])
 
@@ -963,19 +965,28 @@ export interface AgentRun {
   chat: ChatState
 }
 
+/**
+ * A call that runs a sub-agent: an `Agent` call, or a `SendMessage` that resumed one (Claude
+ * Code then runs it as a task of that call, its lines under that call's id).
+ */
+const runsAgent = (state: ChatState, b: Block): b is Block & { kind: 'tool' } =>
+  b.kind === 'tool' &&
+  (AGENT_TOOLS.has(b.name) || (b.name === 'SendMessage' && b.id in state.tasks))
+
 /** The sub-agent started by call `id`, or null when there is no such call. */
 export function agentRun(state: ChatState, id: string): AgentRun | null {
   const call = state.turns
     .flatMap((t) => t.blocks)
-    .find((b): b is Block & { kind: 'tool' } => isAgentCall(b) && b.id === id)
+    .find((b): b is Block & { kind: 'tool' } => runsAgent(state, b) && b.id === id)
   if (!call) return null
+  const resumed = call.name === 'SendMessage'
   // Claude Code's task events know best: a sub-agent outlives the turn that started it.
   const task = state.tasks[id]
   const running = task
     ? task.status === 'running'
     : call.result === undefined && call.stopped !== true
   const prompt: Turn = {
-    blocks: [{ kind: 'text', text: str(call.input.prompt) }],
+    blocks: [{ kind: 'text', text: str(resumed ? call.input.message : call.input.prompt) }],
     id: `${id}:prompt`,
     role: 'user',
   }
@@ -986,7 +997,7 @@ export function agentRun(state: ChatState, id: string): AgentRun | null {
     kind: str(call.input.subagent_type) || 'Agent',
     running,
     task: task ?? null,
-    title: str(call.input.description) || 'Sub-agent',
+    title: str(resumed ? call.input.summary : call.input.description) || 'Sub-agent',
   }
 }
 
@@ -994,7 +1005,7 @@ export function agentRun(state: ChatState, id: string): AgentRun | null {
 export function runningAgents(state: ChatState): AgentRun[] {
   return state.turns
     .flatMap((t) => t.blocks)
-    .filter(isAgentCall)
+    .filter((b) => runsAgent(state, b))
     .map((b) => agentRun(state, b.id))
     .filter((a): a is AgentRun => a?.running === true)
 }
