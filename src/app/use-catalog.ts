@@ -35,8 +35,13 @@ function readSelection(): Selection {
   }
 }
 
-/** Projects, worktrees and saved chats, as the store keeps them on disk; and what is selected. */
-export function useCatalog() {
+const NONE: ReadonlySet<string> = new Set()
+
+/**
+ * Projects, worktrees and saved chats, as the store keeps them on disk; and what is selected.
+ * A `leaving` workspace, being deleted in the background, is never the selection.
+ */
+export function useCatalog(leaving: ReadonlySet<string> = NONE) {
   const [catalog, setCatalog] = useState<Catalog>(EMPTY)
   const [status, setStatus] = useState<CatalogStatus>({ kind: 'loading' })
   const [selection, setSelectionState] = useState<Selection>(readSelection)
@@ -59,7 +64,9 @@ export function useCatalog() {
 
   // A selection that no longer exists falls back to the first project and its first worktree.
   const project = projects.find((p) => p.id === selection.projectId) ?? projects[0]
-  const inProject = catalog.workspaces.filter((w) => w.projectId === project?.id)
+  const inProject = catalog.workspaces.filter(
+    (w) => w.projectId === project?.id && !leaving.has(w.id)
+  )
   const workspace = inProject.find((w) => w.id === selection.workspaceId) ?? inProject[0]
 
   const select = useCallback((projectId: string, workspaceId: string | null) => {
@@ -102,7 +109,9 @@ export function useCatalog() {
       candidates: string[],
       base: string | null,
       // An agent's: it shows in the sidebar without taking the user there.
-      parentChat: string | null = null
+      parentChat: string | null = null,
+      // Its first prompt: Claude names it (title and branch) in the background, as the TUI does.
+      prompt = ''
     ) => {
       const created = await invoke<Workspace>('workspace_create', {
         base,
@@ -112,6 +121,12 @@ export function useCatalog() {
       })
       await reload()
       if (parentChat === null) select(projectId_, created.id)
+      if (prompt.trim() !== '')
+        invoke<Workspace | null>('workspace_autoname', { id: created.id, prompt })
+          .then(async (named) => {
+            if (named !== null) await reload()
+          })
+          .catch(() => {})
       return created
     },
     [reload, select]

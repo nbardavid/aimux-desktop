@@ -5,6 +5,7 @@ pub mod git_write;
 pub mod host;
 pub mod host_client;
 pub mod mcp;
+pub mod naming;
 pub mod pty;
 pub mod quota;
 pub mod sessions;
@@ -94,6 +95,7 @@ pub fn run() {
             store::workspace_create,
             store::workspace_remove,
             store::workspace_rename,
+            naming::workspace_autoname,
             store::workspace_pause,
             store::chat_save,
             store::artifact_add,

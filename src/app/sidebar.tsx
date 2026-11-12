@@ -122,8 +122,9 @@ export function workspaceFacts(
   return { activeAt, task }
 }
 
-/** The colour word of a workspace's branch (`aimux/amber` → amber). */
-const colourWord = (branch: string) => branch.slice(branch.lastIndexOf('/') + 1)
+/** The colour a workspace was made with: its folder's name (`…/amber` → amber). The branch
+ * may have taken the name Claude gave it. */
+const colourWord = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
 /** Ages move on by the minute. */
 function useNow(): number {
@@ -423,7 +424,7 @@ function WorkspaceRow(
   const diff = props.diffs[ws.path]
   const facts = workspaceFacts(ws, props.chats ?? [])
   const renaming = ws.id === props.renamingId
-  const word = colourWord(ws.branch)
+  const word = colourWord(ws.path)
   const title = ws.name === word ? (facts.task ?? ws.name) : ws.name
 
   const menu = (e: MouseEvent) => {

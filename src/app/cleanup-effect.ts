@@ -487,13 +487,20 @@ async function chosenEffect(): Promise<CleanupEffect> {
   }
 }
 
-/** The git panel's Clean up: captures the workspace, removes it, then plays the send-off.
- * A refusal (uncommitted changes) throws before anything moves. */
+/** The git panel's Clean up: captures the workspace, hides it and plays the send-off at once
+ * while git removes the worktree in the background; a failure brings it back with a toast.
+ * A dirty worktree is refused by git unless forced: that one asks first, before anything moves. */
 export function cleanupOf(
   ws: Workspace | undefined,
-  remove: (w: Workspace, force: boolean) => Promise<void>
+  dirty: boolean,
+  opts: {
+    fail: (title: string) => (error: unknown) => void
+    hide: (id: string, hidden: boolean) => void
+    remove: (w: Workspace, force: boolean) => Promise<void>
+  }
 ) {
   if (ws === undefined) return null
+  const { fail, hide, remove } = opts
   return {
     label: 'Clean up',
     run: async (force: boolean) => {
@@ -503,8 +510,16 @@ export function cleanupOf(
         document.querySelector('main'),
         document.querySelector(`[data-workspace="${ws.id}"]`)
       )
-      await remove(ws, force)
+      if (dirty && !force) {
+        await remove(ws, force)
+        if (shot) void play(effect, shot)
+        return
+      }
+      hide(ws.id, true)
       if (shot) void play(effect, shot)
+      remove(ws, force)
+        .catch(fail(`Couldn't clean up ${ws.name}`))
+        .finally(() => hide(ws.id, false))
     },
   }
 }

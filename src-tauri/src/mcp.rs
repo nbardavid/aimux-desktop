@@ -67,11 +67,11 @@ const INSTRUCTIONS: &str = "aimux runs this chat in a workspace: a git worktree 
 shown in the user's sidebar. Other workspaces of the same project each run their own Claude. \
 To split work, start workspaces with workspace_create (each gets its own branch and an agent \
 working on the prompt), then wait_for them and read their answers with chat_read. \
-Workspaces are named by a colour (e.g. amber); tools take that name.";
+Each workspace has a colour (e.g. amber), then a name Claude gives it from its first \
+prompt; tools take either.";
 
 fn tools() -> Value {
-    let workspace =
-        json!({ "type": "string", "description": "A workspace's name (e.g. amber) or id." });
+    let workspace = json!({ "type": "string", "description": "A workspace's colour (e.g. amber), name or id." });
     json!([
         {
             "name": "where_am_i",
@@ -187,11 +187,15 @@ impl Here {
             .filter(|w| w.project_id == self.workspace.project_id)
     }
 
-    /// A workspace of this project, by id or name.
+    /// A workspace of this project, by id, name or colour (kept once Claude names it).
     fn find(&self, key: &str) -> Result<&Workspace, String> {
         let key = key.trim();
         self.siblings()
-            .find(|w| w.id == key || w.name.eq_ignore_ascii_case(key))
+            .find(|w| {
+                w.id == key
+                    || w.name.eq_ignore_ascii_case(key)
+                    || crate::naming::colour_of(w).eq_ignore_ascii_case(key)
+            })
             .ok_or_else(|| format!("no workspace {key} in this project (see list_workspaces)"))
     }
 

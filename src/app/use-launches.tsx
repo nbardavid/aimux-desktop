@@ -23,7 +23,7 @@ export interface Launch {
 }
 
 interface Deps {
-  createWorkspace: (projectId: string, base: string | null) => Promise<Workspace>
+  createWorkspace: (projectId: string, base: string | null, prompt: string) => Promise<Workspace>
   runSetup: (w: Workspace) => Promise<unknown>
   /** The setup script couldn't start: said in a toast, Claude goes on. */
   setupFailed: (error: unknown) => void
@@ -46,7 +46,8 @@ export function useLaunches() {
   // Set by the app on every render: the launches call what it has now.
   const depsRef = useRef<Deps | null>(null)
   const deps = {
-    createWorkspace: (pid: string, base: string | null) => need().createWorkspace(pid, base),
+    createWorkspace: (pid: string, base: string | null, prompt: string) =>
+      need().createWorkspace(pid, base, prompt),
     reopenComposer: (pid: string) => need().reopenComposer(pid),
     runSetup: (w: Workspace) => need().runSetup(w),
     setupFailed: (error: unknown) => need().setupFailed(error),
@@ -83,7 +84,7 @@ export function useLaunches() {
     void (async () => {
       let w: Workspace
       try {
-        w = await deps.createWorkspace(projectId, base)
+        w = await deps.createWorkspace(projectId, base, prompt)
       } catch (error) {
         // Nothing made: the next composer reopens on this prompt.
         keepDraft(projectId, prompt)

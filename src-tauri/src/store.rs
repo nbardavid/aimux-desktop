@@ -225,7 +225,10 @@ fn save(catalog: &Catalog) -> Result<(), String> {
 }
 
 /// Reads, edits and writes the catalog under one lock; the edit's result is returned.
-fn edit<T>(store: &Store, f: impl FnOnce(&mut Catalog) -> Result<T, String>) -> Result<T, String> {
+pub fn edit<T>(
+    store: &Store,
+    f: impl FnOnce(&mut Catalog) -> Result<T, String>,
+) -> Result<T, String> {
     let mut guard = store.0.lock().unwrap_or_else(|e| e.into_inner());
     let catalog = guard.get_or_insert_with(load);
     let out = f(catalog)?;
@@ -572,8 +575,8 @@ pub fn workspace_remove(store: State<'_, Store>, id: String, force: bool) -> Res
     })
 }
 
-/// A workspace's display name; its branch and folder keep their colour. An empty name gives
-/// the colour back.
+/// A workspace's display name; its branch and folder stay. An empty name gives the colour
+/// (its folder's) back.
 pub fn rename_workspace(c: &mut Catalog, id: &str, name: &str) -> Result<Workspace, String> {
     let w = c
         .workspaces
@@ -582,10 +585,7 @@ pub fn rename_workspace(c: &mut Catalog, id: &str, name: &str) -> Result<Workspa
         .ok_or("unknown workspace")?;
     let name = name.trim();
     w.name = if name.is_empty() {
-        w.branch
-            .strip_prefix("aimux/")
-            .unwrap_or(&w.branch)
-            .to_string()
+        crate::naming::colour_of(w)
     } else {
         name.to_string()
     };

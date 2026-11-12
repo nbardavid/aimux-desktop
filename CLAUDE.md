@@ -23,9 +23,12 @@ branding.
   binary run headless over stream-json, drawn by our own UI, so everything Claude Code can
   do keeps working. No Codex, no other assistants, no Claude Code TUI inside a terminal tab.
 - **Everything is a worktree.** The main checkout is the project, never a workspace. No "root".
-- **Workspace names are colours** from a fixed pool (`aimux/amber`), never derived from the
-  prompt. The user can rename a workspace in place (the name only; the branch stays). The
-  composer does not show the branch name.
+- **Workspaces are named from their first prompt**, as the aimux TUI does: each is made on a
+  colour from a fixed pool (folder and `aimux/amber` branch), then one quick headless Claude
+  call (haiku, `naming.rs`) gives it a title and a `<type>/<subject>` branch. The folder keeps
+  the colour, which stays the colour word in the sidebar. Any failure keeps the colour. The
+  user can rename a workspace in place (the name only). The composer does not show the
+  branch name.
 - **One composer for new work** (⌘N): project, prompt, base branch, model. The base branch
   is preselected (the repo's default), with recent picks and search. Enter creates.
 - **Models come from Claude Code itself** (its `initialize` answer), never a hardcoded list.

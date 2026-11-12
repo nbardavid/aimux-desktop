@@ -457,7 +457,19 @@ function handle(cmd: string, args: Args): unknown {
     case 'workspace_rename': {
       const w = store.workspaces.find((x) => x.id === args.id)
       if (!w) throw new Error('unknown workspace')
-      w.name = str(args.name).trim() || w.branch.replace(/^aimux\//, '')
+      w.name = str(args.name).trim() || w.path.slice(w.path.lastIndexOf('/') + 1)
+      return structuredClone(w)
+    }
+    case 'workspace_autoname': {
+      // As Claude would: a title from the prompt's first words, a branch after it.
+      const w = store.workspaces.find((x) => x.id === args.id)
+      const words = str(args.prompt).split(/\s+/).filter(Boolean).slice(0, 4)
+      if (!w || words.length < 2) return null
+      w.name = words.join(' ')
+      w.branch = `feat/${words
+        .join('-')
+        .toLowerCase()
+        .replaceAll(/[^a-z0-9-]/g, '')}`
       return structuredClone(w)
     }
     case 'workspace_pause': {

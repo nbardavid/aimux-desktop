@@ -113,7 +113,8 @@ function sum(changes: FileChange[] | null | undefined): DiffStat {
 }
 
 export function App() {
-  const store = useCatalog()
+  const [removing, markRemoving] = useLeaving()
+  const store = useCatalog(removing)
   const { catalog, project, projects, status, workspace: ws } = store
   const projectId = project?.id ?? null
   const [mode, setMode] = useState<'normal' | 'git' | 'settings'>('normal')
@@ -155,8 +156,6 @@ export function App() {
   /** The tab on screen, when the window has the focus: what needs no calling out. */
   const watching = useRef<string | null>(null)
 
-  /** Workspaces being deleted in the background: gone from the sidebar at once. */
-  const [removing, markRemoving] = useLeaving()
   const workspaces = useMemo(
     () => byProject(withoutLeaving(catalog, removing)),
     [catalog, removing]
@@ -445,9 +444,10 @@ export function App() {
     else selectTab(ws.id, terminals.create({ cwd: ws.path, workspaceId: ws.id }))
   }
 
+  const namesIn = (pid: string) => (workspaces[pid] ?? []).map((w) => w.name)
   launches.deps.current = {
-    createWorkspace: (pid, base) =>
-      store.createWorkspace(pid, nameCandidates((workspaces[pid] ?? []).map((w) => w.name)), base),
+    createWorkspace: (pid, base, prompt) =>
+      store.createWorkspace(pid, nameCandidates(namesIn(pid)), base, null, prompt),
     reopenComposer: setComposeIn,
     runSetup,
     setupFailed: (error) => fail('Setup did not start')(error),
@@ -470,12 +470,13 @@ export function App() {
       chats.send(ask.chatId, ask.text)
       return {}
     }
-    const taken = (workspaces[ask.projectId] ?? []).map((w) => w.name)
+    const taken = nameCandidates(namesIn(ask.projectId))
     const w = await store.createWorkspace(
       ask.projectId,
-      nameCandidates(taken),
+      taken,
       ask.base,
-      ask.parentChat
+      ask.parentChat,
+      ask.prompt
     )
     const hasScript = await invoke<{ exists: boolean }>('setup_status', { projectId: w.projectId })
     if (hasScript.exists) await runSetup(w)
@@ -629,8 +630,8 @@ export function App() {
     },
   }
 
-  // After a merge, the worktree that carried the branch is dead weight.
-  const cleanup = cleanupOf(ws, deleteWorkspace)
+  const removal = { fail, hide: markRemoving, remove: deleteWorkspace }
+  const cleanup = cleanupOf(ws, (changes?.length ?? 0) > 0, removal)
 
   const signals: Record<string, ReturnType<typeof strongest>> = {}
   for (const w of catalog.workspaces) {
