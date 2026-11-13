@@ -23,24 +23,26 @@ isn't. Reference for layout, density and feel: Conductor.build. For craft: Linea
 Motion explains change: where something came from, what replaced what. Never ornamental,
 never in the way. Every state change that would otherwise "pop" gets a transition.
 
-| What                                            | Duration  | Curve       | Movement                                           |
-| ----------------------------------------------- | --------- | ----------- | -------------------------------------------------- |
-| Hover / pressed colours                         | 120ms     | ease-out    | colour only                                        |
-| Menus, popovers, combos, tooltips (enter)       | 140–160ms | ease-out    | fade + 2–4px slide from the anchor, scale 0.98 → 1 |
-| Same (exit)                                     | 100–120ms | ease-in     | fade only                                          |
-| Composer dialog                                 | 180ms     | ease-out    | fade + 6px rise; veil fades                        |
-| New message / block / card                      | 200–280ms | ease-out    | fade + 6px rise                                    |
-| Expand / collapse (tool rows, "Show all")       | 180ms     | ease-in-out | height + fade, no jump                             |
-| Tabs: open, close, reorder                      | 160ms     | ease-out    | width and position slide; neighbours make room     |
-| Panels (sidebar ⌘S, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way       |
-| Status changes (dots, badges, counts)           | 160ms     | ease-out    | cross-fade; working dots breathe                   |
-| Sidebar row finishes / waits (tint)             | 700ms     | ease-out    | opacity only: swell, hold, settle to a faint wash  |
-| Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift         |
-| Clean up (a merged workspace leaves)            | 340–760ms | per style   | Dust, Brush or Glint (Settings › Appearance)       |
+| What                                            | Duration  | Curve       | Movement                                              |
+| ----------------------------------------------- | --------- | ----------- | ----------------------------------------------------- |
+| Hover / pressed colours                         | 120ms     | ease-out    | colour only                                           |
+| Menus, popovers, combos, tooltips (enter)       | 140–160ms | ease-out    | fade + 2–4px slide from the anchor, scale 0.98 → 1    |
+| Same (exit)                                     | 100–120ms | ease-in     | fade only                                             |
+| Composer dialog                                 | 180ms     | ease-out    | fade + 6px rise; veil fades                           |
+| New message / block / card                      | 200–280ms | ease-out    | fade + 6px rise                                       |
+| Expand / collapse (tool rows, "Show all")       | 180ms     | ease-in-out | height + fade, no jump                                |
+| Tabs: open, close, reorder                      | 160ms     | ease-out    | width and position slide; neighbours make room        |
+| Panels (sidebar ⌘S, git ⌥⌘B)                    | 200ms     | ease-in-out | width slide, content does not reflow mid-way          |
+| Status changes (dots, badges, counts)           | 160ms     | ease-out    | cross-fade; working dots breathe                      |
+| Sidebar row finishes / waits (tint)             | 700ms     | ease-out    | opacity only: swell, hold, settle to a faint wash     |
+| Inline confirmations (⌘W twice, discard, merge) | 120ms     | ease-out    | label cross-fade in place, no layout shift            |
+| Clean up (a merged workspace leaves)            | 340–760ms | per style   | Dust, Brush or Glint (Settings › Appearance)          |
+| Chat background (picked, or changed)            | 300ms     | ease-out    | fade in; the scene then plays at 24 fps, cell by cell |
 
 - Animate `opacity` and `transform`; animate size only where the layout must move.
 - Nothing above 300ms, except Clean up's send-off, which plays once the worktree is gone and
-  blocks nothing, and a sidebar row's tint, a notification that moves nothing. Nothing that delays an action the user already took.
+  blocks nothing, a sidebar row's tint, a notification that moves nothing, and the chat
+  background, a scene the user chose that plays behind everything and stops when motion is reduced. Nothing that delays an action the user already took.
 - Respect `prefers-reduced-motion`: keep fades, drop movement.
 - Use tw-animate (`animate-in`, `fade-in`, `slide-in-from-*-[Npx]`, `zoom-in-[0.98]`) and
   Tailwind transitions; tw-animate only accepts whole steps or bracketed values.
@@ -66,6 +68,12 @@ variables. Change a value here and in `styles.css` together; `?gallery` in the b
 shows them all.
 
 **Surfaces are neutral, inks are warm.** Fills carry no beige; the warmth is in the text.
+
+**Surfaces are layers over the scene.** With a chat background on, the scene fills the window
+and every pane sits on it. Panes around the chat take `glass` (`styles.css`): white at 50 %,
+blurred 24px, and inside them `background`, `chrome` and `sidebar` turn translucent and
+hairlines become ink at 8 %. The chat pane stays open, with a veil behind its column. Popups,
+menus and dialogs stay opaque. A new pane is designed as a layer: glass, or open.
 
 ### Type
 

@@ -38,7 +38,7 @@ export const barButtonClass = (on: boolean) =>
 export function TopBar(props: Props) {
   return (
     <header
-      className="border-border bg-chrome flex h-bar flex-none items-center gap-1.5 border-b pr-2 pl-4"
+      className="border-border bg-chrome glass flex h-bar flex-none items-center gap-1.5 border-b pr-2 pl-4"
       data-tauri-drag-region
     >
       {/* With the sidebar hidden: room for the traffic lights, its toggle, the workspace. It

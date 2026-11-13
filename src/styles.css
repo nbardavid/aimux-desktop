@@ -579,6 +579,41 @@ body.resizing * {
   }
 }
 
+/* A chat background's veil: the scene stays whole at the sides and quiets behind the
+   column the text runs in, so the prose reads as on paper. */
+.wallpaper-veil {
+  background: linear-gradient(
+    90deg,
+    transparent calc(50% - 560px),
+    color-mix(in srgb, var(--background) 28%, transparent) calc(50% - 400px),
+    color-mix(in srgb, var(--background) 28%, transparent) calc(50% + 400px),
+    transparent calc(50% + 560px)
+  );
+}
+
+/* Glass: with a chat background on, everything around the chat (sidebar, bars, panels,
+   pages) sits on the scene, frosted. Inside, fills go translucent and hairlines go ink. */
+:root[data-wallpaper] .glass {
+  --background: rgb(255 255 255 / 0.5);
+  --chrome: rgb(255 255 255 / 0.35);
+  --sidebar: transparent;
+  --border: rgb(40 39 37 / 0.08);
+  --sidebar-border: rgb(40 39 37 / 0.08);
+  /* A picked or hovered row: the scene a shade darker through it, not a white card. */
+  --hover: rgb(40 39 37 / 0.05);
+  --active: rgb(40 39 37 / 0.09);
+  background-color: rgb(255 255 255 / 0.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+}
+
+/* Glass in glass (the peeking sidebar's list) takes no second frost. */
+:root[data-wallpaper] .glass .glass {
+  background-color: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Reduced motion keeps the fades and drops the movement: tw-animate's slides and zooms go
    flat, `rise` and `pop` become plain fades, smooth scrolls jump. */
 @media (prefers-reduced-motion: reduce) {

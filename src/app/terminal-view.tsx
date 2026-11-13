@@ -20,6 +20,9 @@ export function TerminalView({ attach, className, focus = true, tabId }: Props) 
     [attach, tabId]
   )
   return (
-    <section className={cn('relative min-h-0 flex-1', className ?? 'px-4 pt-2 pb-3')} ref={pane} />
+    <section
+      className={cn('glass relative min-h-0 flex-1', className ?? 'px-4 pt-2 pb-3')}
+      ref={pane}
+    />
   )
 }
