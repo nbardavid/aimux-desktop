@@ -16,6 +16,7 @@ import { Dock } from './app/dock'
 import { leaveInPieces, useLeaving, withoutLeaving } from './app/explode'
 import { GitMode } from './app/git-mode'
 import { HostBar } from './app/host-bar'
+import { McpPanel } from './app/mcp-panel'
 import { afterClose, paletteItems, paletteTarget, stepThrough } from './app/navigation'
 import { NewWorkspace } from './app/new-workspace'
 import { overlayShown } from './app/overlay'
@@ -27,7 +28,7 @@ import { ResumePicker } from './app/resume-picker'
 import { RightPanel } from './app/right-panel'
 import { SettingsView } from './app/settings-view'
 import { SidePeek } from './app/side-peek'
-import { type DiffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
+import { diffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
 import { Slide, Splitter } from './app/splitter'
 import { TabBar, type TabItem } from './app/tab-bar'
 import { TerminalView } from './app/terminal-view'
@@ -94,22 +95,12 @@ function readChatSettings(): ChatSettings {
 
 const copy = (text: string) => void navigator.clipboard.writeText(text)
 
-/** `/resume`'s palette, for the chat it was typed in. (`/model` and `/effort` open the
- * chat's own model picker.) */
+/** `/resume`'s or `/mcp`'s palette, for the chat it was typed in. (`/model` and `/effort`
+ * open the chat's own model picker.) */
 interface CommandPick {
-  name: 'resume'
+  name: 'resume' | 'mcp'
   chatId: string
   args: string
-}
-
-function sum(changes: FileChange[] | null | undefined): DiffStat {
-  let add = 0
-  let del = 0
-  for (const file of changes ?? []) {
-    add += file.add ?? 0
-    del += file.del ?? 0
-  }
-  return { add, del }
 }
 
 export function App() {
@@ -312,7 +303,7 @@ export function App() {
   publish.current = artifacts.published
   const changes = ws === undefined ? undefined : git.changes[ws.path]
   const diffs = useMemo(
-    () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, sum(c)])),
+    () => Object.fromEntries(Object.entries(git.changes).map(([path, c]) => [path, diffStat(c)])),
     [git.changes]
   )
 
@@ -677,7 +668,7 @@ export function App() {
     } else if (name === 'rename') {
       renameTells.current = id
       setRenaming(id)
-    } else if (name === 'resume') setCommandPick({ args, chatId: id, name })
+    } else if (name === 'resume' || name === 'mcp') setCommandPick({ args, chatId: id, name })
   }
 
   /** A session open in a tab is that tab; else it opens in a new one where it ran. */
@@ -1083,6 +1074,12 @@ export function App() {
           filterable
           onClose={() => setOverlay(null)}
           onPick={goToItem}
+        />
+      )}
+      {commandPick?.name === 'mcp' && (
+        <McpPanel
+          request={async (request) => chats.mcp(commandPick.chatId, request)}
+          onClose={() => setCommandPick(null)}
         />
       )}
       {commandPick?.name === 'resume' && project && ws && (

@@ -6,7 +6,8 @@
 // pill), `?attention` a chat asking from another tab (the toast), `?fail` a failing call
 // (the error toast: Setup › Write it with a chat), `?long` long names, many tabs and files
 // (truncation), `?empty-inbox` nothing waiting or done, `?merged` amber's PR merged (Clean up
-// with a full transcript to crumble), `?artifacts` ten pages on amber (two new). Replies stream in over about two
+// with a full transcript to crumble), `?artifacts` ten pages on amber (two new), `?no-mcp` no
+// MCP servers for `/mcp` (else one in each state, src/dev/mcp.ts). Replies stream in over about two
 // seconds; every other one asks to run a tool first. Stage, discard, push and merge change
 // what the panel shows. A setup run takes about eight seconds; deleting a workspace with
 // changes (stat tiles' Clean up, teal's menu) is refused, so "Delete anyway" shows.
@@ -52,6 +53,7 @@ import {
   turnEnd,
 } from './fixtures'
 import { heavyFixture } from './heavy'
+import { mcpAnswer } from './mcp'
 
 /** A `Channel` handed over by `invoke`: the mock gets the object itself, not its id. */
 interface Channel {
@@ -260,7 +262,12 @@ function chatSend(args: Args) {
     }
   }
   const channel = chats.get(id)
-  if (message.type === 'control_request' && message.request?.subtype === 'initialize')
+  const mcp =
+    message.type === 'control_request'
+      ? mcpAnswer(str(message.request_id), message.request ?? {})
+      : null
+  if (mcp) setTimeout(() => channel?.onmessage(mcp.line), mcp.delay)
+  else if (message.type === 'control_request' && message.request?.subtype === 'initialize')
     later(channel, [...freshChat(id, resumes.get(id) ?? null, startModels.get(id)), LIVE])
   else if (message.type === 'control_request' && message.request?.subtype === 'get_context_usage')
     later(channel, [usageAnswer(str(message.request_id))])
@@ -552,6 +559,9 @@ function handle(cmd: string, args: Args): unknown {
       return SETTINGS
     case 'update_check':
       return flags.has('update') ? '0.3.0' : null
+    case 'plugin:opener|open_url':
+      // The preview opens no browser: the sign-in lands by itself (src/dev/mcp.ts).
+      return null
     case 'plugin:window|is_focused':
       return true
     case 'plugin:app|version':

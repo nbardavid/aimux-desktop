@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 import type { Project, Signal, Workspace } from '../model/catalog'
+import type { FileChange } from './use-git'
 
 import { useReorder } from './reorder'
 import { StatusDot } from './status-dot'
@@ -23,6 +24,17 @@ import { RenameField } from './tab-bar'
 export interface DiffStat {
   add: number
   del: number
+}
+
+/** A file list's added and deleted lines, together. */
+export function diffStat(changes: FileChange[] | null | undefined): DiffStat {
+  let add = 0
+  let del = 0
+  for (const file of changes ?? []) {
+    add += file.add ?? 0
+    del += file.del ?? 0
+  }
+  return { add, del }
 }
 
 /** What a right-click (or a row's ··· button) asks a menu for. */

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ChatRecord, Signal } from '../model/catalog'
 
 import { parseCommand } from '../chat/commands'
+import { MCP, mcpAnswer, mcpLine, type McpRequest } from '../chat/mcp'
 import {
   addNote,
   addShellTurn,
@@ -168,6 +169,8 @@ export function useChats(hooks: Hooks) {
   const stopping = useRef(new Map<string, Promise<unknown>>())
   /** Queued prompts being taken back, by request id: their answer says if Claude let go. */
   const unqueues = useRef(new Map<string, (cancelled: boolean) => void>())
+  /** `/mcp`'s requests in flight, by request id. */
+  const mcpWaiting = useRef(new Map<string, (answer: ReturnType<typeof mcpAnswer>) => void>())
   const latest = useRef({ chats, hooks })
   latest.current = { chats, hooks }
 
@@ -220,6 +223,12 @@ export function useChats(hooks: Hooks) {
       }
       const replaying = !live.current.has(id)
       if (line.includes(UNQUEUE)) settleUnqueue(line, unqueues.current)
+      // `/mcp`'s answers go to its panel, never into the chat.
+      const mcpAnswered = mcpAnswer(line)
+      if (mcpAnswered) {
+        mcpWaiting.current.get(mcpAnswered.requestId)?.(mcpAnswered)
+        return
+      }
       queuedRef.current.push({
         apply: (c: ChatTab) => {
           const state = reduceLine(c.state, line)
@@ -508,6 +517,30 @@ export function useChats(hooks: Hooks) {
     [write]
   )
 
+  /**
+   * One of `/mcp`'s requests, written to the chat's Claude (woken if asleep): its answer, or a
+   * rejection with what Claude Code said. Signing in waits on nothing but the auth URL.
+   */
+  const mcp = useCallback(
+    async (id: string, request: McpRequest) =>
+      new Promise<Record<string, unknown>>((resolve, reject) => {
+        const requestId = `${MCP}${crypto.randomUUID()}`
+        const timer = setTimeout(() => settle(null), 30_000)
+        const settle = (answer: ReturnType<typeof mcpAnswer>) => {
+          clearTimeout(timer)
+          mcpWaiting.current.delete(requestId)
+          if (answer === null) reject(new Error('Claude Code did not answer. Try again.'))
+          else if (answer.ok) resolve(answer.answer)
+          else reject(new Error(answer.error))
+        }
+        mcpWaiting.current.set(requestId, settle)
+        write(id, mcpLine(requestId, request)).catch((error: unknown) =>
+          settle({ error: String(error), ok: false, requestId })
+        )
+      }),
+    [write]
+  )
+
   const rename = useCallback(
     (id: string, title: string) => edit(id, (c) => ({ ...c, record: { ...c.record, title } })),
     [edit]
@@ -595,6 +628,7 @@ export function useChats(hooks: Hooks) {
       close,
       create,
       interrupt,
+      mcp,
       openSession,
       rename,
       restore,
@@ -616,6 +650,7 @@ export function useChats(hooks: Hooks) {
       close,
       create,
       interrupt,
+      mcp,
       openSession,
       rename,
       restore,
