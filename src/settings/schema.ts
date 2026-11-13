@@ -1,6 +1,7 @@
 // The app's settings, kept in settings.json next to its catalog. Only what the app reads.
 
 import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS, STATUS_LOADERS } from '../app/loaders'
+import { DEFAULT_WALLPAPER, WALLPAPER_SETTING, WALLPAPERS } from '../app/wallpapers'
 
 export type SettingValue = boolean | number | string
 
@@ -31,8 +32,11 @@ export type Row =
       help: string
       fallback: string
       options: string[]
-      /** Each option plays, in a grid under the label: as text (`loader`) or as dots (`dots`). */
-      preview?: 'loader' | 'dots'
+      /**
+       * Each option plays, in a grid under the label: as text (`loader`), as dots (`dots`) or
+       * as a little scene (`wallpaper`).
+       */
+      preview?: 'loader' | 'dots' | 'wallpaper'
     }
 
 export interface Section {
@@ -46,6 +50,15 @@ export const SECTIONS: Section[] = [
     id: 'ui',
     label: 'Appearance',
     rows: [
+      {
+        fallback: DEFAULT_WALLPAPER,
+        help: 'A scene drawn in characters behind every chat, always moving. It stays still when macOS reduces motion.',
+        id: WALLPAPER_SETTING,
+        kind: 'select',
+        label: 'Chat background',
+        options: [...WALLPAPERS],
+        preview: 'wallpaper',
+      },
       {
         fallback: 'Dust',
         help: 'How a workspace leaves when you clean it up after its PR merged. Pick one to see it.',

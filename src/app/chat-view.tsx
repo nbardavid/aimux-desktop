@@ -46,6 +46,7 @@ import { clipboardImages, readImage } from './pasted-images'
 import { PixelWipe } from './pixel-wipe'
 import { QuestionCard } from './question-card'
 import { QueuedPrompts, Transcript } from './transcript'
+import { ChatVeil, useWallpaper } from './wallpaper'
 
 /** What the marks behind the prompt copy from it, to wrap its text at the same places. */
 const MIRRORED = [
@@ -273,6 +274,7 @@ export function ChatView({
   place,
   state,
 }: Props) {
+  const wallpaper = useWallpaper()
   const [draft, setDraft] = useState(() => drafts.get(id)?.text ?? '')
   const [caret, setCaret] = useState(() => draft.length)
   // Pasted images, shown over the prompt until it is sent.
@@ -586,7 +588,8 @@ export function ChatView({
   else if (shellMode) placeholder = 'Enter a command'
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" ref={root}>
+    <div className="relative isolate flex min-h-0 flex-1 flex-col" ref={root}>
+      <ChatVeil name={wallpaper} />
       {run ? (
         <>
           <AgentBar run={run} place={place ?? 'Chat'} onBack={back} onStop={onStopTask} />

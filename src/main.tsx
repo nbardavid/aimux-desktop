@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 
 import { App } from './app'
 import { migrateLegacyStorage } from './app/legacy-storage'
+import { AppWallpaper } from './app/wallpaper'
 import '@fontsource/geist-mono/400.css'
 import '@fontsource/geist-mono/500.css'
 import '@fontsource/geist-mono/600.css'
@@ -26,6 +27,8 @@ async function start() {
       <StrictMode>
         {/* Every icon in the app's one stroke. */}
         <LucideProvider strokeWidth={1.5}>
+          {/* The chat background, behind the whole window. */}
+          {!gallery && <AppWallpaper />}
           <Root />
         </LucideProvider>
       </StrictMode>

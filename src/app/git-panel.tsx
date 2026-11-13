@@ -523,7 +523,7 @@ export function GitPanel(props: GitPanelProps) {
 
   return (
     <aside
-      className="bg-side @container flex min-h-0 flex-none flex-col"
+      className="bg-side glass @container flex min-h-0 flex-none flex-col"
       aria-label="Git"
       style={{ width }}
     >

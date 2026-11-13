@@ -138,11 +138,18 @@ function useNow(): number {
 
 const NAV =
   'hover:bg-hover text-muted-foreground flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color] duration-120'
+/** What the hover tools cover: gone while they show. */
+const UNDER_TOOLS =
+  'transition-opacity duration-120 group-focus-within/row:opacity-0 group-hover/row:opacity-0'
 /** A section label: "Projects", and each project's name. */
 const LABEL = 'text-label text-xs font-medium'
-/** The hover tools over a row's end: they fade in over a gradient of the row's own fill. */
+/**
+ * The hover tools over a row's end: they fade in over a gradient of the row's own fill. Over a
+ * chat background the fill is see-through and can't hide anything: no gradient, and what sits
+ * under the tools fades out instead (`UNDER_TOOLS`).
+ */
 const HOVER_TOOLS =
-  'pointer-events-none absolute right-1 flex items-center bg-linear-to-r from-transparent to-(--row) to-30% pl-6 opacity-0 transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100'
+  'pointer-events-none absolute right-1 flex items-center bg-linear-to-r from-transparent to-(--row) to-30% pl-6 opacity-0 [:root[data-wallpaper]_&]:bg-none transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100'
 
 /** Where a menu opens: at the pointer for a right-click, under the button for a click. */
 function at(e: MouseEvent) {
@@ -192,7 +199,7 @@ export function Sidebar(props: Props) {
 
   return (
     <nav
-      className="bg-side @container flex min-h-0 flex-none flex-col"
+      className="bg-side glass @container flex min-h-0 flex-none flex-col"
       aria-label="Projects"
       style={{ width: props.width }}
     >
@@ -499,7 +506,12 @@ function WorkspaceRow(
             >
               {title}
             </span>
-            <span className="text-faint flex flex-none items-center gap-1 text-xs tabular-nums">
+            <span
+              className={cn(
+                UNDER_TOOLS,
+                'text-faint flex flex-none items-center gap-1 text-xs tabular-nums'
+              )}
+            >
               {/* Below 240px of sidebar the task keeps the room; the tooltip has the branch. */}
               {title !== word && (
                 <span className="flex items-center gap-1 @max-[240px]:hidden">

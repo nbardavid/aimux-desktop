@@ -1074,7 +1074,7 @@ export function quotaCache(): QuotaCache {
 
 export const SETTINGS = {
   path: `${HOME}/Library/Application Support/logit/settings.json`,
-  settings: { 'git.fetchBase': false },
+  settings: { 'git.fetchBase': false } as Record<string, unknown>,
 }
 
 const ESC = '\u001B['
