@@ -251,7 +251,7 @@ function ItemIcon({ icon, label }: { icon: NonNullable<PickerItem['icon']>; labe
 const KbdBox =
   'border-border bg-background text-faint inline-flex h-4 min-w-4 items-center justify-center rounded-sm border px-1 text-2xs font-normal'
 
-function Hint({ children, keys }: { children: ReactNode; keys: string }) {
+export function Hint({ children, keys }: { children: ReactNode; keys: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <kbd className={KbdBox}>{keys}</kbd>

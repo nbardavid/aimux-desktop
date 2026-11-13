@@ -17,6 +17,7 @@ export const APP_COMMANDS: SlashCommand[] = [
   app('model', '[name]', 'Switch this chat’s model'),
   app('effort', '[level]', 'Set how hard this chat’s model thinks'),
   app('rename', '[title]', 'Rename this chat'),
+  app('mcp', '', 'See and manage this chat’s MCP servers'),
 ]
 
 // Meaningless or removed in a headless window.
