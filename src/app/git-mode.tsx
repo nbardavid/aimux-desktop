@@ -72,7 +72,7 @@ export function GitMode({ changes, file, onSelect, path }: Props) {
   }, [path, shown])
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
+    <div className="glass flex min-h-0 min-w-0 flex-1">
       <div className="bg-side flex w-[340px] flex-none flex-col border-r">
         <div className={bar}>
           <span className="flex min-w-0 flex-1 items-center gap-1 font-medium">

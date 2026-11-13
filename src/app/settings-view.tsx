@@ -14,6 +14,8 @@ import { noteLoaderSetting } from './loader-choice'
 import { isLoader, LOADER_LABELS } from './loaders'
 import { noteTerminalSetting } from './terminal-font'
 import { devBuild, type Update } from './update-button'
+import { noteWallpaperSetting, WallpaperCanvas } from './wallpaper'
+import { isWallpaper } from './wallpapers'
 
 type Stored = Record<string, SettingValue>
 
@@ -48,6 +50,27 @@ function Control({
         className="relative h-[18px] w-8 rounded-full bg-line-strong transition-[background-color] duration-150 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-3.5 after:rounded-full after:bg-white after:shadow-[0_1px_2px_rgb(43_40_38/0.2)] after:transition-transform after:duration-150 after:ease-[cubic-bezier(0.2,0,0,1)] aria-checked:bg-foreground aria-checked:after:translate-x-3.5"
         onClick={() => onChange(value !== true)}
       />
+    )
+  }
+  if (row.kind === 'select' && row.preview === 'wallpaper') {
+    return (
+      <div className="grid grid-cols-5 gap-3" role="radiogroup" aria-label={row.label}>
+        {row.options.filter(isWallpaper).map((name) => (
+          <button
+            type="button"
+            key={name}
+            role="radio"
+            aria-checked={value === name}
+            className="group/scene text-muted-foreground hover:text-foreground aria-checked:text-foreground flex flex-col gap-1.5 text-left transition-[color] duration-120 ease-out"
+            onClick={() => onChange(name)}
+          >
+            <span className="bg-background group-aria-checked/scene:border-foreground group-hover/scene:border-line-strong relative h-[72px] w-full overflow-hidden rounded-md border transition-[border-color] duration-120 ease-out">
+              <WallpaperCanvas name={name} cell={3} className="size-full" />
+            </span>
+            <span className="text-xs font-medium">{name}</span>
+          </button>
+        ))}
+      </div>
     )
   }
   if (row.kind === 'select' && row.preview !== undefined) {
@@ -305,6 +328,7 @@ export function SettingsView({
     invoke('write_setting', { id, value })
       .then(() => {
         noteLoaderSetting(id, value)
+        noteWallpaperSetting(id, value)
         noteTerminalSetting(id, value)
         setStored((state) => {
           const next = { ...state }
@@ -318,7 +342,7 @@ export function SettingsView({
 
   // One column of headed groups: a section nav waits until there are a few to move between.
   return (
-    <div ref={page} className="min-w-0 flex-1 overflow-auto px-9 pt-7 pb-12">
+    <div ref={page} className="glass min-w-0 flex-1 overflow-auto px-9 pt-7 pb-12">
       <div className="mx-auto flex max-w-[720px] flex-col">
         {SECTIONS.map((section) => (
           <section key={section.id} className="not-first:mt-7">

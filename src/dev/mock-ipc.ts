@@ -64,6 +64,8 @@ type Args = Record<string, unknown>
 
 const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
+// `?wallpaper=Kites` opens on that chat background.
+if (flags.has('wallpaper')) SETTINGS.settings['ui.wallpaper'] = flags.get('wallpaper')
 if (flags.has('merged'))
   for (const pr of Object.values(PRS)) if (pr.number === 128) pr.state = 'MERGED'
 if (flags.has('artifacts')) {

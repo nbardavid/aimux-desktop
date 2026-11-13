@@ -77,7 +77,14 @@ branding.
 - **Open source**: public at `nbardavid/logit`, MIT, crediting BrimVeyn/aimux where
   it started (its `desktop/` history is kept).
 - **The look**: light, flat, white surfaces, system font, warm neutrals. Never a hatched or
-  decorative background. Dark mode is not done yet.
+  decorative background, except the chat background the user picks in Settings › Appearance:
+  original living scenes drawn in characters (`wallpapers.ts`), None by default. Dark mode is
+  not done yet.
+- **Layers: the scene is behind everything.** With a background on, it covers the whole
+  window, and every surface sits on top of it: the chat pane is open to it (a light veil
+  behind the text), everything around (sidebar, bars, panels, pages, terminals) is frosted
+  glass (`.glass`). Any new surface is built as a layer on top: give it `glass`, or keep it
+  open where content reads on the scene. Popups stay opaque.
 - **Craft is the product.** Everything clean, square and aligned; every state change smooth,
   with short transitions. `DESIGN.md` holds the bar, the motion table and the states every
   surface needs; read it before any UI work and follow it.

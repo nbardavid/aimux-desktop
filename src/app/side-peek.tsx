@@ -30,7 +30,7 @@ export function SidePeek({ children, width }: { width: string; children: ReactNo
       />
       <div
         className={cn(
-          'bg-side fixed top-0 bottom-0 left-0 z-50 flex border-r transition-[translate,box-shadow] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+          'bg-side glass fixed top-0 bottom-0 left-0 z-50 flex border-r transition-[translate,box-shadow] duration-200 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
           out
             ? 'translate-x-0 shadow-[2px_0_12px_rgb(43_40_38/0.06)]'
             : '-translate-x-full shadow-none'
