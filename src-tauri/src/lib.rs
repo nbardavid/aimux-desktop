@@ -143,6 +143,7 @@ pub fn run() {
             store::chat_forget,
             store::read_settings,
             store::write_setting,
+            store::read_picture,
             store::setup_status,
             store::ensure_setup_script,
             store::edit_setup_script,

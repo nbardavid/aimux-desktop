@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 
 import type { Update } from './update-button'
 
-import { resetShown, restartWarning, updateStatus } from './settings-view'
+import { restartWarning, restoreLabel, updateStatus } from './settings-view'
 
 test('the restart confirm says what it pauses and closes', () => {
   expect(restartWarning(1, 1)).toBe('Click again: pauses 1 working chat, closes 1 terminal')
@@ -11,11 +11,10 @@ test('the restart confirm says what it pauses and closes', () => {
   expect(restartWarning(0, 0)).toBe('Click again to restart')
 })
 
-test('Reset shows while a value differs from its default, on hover when stored as it', () => {
-  expect(resetShown(undefined, true, true)).toBe('never')
-  expect(resetShown(false, true, false)).toBe('always')
-  expect(resetShown(true, true, true)).toBe('hover')
-  expect(resetShown('.env, .npmrc', '.env', '.env, .npmrc')).toBe('always')
+test('Restore defaults asks again, saying how many it resets', () => {
+  expect(restoreLabel(3, false)).toBe('Restore defaults')
+  expect(restoreLabel(1, true)).toBe('Restore 1 setting?')
+  expect(restoreLabel(3, true)).toBe('Restore 3 settings?')
 })
 
 const idle: Update = {

@@ -2,9 +2,15 @@
 // the grid's size and the time, so any frame can be drawn from scratch, at any size (the chat,
 // or a thumbnail in Settings). Settings › Appearance picks one; None keeps the plain chat.
 
-export const WALLPAPERS = ['None', 'Kites', 'Koi'] as const
+export const WALLPAPERS = ['None', 'Kites', 'Koi', 'Image'] as const
 export type Wallpaper = (typeof WALLPAPERS)[number]
+/** The wallpapers drawn as scenes; None is the plain chat and Image the user's own picture. */
+export type SceneName = Exclude<Wallpaper, 'None' | 'Image'>
 export const WALLPAPER_SETTING = 'ui.wallpaper'
+/** The picture behind Image, as a data URL (downscaled when picked). */
+export const WALLPAPER_IMAGE_SETTING = 'ui.wallpaperImage'
+/** How blurred the background is, in CSS pixels. */
+export const WALLPAPER_BLUR_SETTING = 'ui.wallpaperBlur'
 export const DEFAULT_WALLPAPER: Wallpaper = 'None'
 
 export const isWallpaper = (name: unknown): name is Wallpaper =>
@@ -490,7 +496,7 @@ export const koi: Scene = (p) => {
   }
 }
 
-export const SCENES: Record<Exclude<Wallpaper, 'None'>, Scene> = {
+export const SCENES: Record<SceneName, Scene> = {
   Kites: kites,
   Koi: koi,
 }

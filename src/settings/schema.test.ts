@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
 
-import { effectiveValue, type Row, SECTIONS } from './schema'
+import { changedRows, effectiveValue, type Row, ROWS, SECTIONS } from './schema'
 
 const number: Row = {
+  control: 'stepper',
   fallback: 5,
-  help: '',
   id: 'n',
   kind: 'number',
   label: 'n',
@@ -18,8 +18,8 @@ test('stored values are clamped and type-checked like the TUI does', () => {
   expect(effectiveValue(number, '3')).toBe(5)
   expect(effectiveValue(number, undefined)).toBe(5)
   const select: Row = {
+    control: 'menu',
     fallback: 'a',
-    help: '',
     id: 's',
     kind: 'select',
     label: 's',
@@ -30,7 +30,17 @@ test('stored values are clamped and type-checked like the TUI does', () => {
 })
 
 test('every row id is unique and every fallback is valid', () => {
-  const rows = SECTIONS.flatMap((s) => s.rows)
+  const rows = ROWS
   expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length)
   for (const row of rows) expect(effectiveValue(row, undefined)).toBe(row.fallback)
+})
+
+test('Restore defaults counts only values that differ from their default', () => {
+  const section = SECTIONS.find((s) => s.id === 'notifications')
+  if (section === undefined) throw new Error('no notifications')
+  expect(changedRows(section, {})).toEqual([])
+  expect(changedRows(section, { 'notifications.volume': 35 })).toEqual([])
+  expect(changedRows(section, { 'notifications.volume': 50 }).map((r) => r.id)).toEqual([
+    'notifications.volume',
+  ])
 })

@@ -26,6 +26,7 @@ import { Quotas } from './app/quotas'
 import { resumeTarget, type Session } from './app/resume'
 import { ResumePicker } from './app/resume-picker'
 import { RightPanel } from './app/right-panel'
+import { stepPane } from './app/settings-pane'
 import { SettingsView } from './app/settings-view'
 import { SidePeek } from './app/side-peek'
 import { diffStat, type RowMenu, Sidebar, workspaceFacts } from './app/sidebar'
@@ -108,7 +109,8 @@ export function App() {
   const store = useCatalog(removing)
   const { catalog, project, projects, status, workspace: ws } = store
   const projectId = project?.id ?? null
-  const [mode, setMode] = useState<'normal' | 'git' | 'settings'>('normal')
+  const [mode, setMode] = useState<'normal' | 'git'>('normal')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [overlay, setOverlay] = useState<'projects' | 'new-tab' | null>(null)
   // Where the new-tab menu drops from.
   const [menuAt, setMenuAt] = useState<{ left: number; top: number } | null>(null)
@@ -310,11 +312,13 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Settings and the diff are pages: Esc leaves them, unless something sits over them.
+        // The diff is a page: Esc leaves it, unless something sits over it.
         const over = overlay !== null || composeIn !== null || ctxMenu !== null
         if (mode === 'normal' || e.defaultPrevented || over || overlayShown()) return
         setMode('normal')
-      } else if (e.ctrlKey && e.key === 'Tab') keys.current.stepTab(e.shiftKey ? -1 : 1)
+      } else if (e.ctrlKey && e.key === 'Tab')
+        // In Settings, ⌃Tab steps through its panes.
+        (settingsOpen ? stepPane : keys.current.stepTab)(e.shiftKey ? -1 : 1)
       // ⌃1–9: the tabs of this workspace; ⌘1–9: the workspaces, in sidebar order.
       else if (e.ctrlKey && !e.metaKey && /^Digit[1-9]$/.test(e.code)) {
         const tab = tabItems[Number(e.code.slice(5)) - 1]
@@ -332,7 +336,7 @@ export function App() {
       else if (e.key === 'w') keys.current.close()
       else if (e.key === 'n') keys.current.compose()
       else if (e.key === 'g') setMode((m) => (m === 'git' ? 'normal' : 'git'))
-      else if (e.key === ',') setMode((m) => (m === 'settings' ? 'normal' : 'settings'))
+      else if (e.key === ',') setSettingsOpen((open) => !open)
       // ⌘O works on the splash too, before the rest of the keys are wired.
       else if (e.code === 'KeyO') void newProject()
       else if (/^Digit[1-9]$/.test(e.code)) keys.current.toWorkspace(Number(e.code.slice(5)) - 1)
@@ -768,7 +772,7 @@ export function App() {
       place={mode === 'normal' ? ws?.name : undefined}
       sideOpen={layout.sideOpen}
       gitOpen={gitOpen}
-      canDiff={ws !== undefined && mode !== 'settings'}
+      canDiff={ws !== undefined}
       noChanges={mode === 'normal' && changes?.length === 0}
       gitMode={mode === 'git'}
       onShowSide={() => update({ sideOpen: true })}
@@ -823,7 +827,6 @@ export function App() {
   const pageTitle = {
     git: `${ws?.name ?? ''} · Diff`,
     normal: undefined,
-    settings: 'Settings',
   }[mode]
 
   const sideWidth = layout.sideWidth === null ? SIDE_WIDTH : `${layout.sideWidth}px`
@@ -831,7 +834,7 @@ export function App() {
   const sidebar = (
     <Sidebar
       width={sideWidth}
-      page={mode === 'settings' ? mode : null}
+      page={settingsOpen ? 'settings' : null}
       foot={<Quotas cache={quotas.cache} error={quotas.error} />}
       dock={layout.sideOpen && attentionToast}
       projects={projects}
@@ -857,7 +860,7 @@ export function App() {
         if (name === null || name === w.name) return
         store.renameWorkspace(w.id, name).catch(fail(`Couldn't rename ${w.name}`))
       }}
-      onSettings={() => setMode((m) => (m === 'settings' ? 'normal' : 'settings'))}
+      onSettings={() => setSettingsOpen((open) => !open)}
       onHide={() => update({ sideOpen: false })}
     />
   )
@@ -1043,18 +1046,19 @@ export function App() {
             {mode === 'git' && ws === undefined && (
               <div className={QUIET}>No workspace selected</div>
             )}
-            {mode === 'settings' && (
-              <SettingsView
-                chats={chats.chats.filter((c) => c.state.status === 'working').length}
-                terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
-                onRestartHost={host.restart}
-                update={appUpdate}
-              />
-            )}
           </div>
         </div>
       </div>
 
+      {settingsOpen && (
+        <SettingsView
+          chats={chats.chats.filter((c) => c.state.status === 'working').length}
+          terminals={terminals.tabs.filter((t) => t.exited === undefined).length}
+          onRestartHost={host.restart}
+          update={appUpdate}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
       {composeIn !== null && (
         <NewWorkspace
           projects={projects}

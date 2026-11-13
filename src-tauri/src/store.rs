@@ -852,6 +852,31 @@ pub fn write_setting(id: String, value: Value) -> Result<(), String> {
     write_atomic(&settings_file(), &json)
 }
 
+/// A picture the user picked as the chat background, as raw bytes: the webview downscales it
+/// and keeps it in the settings. Only an image of a sane size is read.
+#[tauri::command]
+pub fn read_picture(path: String) -> Result<tauri::ipc::Response, String> {
+    let ext = Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    if ![
+        "png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tif", "tiff",
+    ]
+    .contains(&ext.as_str())
+    {
+        return Err("not a picture".into());
+    }
+    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+    if size > 64 * 1024 * 1024 {
+        return Err("the picture is over 64 MB".into());
+    }
+    std::fs::read(&path)
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| e.to_string())
+}
+
 const SETUP_STUB: &str = "#!/usr/bin/env bash\n\
 # Runs in each new workspace of this project (a fresh git worktree), from its root.\n\
 # Install what a fresh checkout lacks: dependencies, .env, caches.\n\

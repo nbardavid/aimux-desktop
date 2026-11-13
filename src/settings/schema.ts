@@ -1,188 +1,251 @@
 // The app's settings, kept in settings.json next to its catalog. Only what the app reads.
 
 import { DEFAULT_LOADERS, LOADER_NAMES, LOADER_SETTINGS, STATUS_LOADERS } from '../app/loaders'
-import { DEFAULT_WALLPAPER, WALLPAPER_SETTING, WALLPAPERS } from '../app/wallpapers'
+import {
+  DEFAULT_WALLPAPER,
+  WALLPAPER_BLUR_SETTING,
+  WALLPAPER_SETTING,
+  WALLPAPERS,
+} from '../app/wallpapers'
 
 export type SettingValue = boolean | number | string
 
+interface Base {
+  id: string
+  label: string
+  /** One short line under the label, only where the label can't say it alone. */
+  help?: string
+}
+
 export type Row =
-  | { kind: 'toggle'; id: string; label: string; help: string; fallback: boolean }
-  | {
+  | (Base & { kind: 'toggle'; fallback: boolean })
+  | (Base & {
       kind: 'number'
-      id: string
-      label: string
-      help: string
       fallback: number
       min: number
       max: number
       step: number
-    }
-  | {
-      kind: 'text'
-      id: string
-      label: string
-      help: string
-      fallback: string
-      placeholder?: string
-    }
-  | {
+      /** A slider for a feel (blur, volume), a stepper for an exact value (a font size). */
+      control: 'slider' | 'stepper'
+      /** How the value reads beside a slider: "35%", "12 px"; 0 reads "Off" with `zeroOff`. */
+      unit?: string
+      zeroOff?: boolean
+    })
+  | (Base & { kind: 'text'; fallback: string; placeholder?: string; mono?: boolean })
+  | (Base & {
       kind: 'select'
-      id: string
-      label: string
-      help: string
       fallback: string
       options: string[]
       /**
-       * Each option plays, in a grid under the label: as text (`loader`), as dots (`dots`) or
-       * as a little scene (`wallpaper`).
+       * `segmented` for a few short values on one scale, `menu` for a list, `loader` and
+       * `dots` for a loader picked from its animation, `tiles` for the backgrounds.
        */
-      preview?: 'loader' | 'dots' | 'wallpaper'
-    }
+      control: 'segmented' | 'menu' | 'loader' | 'dots' | 'tiles'
+    })
 
-export interface Section {
-  id: string
+export interface Group {
   label: string
   rows: Row[]
 }
 
+export interface Section {
+  id: string
+  label: string
+  groups: Group[]
+}
+
 export const SECTIONS: Section[] = [
   {
-    id: 'ui',
+    groups: [
+      {
+        label: 'Background',
+        rows: [
+          {
+            control: 'tiles',
+            fallback: DEFAULT_WALLPAPER,
+            id: WALLPAPER_SETTING,
+            kind: 'select',
+            label: 'Background',
+            options: [...WALLPAPERS],
+          },
+          {
+            control: 'slider',
+            fallback: 0,
+            id: WALLPAPER_BLUR_SETTING,
+            kind: 'number',
+            label: 'Blur',
+            max: 40,
+            min: 0,
+            step: 2,
+            unit: ' px',
+            zeroOff: true,
+          },
+        ],
+      },
+      {
+        label: 'Loaders',
+        rows: [
+          {
+            control: 'dots',
+            fallback: DEFAULT_LOADERS.status,
+            help: 'Sidebar, tabs and tool rows.',
+            id: LOADER_SETTINGS.status,
+            kind: 'select',
+            label: 'Status',
+            options: STATUS_LOADERS,
+          },
+          {
+            control: 'loader',
+            fallback: DEFAULT_LOADERS.working,
+            help: 'While Claude works.',
+            id: LOADER_SETTINGS.working,
+            kind: 'select',
+            label: 'Working',
+            options: LOADER_NAMES,
+          },
+          {
+            control: 'loader',
+            fallback: DEFAULT_LOADERS.thinking,
+            help: 'While Claude thinks.',
+            id: LOADER_SETTINGS.thinking,
+            kind: 'select',
+            label: 'Thinking',
+            options: LOADER_NAMES,
+          },
+        ],
+      },
+      {
+        label: 'Effects',
+        rows: [
+          {
+            control: 'menu',
+            fallback: 'Dust',
+            help: 'When a merged workspace leaves.',
+            id: 'ui.cleanupEffect',
+            kind: 'select',
+            label: 'Clean up',
+            options: ['Dust', 'Brush', 'Glint', 'None'],
+          },
+        ],
+      },
+    ],
+    id: 'appearance',
     label: 'Appearance',
-    rows: [
-      {
-        fallback: DEFAULT_WALLPAPER,
-        help: 'A scene drawn in characters behind every chat, always moving. It stays still when macOS reduces motion.',
-        id: WALLPAPER_SETTING,
-        kind: 'select',
-        label: 'Chat background',
-        options: [...WALLPAPERS],
-        preview: 'wallpaper',
-      },
-      {
-        fallback: 'Dust',
-        help: 'How a workspace leaves when you clean it up after its PR merged. Pick one to see it.',
-        id: 'ui.cleanupEffect',
-        kind: 'select',
-        label: 'Clean up effect',
-        options: ['Dust', 'Brush', 'Glint', 'None'],
-      },
-      {
-        fallback: DEFAULT_LOADERS.status,
-        help: 'What shows wherever something works: the sidebar, tabs, tool rows.',
-        id: LOADER_SETTINGS.status,
-        kind: 'select',
-        label: 'Status loader',
-        options: STATUS_LOADERS,
-        preview: 'dots',
-      },
-      {
-        fallback: DEFAULT_LOADERS.working,
-        help: 'What plays under the chat while Claude works.',
-        id: LOADER_SETTINGS.working,
-        kind: 'select',
-        label: 'Working loader',
-        options: LOADER_NAMES,
-        preview: 'loader',
-      },
-      {
-        fallback: DEFAULT_LOADERS.thinking,
-        help: 'What plays while Claude thinks.',
-        id: LOADER_SETTINGS.thinking,
-        kind: 'select',
-        label: 'Thinking loader',
-        options: LOADER_NAMES,
-        preview: 'loader',
-      },
-    ],
   },
   {
-    id: 'notifications',
-    label: 'Notifications',
-    rows: [
+    groups: [
       {
-        fallback: 'Plane',
-        help: 'Plays when a chat finishes or asks you something, unless you are looking at it. Pick one to hear it.',
-        id: 'notifications.sound',
-        kind: 'select',
-        label: 'Sound',
-        options: ['Plane', 'Bell', 'Ding', 'Off'],
-      },
-      {
-        fallback: 35,
-        help: "Percent of the sound's own level.",
-        id: 'notifications.volume',
-        kind: 'number',
-        label: 'Volume',
-        max: 100,
-        min: 0,
-        step: 5,
+        label: 'Context',
+        rows: [
+          {
+            control: 'segmented',
+            fallback: '250k',
+            help: 'Smaller is cheaper and keeps Claude sharp. New chats.',
+            id: 'chat.compactWindow',
+            kind: 'select',
+            label: 'Compact past',
+            options: ['200k', '250k', '400k', '1M'],
+          },
+        ],
       },
     ],
-  },
-  {
-    id: 'chat',
+    id: 'chats',
     label: 'Chats',
-    rows: [
-      {
-        fallback: '250k',
-        help: 'Claude Code compacts a chat by itself past this size: smaller costs less per message and keeps Claude sharp; 1M never compacts early. New and restarted chats.',
-        id: 'chat.compactWindow',
-        kind: 'select',
-        label: 'Compact past',
-        options: ['200k', '250k', '400k', '1M'],
-      },
-    ],
   },
   {
+    groups: [
+      {
+        label: 'New workspaces',
+        rows: [
+          {
+            fallback: true,
+            help: 'Off forks from your local copy.',
+            id: 'git.fetchBase',
+            kind: 'toggle',
+            label: 'Fetch the base branch first',
+          },
+          {
+            fallback: '.env',
+            help: 'Comma-separated globs from the main checkout.',
+            id: 'git.worktreeCopyFiles',
+            kind: 'text',
+            label: 'Copy into new workspaces',
+            mono: true,
+          },
+        ],
+      },
+    ],
+    id: 'workspaces',
+    label: 'Workspaces',
+  },
+  {
+    groups: [
+      {
+        label: 'Text',
+        rows: [
+          {
+            fallback: '',
+            help: 'Any font on this Mac. A Nerd Font shows icons.',
+            id: 'terminal.fontFamily',
+            kind: 'text',
+            label: 'Font',
+            placeholder: 'Geist Mono',
+          },
+          {
+            control: 'stepper',
+            fallback: 12.5,
+            id: 'terminal.fontSize',
+            kind: 'number',
+            label: 'Size',
+            max: 24,
+            min: 9,
+            step: 0.5,
+          },
+        ],
+      },
+    ],
     id: 'terminal',
     label: 'Terminal',
-    rows: [
-      {
-        fallback: '',
-        help: 'A font installed on this Mac, by its name (a Nerd Font for icons). Empty: Geist Mono.',
-        id: 'terminal.fontFamily',
-        kind: 'text',
-        label: 'Font',
-        placeholder: 'JetBrainsMono Nerd Font',
-      },
-      {
-        fallback: 12.5,
-        help: 'In points.',
-        id: 'terminal.fontSize',
-        kind: 'number',
-        label: 'Font size',
-        max: 24,
-        min: 9,
-        step: 0.5,
-      },
-    ],
   },
   {
-    id: 'git',
-    label: 'Workspaces',
-    rows: [
+    groups: [
       {
-        fallback: true,
-        help: 'Fetch the base branch before forking from it. Off forks from your local copy.',
-        id: 'git.fetchBase',
-        kind: 'toggle',
-        label: 'Refresh the base branch',
-      },
-      {
-        fallback: '.env',
-        help: 'Files copied from the main checkout into a new workspace. Comma-separated globs.',
-        id: 'git.worktreeCopyFiles',
-        kind: 'text',
-        label: 'Seed new workspaces with',
+        label: 'Sound',
+        rows: [
+          {
+            control: 'menu',
+            fallback: 'Plane',
+            help: "When a chat finishes or needs you, unless you're watching it.",
+            id: 'notifications.sound',
+            kind: 'select',
+            label: 'Sound',
+            options: ['Plane', 'Bell', 'Ding', 'Off'],
+          },
+          {
+            control: 'slider',
+            fallback: 35,
+            id: 'notifications.volume',
+            kind: 'number',
+            label: 'Volume',
+            max: 100,
+            min: 0,
+            step: 5,
+            unit: '%',
+          },
+        ],
       },
     ],
+    id: 'notifications',
+    label: 'Notifications',
   },
 ]
 
+/** Every row, in page order. */
+export const ROWS: Row[] = SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.rows))
+
 /** The row behind a setting id; a typo is a bug, so it throws. */
 export function rowById(id: string): Row {
-  const row = SECTIONS.flatMap((section) => section.rows).find((r) => r.id === id)
+  const row = ROWS.find((r) => r.id === id)
   if (row === undefined) throw new Error(`no setting ${id}`)
   return row
 }
@@ -201,4 +264,11 @@ export function effectiveValue(row: Row, stored: SettingValue | undefined): Sett
     case 'text':
       return typeof stored === 'string' ? stored : row.fallback
   }
+}
+
+/** The rows of a section whose value differs from the default: what Restore defaults resets. */
+export function changedRows(section: Section, stored: Record<string, SettingValue>): Row[] {
+  return section.groups
+    .flatMap((g) => g.rows)
+    .filter((row) => effectiveValue(row, stored[row.id]) !== row.fallback)
 }

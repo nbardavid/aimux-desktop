@@ -7,8 +7,11 @@ import {
   DEFAULT_WALLPAPER,
   isWallpaper,
   type Paint,
+  type SceneName,
   SCENES,
   type Wallpaper,
+  WALLPAPER_BLUR_SETTING,
+  WALLPAPER_IMAGE_SETTING,
   WALLPAPER_SETTING,
 } from './wallpapers'
 
@@ -86,7 +89,7 @@ export function WallpaperCanvas({
   className,
   name,
 }: {
-  name: Wallpaper
+  name: SceneName
   /** CSS pixels a cell. */
   cell?: number
   className?: string
@@ -95,7 +98,7 @@ export function WallpaperCanvas({
   useEffect(() => {
     const canvas = ref.current
     const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx || name === 'None') return
+    if (!canvas || !ctx) return
     const scene = SCENES[name]
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let w = 0
@@ -138,22 +141,29 @@ export function WallpaperCanvas({
  * (sidebar, bars, panels, pages) sit on it as glass (`.glass`, while `data-wallpaper` is set).
  */
 export function AppWallpaper() {
-  const name = useWallpaper()
+  const { blur, image, name } = useWallpaperState()
+  // Image without a picture yet is the plain chat.
+  const shown = name === 'Image' && !image ? 'None' : name
   useEffect(() => {
     const root = document.documentElement
-    if (name === 'None') delete root.dataset.wallpaper
-    else root.dataset.wallpaper = name
+    if (shown === 'None') delete root.dataset.wallpaper
+    else root.dataset.wallpaper = shown
     return () => {
       delete root.dataset.wallpaper
     }
-  }, [name])
-  if (name === 'None') return null
+  }, [shown])
+  if (shown === 'None') return null
+  // A blur pulls the edges in: the layer overflows the window by twice the radius.
+  const style = blur > 0 ? { filter: `blur(${blur}px)`, inset: -blur * 2 } : undefined
+  const layer = 'animate-in fade-in pointer-events-none fixed inset-0 -z-10 duration-300 ease-out'
   return (
-    <WallpaperCanvas
-      key={name}
-      name={name}
-      className="animate-in fade-in pointer-events-none fixed inset-0 -z-10 size-full duration-300 ease-out"
-    />
+    <div aria-hidden style={style} className={layer}>
+      {shown === 'Image' ? (
+        <img src={image} alt="" draggable={false} className="size-full object-cover" />
+      ) : (
+        <WallpaperCanvas key={shown} name={shown} className="size-full" />
+      )}
+    </div>
   )
 }
 
@@ -163,14 +173,21 @@ export function ChatVeil({ name }: { name: Wallpaper }) {
   return <div aria-hidden className="wallpaper-veil pointer-events-none absolute inset-0 -z-10" />
 }
 
-// The picked background: read from Settings once, then kept in step with it.
+// The picked background, its picture and its blur: read from Settings once, then kept in
+// step with it.
 
-let chosen: Wallpaper = DEFAULT_WALLPAPER
+interface WallpaperState {
+  name: Wallpaper
+  image: string
+  blur: number
+}
+
+let state: WallpaperState = { blur: 0, image: '', name: DEFAULT_WALLPAPER }
 let loaded = false
 const listeners = new Set<() => void>()
 
-function set(next: Wallpaper) {
-  chosen = next
+function set(patch: Partial<WallpaperState>) {
+  state = { ...state, ...patch }
   for (const l of listeners) l()
 }
 
@@ -180,9 +197,15 @@ export const wallpaperFrom = (settings: Record<string, unknown>): Wallpaper => {
   return isWallpaper(v) ? v : DEFAULT_WALLPAPER
 }
 
-/** A background written (or reset, `null`) in Settings: open chats follow at once. */
+const imageFrom = (v: unknown) => (typeof v === 'string' && v.startsWith('data:image/') ? v : '')
+const blurFrom = (v: unknown) =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(40, Math.max(0, v)) : 0
+
+/** A background setting written (or reset, `null`) in Settings: the window follows at once. */
 export function noteWallpaperSetting(id: string, value: unknown) {
-  if (id === WALLPAPER_SETTING) set(isWallpaper(value) ? value : DEFAULT_WALLPAPER)
+  if (id === WALLPAPER_SETTING) set({ name: isWallpaper(value) ? value : DEFAULT_WALLPAPER })
+  if (id === WALLPAPER_IMAGE_SETTING) set({ image: imageFrom(value) })
+  if (id === WALLPAPER_BLUR_SETTING) set({ blur: blurFrom(value) })
 }
 
 function subscribe(listener: () => void) {
@@ -190,7 +213,13 @@ function subscribe(listener: () => void) {
   if (!loaded) {
     loaded = true
     invoke<{ settings: Record<string, unknown> }>('read_settings')
-      .then((read) => set(wallpaperFrom(read.settings)))
+      .then((read) =>
+        set({
+          blur: blurFrom(read.settings[WALLPAPER_BLUR_SETTING]),
+          image: imageFrom(read.settings[WALLPAPER_IMAGE_SETTING]),
+          name: wallpaperFrom(read.settings),
+        })
+      )
       .catch(() => {
         // Unreadable settings: the plain chat.
       })
@@ -198,4 +227,17 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener)
 }
 
-export const useWallpaper = () => useSyncExternalStore(subscribe, () => chosen)
+export const useWallpaperState = () => useSyncExternalStore(subscribe, () => state)
+export const useWallpaper = () => useSyncExternalStore(subscribe, () => state.name)
+
+/** A picked picture as a JPEG data URL, at most 2400 px on its long side. */
+export async function pictureUrl(file: Blob): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  return canvas.toDataURL('image/jpeg', 0.85)
+}

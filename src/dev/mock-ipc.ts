@@ -62,6 +62,27 @@ interface Channel {
 
 type Args = Record<string, unknown>
 
+/** The picture `read_picture` hands over: a sunset gradient with clouds, as PNG bytes. */
+async function previewPicture(): Promise<ArrayBuffer> {
+  const canvas = new OffscreenCanvas(1600, 1000)
+  const g = canvas.getContext('2d')
+  if (g) {
+    const sky = g.createLinearGradient(0, 0, 1600, 1000)
+    sky.addColorStop(0, '#f6b26b')
+    sky.addColorStop(0.5, '#e06666')
+    sky.addColorStop(1, '#3d85c6')
+    g.fillStyle = sky
+    g.fillRect(0, 0, 1600, 1000)
+    g.fillStyle = '#fff'
+    for (let i = 0; i < 40; i++) {
+      g.beginPath()
+      g.arc((i * 397) % 1600, (i * 211) % 1000, 20 + ((i * 13) % 60), 0, 7)
+      g.fill()
+    }
+  }
+  return (await canvas.convertToBlob()).arrayBuffer()
+}
+
 const flags = new URLSearchParams(location.search)
 const store: Catalog = flags.has('empty') ? { chats: [], projects: [], workspaces: [] } : catalog()
 // `?wallpaper=Kites` opens on that chat background.
@@ -571,6 +592,10 @@ function handle(cmd: string, args: Args): unknown {
     case 'term_resize':
     case 'term_kill':
     case 'chat_stop':
+    case 'plugin:dialog|open':
+      return '/Users/dev/Pictures/background.png'
+    case 'read_picture':
+      return previewPicture()
     case 'write_setting': {
       const { id, value } = args as { id: string; value: unknown }
       const settings: Record<string, unknown> = SETTINGS.settings

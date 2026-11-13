@@ -1,165 +1,61 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
-import { useEffect, useRef, useState } from 'react'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { ArrowUpRightIcon, CopyIcon, PlayIcon, RotateCcwIcon } from 'lucide-react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
-import { effectiveValue, type Row, SECTIONS, type SettingValue } from '../settings/schema'
+import {
+  changedRows,
+  effectiveValue,
+  type Row,
+  rowById,
+  type Section,
+  SECTIONS,
+  type SettingValue,
+} from '../settings/schema'
 import { playSettingsSound } from './attention'
-import { BrailleDots, BrailleSpinner } from './braille-spinner'
 import { previewCleanup } from './cleanup-effect'
 import { noteLoaderSetting } from './loader-choice'
-import { isLoader, LOADER_LABELS } from './loaders'
-import { noteTerminalSetting } from './terminal-font'
+import {
+  BackgroundTiles,
+  LoaderPicker,
+  Segmented,
+  SelectMenu,
+  Slider,
+  Stepper,
+  Switch,
+  TextField,
+} from './settings-controls'
+import { currentPane, PANES, setPane, stepPane, usePane } from './settings-pane'
+import { DEFAULT_FONT, noteTerminalSetting } from './terminal-font'
 import { devBuild, type Update } from './update-button'
-import { noteWallpaperSetting, WallpaperCanvas } from './wallpaper'
-import { isWallpaper } from './wallpapers'
+import { noteWallpaperSetting, pictureUrl, useWallpaperState } from './wallpaper'
+import {
+  WALLPAPER_BLUR_SETTING,
+  WALLPAPER_IMAGE_SETTING,
+  WALLPAPER_SETTING,
+  WALLPAPERS,
+} from './wallpapers'
+
+const PICTURE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'tif', 'tiff']
 
 type Stored = Record<string, SettingValue>
 
-/** A card of rows. */
-const rowsClass = 'divide-y overflow-hidden rounded-lg border'
-const rowClass = 'group/row flex items-center justify-between gap-6 px-4 py-3'
-const rowText = 'flex min-w-0 flex-col gap-0.5'
+/** A group: its label over a card of rows. */
+const groupTitle = 'text-label mb-2 px-1 text-xs font-medium'
+const cardClass = 'bg-background divide-y overflow-hidden rounded-lg border'
+const rowClass = 'flex min-h-11 items-center justify-between gap-6 px-4 py-2.5'
 const rowHelp = 'text-muted-foreground text-xs'
-/** The controls: one column, every one ending on the card's right padding. */
-const rowControl = 'flex flex-none items-center gap-2'
+/** Under a card: what the whole group means, said once. */
+const groupFoot = 'text-faint mt-2 px-1 text-xs'
 const fieldError = 'text-critical-ink text-xs wrap-anywhere'
 
-function Control({
-  onChange,
-  row,
-  value,
-}: {
-  row: Row
-  value: SettingValue
-  onChange: (v: SettingValue) => void
-}) {
-  const [draft, setDraft] = useState(String(value))
-  useEffect(() => setDraft(String(value)), [value])
-
-  if (row.kind === 'toggle') {
-    return (
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value === true}
-        aria-label={row.label}
-        className="relative h-[18px] w-8 rounded-full bg-line-strong transition-[background-color] duration-150 ease-[ease] after:absolute after:top-0.5 after:left-0.5 after:size-3.5 after:rounded-full after:bg-white after:shadow-[0_1px_2px_rgb(43_40_38/0.2)] after:transition-transform after:duration-150 after:ease-[cubic-bezier(0.2,0,0,1)] aria-checked:bg-foreground aria-checked:after:translate-x-3.5"
-        onClick={() => onChange(value !== true)}
-      />
-    )
-  }
-  if (row.kind === 'select' && row.preview === 'wallpaper') {
-    return (
-      <div className="grid grid-cols-5 gap-3" role="radiogroup" aria-label={row.label}>
-        {row.options.filter(isWallpaper).map((name) => (
-          <button
-            type="button"
-            key={name}
-            role="radio"
-            aria-checked={value === name}
-            className="group/scene text-muted-foreground hover:text-foreground aria-checked:text-foreground flex flex-col gap-1.5 text-left transition-[color] duration-120 ease-out"
-            onClick={() => onChange(name)}
-          >
-            <span className="bg-background group-aria-checked/scene:border-foreground group-hover/scene:border-line-strong relative h-[72px] w-full overflow-hidden rounded-md border transition-[border-color] duration-120 ease-out">
-              <WallpaperCanvas name={name} cell={3} className="size-full" />
-            </span>
-            <span className="text-xs font-medium">{name}</span>
-          </button>
-        ))}
-      </div>
-    )
-  }
-  if (row.kind === 'select' && row.preview !== undefined) {
-    return (
-      <div className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label={row.label}>
-        {row.options.filter(isLoader).map((loader) => (
-          <button
-            type="button"
-            key={loader}
-            role="radio"
-            aria-checked={value === loader}
-            className="bg-chrome text-muted-foreground hover:text-foreground aria-checked:border-line-strong aria-checked:bg-background aria-checked:text-foreground flex h-14 flex-col items-center justify-center gap-1.5 rounded-md border border-transparent transition-[color,background-color,border-color] duration-120 ease-out hover:bg-hover"
-            onClick={() => onChange(loader)}
-          >
-            {row.preview === 'dots' ? (
-              <BrailleDots loader={loader} />
-            ) : (
-              <BrailleSpinner loader={loader} className="text-[15px]" />
-            )}
-            <span className="text-2xs">{LOADER_LABELS[loader]}</span>
-          </button>
-        ))}
-      </div>
-    )
-  }
-  if (row.kind === 'select') {
-    return (
-      <div
-        className="bg-hover inline-flex gap-0.5 self-start rounded-lg p-0.5"
-        role="radiogroup"
-        aria-label={row.label}
-      >
-        {row.options.map((option) => (
-          <button
-            type="button"
-            key={option}
-            role="radio"
-            aria-checked={value === option}
-            className="text-muted-foreground hover:text-foreground aria-checked:bg-background aria-checked:text-foreground h-6 rounded-md px-2.5 text-xs font-medium aria-checked:font-semibold aria-checked:shadow-[0_0_0_1px_var(--border),0_1px_2px_rgb(43_40_38/0.06)]"
-            onClick={() => onChange(option)}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-    )
-  }
-  const commit = () => {
-    if (row.kind === 'number') {
-      const n = Number(draft)
-      if (Number.isFinite(n)) onChange(Math.min(row.max, Math.max(row.min, n)))
-      else setDraft(String(value))
-    } else if (draft !== value) {
-      onChange(draft)
-    }
-  }
-  return (
-    <Input
-      className={cn(
-        'h-8 px-[11px]',
-        row.kind === 'number' ? 'w-[104px] tabular-nums' : 'w-[240px]'
-      )}
-      aria-label={row.label}
-      type={row.kind === 'number' ? 'number' : 'text'}
-      {...(row.kind === 'number'
-        ? { max: row.max, min: row.min, step: row.step }
-        : { placeholder: row.placeholder })}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-    />
-  )
-}
-
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
-
-/**
- * When a row's Reset shows: always while its value differs from the default, on hover when
- * one is stored that equals it (Reset then only forgets it), never when nothing is stored.
- */
-export function resetShown(
-  stored: SettingValue | undefined,
-  fallback: SettingValue,
-  value: SettingValue
-): 'always' | 'hover' | 'never' {
-  if (stored === undefined) return 'never'
-  return value === fallback ? 'hover' : 'always'
-}
 
 /** What the second click says it will do, as the restart bar says it. */
 export function restartWarning(chats: number, terminals: number): string {
@@ -170,64 +66,10 @@ export function restartWarning(chats: number, terminals: number): string {
   return clauses.length === 0 ? 'Click again to restart' : `Click again: ${clauses.join(', ')}`
 }
 
-/** A group's heading, above its card. */
-const groupTitle = 'text-label mb-2 px-1 text-xs font-medium'
-
-/** Restarting the host closes its terminals, so it asks twice; chats resume from transcripts. */
-function RestartHost({
-  chats,
-  onRestart,
-  terminals,
-}: {
-  onRestart: () => Promise<void>
-  chats: number
-  terminals: number
-}) {
-  const [armed, setArmed] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  let label = 'Restart'
-  if (busy) label = 'Restarting…'
-  else if (armed) label = restartWarning(chats, terminals)
-  return (
-    <div className={rowsClass}>
-      <div className={rowClass}>
-        <div className={rowText}>
-          <span className="flex items-center gap-2 font-medium">Chats and terminals</span>
-          <span className={error === null ? rowHelp : fieldError}>
-            {error ??
-              'Run in the background, and keep going while the window is closed. A restart pauses working chats (they resume) and closes terminals.'}
-          </span>
-        </div>
-        <div className={rowControl} onMouseLeave={() => setArmed(false)}>
-          <Button
-            type="button"
-            variant={armed ? 'destructive' : 'outline'}
-            className={cn(armed && 'hover:bg-[color-mix(in_srgb,var(--critical)_88%,black)]')}
-            disabled={busy}
-            onBlur={() => setArmed(false)}
-            onClick={() => {
-              if (!armed) {
-                setArmed(true)
-                return
-              }
-              setBusy(true)
-              void onRestart().catch((error_: unknown) => {
-                setBusy(false)
-                setArmed(false)
-                setError(String(error_).replace(/^Error: /, ''))
-              })
-            }}
-          >
-            {/* The label cross-fades in place as it arms. */}
-            <span key={label} className="animate-in fade-in duration-120 ease-out">
-              {label}
-            </span>
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
+/** What Restore defaults says: once at rest, then what the second click resets. */
+export function restoreLabel(changed: number, armed: boolean): string {
+  if (!armed) return 'Restore defaults'
+  return `Restore ${count(changed, 'setting')}?`
 }
 
 /** What Settings › About says under the version, and whether it says it as an error. */
@@ -250,9 +92,341 @@ export function updateStatus(update: Update, dev: boolean): { text: string; fail
   }
 }
 
-/** The version, its update state, and the one button that checks or installs. */
-function About({ update }: { update: Update }) {
+/** A label and its one line of help, left of a control. */
+function Label({ help, label }: { label: ReactNode; help?: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="text-sm">{label}</span>
+      {help !== undefined && <span className={rowHelp}>{help}</span>}
+    </div>
+  )
+}
+
+/** Slides a row open or shut on its height, so the card grows instead of jumping. */
+function Reveal({ children, open }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'grid transition-[grid-template-rows,opacity] duration-180 ease-in-out motion-reduce:transition-[opacity]',
+        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] opacity-0'
+      )}
+      inert={!open}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  )
+}
+
+/** Asks for a picture and returns it read and scaled, or null when the dialog was dismissed. */
+async function choosePicture(): Promise<string | null> {
+  const path = await openDialog({
+    filters: [{ extensions: PICTURE_TYPES, name: 'Pictures' }],
+    title: 'Choose a chat background',
+  })
+  if (typeof path !== 'string') return null
+  const bytes = await invoke<ArrayBuffer>('read_picture', { path })
+  return pictureUrl(new Blob([bytes]))
+}
+
+/** Appearance › Background: the tiles, the picked picture's actions, and the blur. */
+function Background({
+  stored,
+  write,
+}: {
+  stored: Stored
+  write: (id: string, value: SettingValue | null) => void
+}) {
+  const { image } = useWallpaperState()
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const name = String(effectiveValue(rowById(WALLPAPER_SETTING), stored[WALLPAPER_SETTING]))
+  const blurRow = rowById(WALLPAPER_BLUR_SETTING)
+  const blur = Number(effectiveValue(blurRow, stored[WALLPAPER_BLUR_SETTING]))
+
+  const add = async () => {
+    setError(null)
+    setAdding(true)
+    try {
+      const url = await choosePicture()
+      if (url === null) return
+      write(WALLPAPER_IMAGE_SETTING, url)
+      write(WALLPAPER_SETTING, 'Image')
+    } catch {
+      setError("Couldn't read that file. Try a PNG, JPEG, HEIC or WebP.")
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  // No divide-y: the rows below slide in with their own top line.
+  return (
+    <div className="bg-background overflow-hidden rounded-lg border">
+      <div className="flex flex-col gap-3 px-4 pt-4 pb-3.5">
+        <BackgroundTiles
+          options={[...WALLPAPERS]}
+          value={name}
+          image={image}
+          adding={adding}
+          onAdd={() => void add()}
+          onChange={(v) => {
+            setError(null)
+            write(WALLPAPER_SETTING, v)
+          }}
+        />
+        {error !== null && <span className={cn(fieldError, 'animate-in fade-in')}>{error}</span>}
+      </div>
+      <Reveal open={name === 'Image' && image !== ''}>
+        <div className={cn(rowClass, 'border-t')}>
+          <Label label="Your image" />
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                write(WALLPAPER_SETTING, null)
+                write(WALLPAPER_IMAGE_SETTING, null)
+              }}
+            >
+              Remove
+            </Button>
+            <Button variant="outline" size="sm" disabled={adding} onClick={() => void add()}>
+              Replace…
+            </Button>
+          </div>
+        </div>
+      </Reveal>
+      <Reveal open={name !== 'None'}>
+        <div className={cn(rowClass, 'border-t')}>
+          <Label label={blurRow.label} />
+          {blurRow.kind === 'number' && (
+            <Slider
+              label={blurRow.label}
+              value={blur}
+              min={blurRow.min}
+              max={blurRow.max}
+              step={blurRow.step}
+              format={(v) => (v === 0 ? 'Off' : `${v} px`)}
+              onCommit={(v) => write(blurRow.id, v)}
+            />
+          )}
+        </div>
+      </Reveal>
+    </div>
+  )
+}
+
+/** One setting's control, by its kind. */
+function Control({
+  onChange,
+  row,
+  stored,
+  value,
+}: {
+  row: Row
+  value: SettingValue
+  stored: Stored
+  onChange: (v: SettingValue) => void
+}) {
+  switch (row.kind) {
+    case 'toggle':
+      return <Switch label={row.label} checked={value === true} onChange={onChange} />
+    case 'text':
+      return (
+        <TextField
+          label={row.label}
+          value={String(value)}
+          placeholder={row.placeholder}
+          mono={row.mono}
+          onChange={onChange}
+        />
+      )
+    case 'number': {
+      const n = Number(value)
+      if (row.control === 'stepper')
+        return (
+          <Stepper
+            label={row.label}
+            value={n}
+            min={row.min}
+            max={row.max}
+            step={row.step}
+            onChange={onChange}
+          />
+        )
+      // Volume means nothing without a sound.
+      const silent = row.id === 'notifications.volume' && stored['notifications.sound'] === 'Off'
+      return (
+        <span className="flex" data-tip={silent ? 'Pick a sound first' : undefined}>
+          <Slider
+            label={row.label}
+            value={n}
+            min={row.min}
+            max={row.max}
+            step={row.step}
+            disabled={silent}
+            format={(v) => (row.zeroOff === true && v === 0 ? 'Off' : `${v}${row.unit ?? ''}`)}
+            onCommit={onChange}
+          />
+        </span>
+      )
+    }
+    case 'select': {
+      const props = { label: row.label, onChange, options: row.options, value: String(value) }
+      if (row.control === 'segmented') return <Segmented {...props} />
+      if (row.control === 'loader' || row.control === 'dots')
+        return <LoaderPicker {...props} dots={row.control === 'dots'} />
+      return <SelectMenu {...props} />
+    }
+  }
+}
+
+/** A pane made of the schema's groups. */
+function SectionPane({
+  page,
+  section,
+  stored,
+  write,
+}: {
+  section: Section
+  stored: Stored
+  write: (id: string, value: SettingValue | null) => void
+  page: HTMLElement | null
+}) {
+  const change = (row: Row, v: SettingValue) => {
+    write(row.id, v)
+    // Picking an effect (again) shows it, over this page.
+    if (row.id === 'ui.cleanupEffect') void previewCleanup(String(v), page)
+    // Picking a sound or a volume plays it.
+    if (row.id.startsWith('notifications.')) playSettingsSound({ ...stored, [row.id]: v })
+  }
+  return (
+    <>
+      {section.groups.map((group) => (
+        <section key={group.label}>
+          <h2 className={groupTitle}>{group.label}</h2>
+          {group.rows.some((r) => r.id === WALLPAPER_SETTING) ? (
+            <Background stored={stored} write={write} />
+          ) : (
+            <div className={cardClass}>
+              {group.rows.map((row) => {
+                const value = effectiveValue(row, stored[row.id])
+                return (
+                  <div key={row.id}>
+                    <div className={rowClass}>
+                      <Label label={row.label} help={row.help} />
+                      <div className="flex flex-none items-center gap-1.5">
+                        {row.id === 'ui.cleanupEffect' && value !== 'None' && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Play the clean up effect"
+                            data-tip="Play it"
+                            onClick={() => void previewCleanup(String(value), page)}
+                          >
+                            <PlayIcon />
+                          </Button>
+                        )}
+                        <Control
+                          row={row}
+                          value={value}
+                          stored={stored}
+                          onChange={(v) => change(row, v)}
+                        />
+                      </div>
+                    </div>
+                    {row.id === 'terminal.fontFamily' && <FontSample family={String(value)} />}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      ))}
+    </>
+  )
+}
+
+/** A line set in the terminal's font, under the font's row. */
+function FontSample({ family }: { family: string }) {
+  const named = family.trim().replaceAll('"', '')
+  return (
+    <div className="px-4 pb-3">
+      <div
+        className="bg-chrome text-muted-foreground truncate rounded-md px-3 py-2 text-[12.5px]"
+        style={{ fontFamily: named === '' ? DEFAULT_FONT : `"${named}", ${DEFAULT_FONT}` }}
+      >
+        ~/logit <span className="text-foreground">main</span> ❯ ls -la src
+      </div>
+    </div>
+  )
+}
+
+/** Restarting the host closes its terminals, so it asks twice; chats resume from transcripts. */
+function HostPane({
+  chats,
+  onRestart,
+  terminals,
+}: {
+  onRestart: () => Promise<void>
+  chats: number
+  terminals: number
+}) {
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  let label = 'Restart…'
+  if (busy) label = 'Restarting…'
+  else if (armed) label = restartWarning(chats, terminals)
+  const running = [count(chats, 'working chat'), count(terminals, 'terminal')].join(', ')
+  return (
+    <section>
+      <h2 className={groupTitle}>Chats and terminals</h2>
+      <div className={cardClass}>
+        <div className={rowClass}>
+          <Label
+            label="Running"
+            help={error === null ? running : <span className={fieldError}>{error}</span>}
+          />
+          <div className="flex flex-none" onMouseLeave={() => setArmed(false)}>
+            <Button
+              type="button"
+              size="sm"
+              variant={armed ? 'destructive' : 'outline'}
+              disabled={busy}
+              onBlur={() => setArmed(false)}
+              onClick={() => {
+                if (!armed) {
+                  setArmed(true)
+                  return
+                }
+                setBusy(true)
+                void onRestart().catch((error_: unknown) => {
+                  setBusy(false)
+                  setArmed(false)
+                  setError(String(error_).replace(/^Error: /, ''))
+                })
+              }}
+            >
+              {/* The label cross-fades in place as it arms. */}
+              <span key={label} className="animate-in fade-in duration-120 ease-out">
+                {label}
+              </span>
+            </Button>
+          </div>
+        </div>
+      </div>
+      <p className={groupFoot}>
+        They keep running when the window closes. Chats resume after a restart; terminals
+        don&apos;t.
+      </p>
+    </section>
+  )
+}
+
+/** The version and its updates, the settings file, the source. */
+function AboutPane({ path, update }: { update: Update; path: string }) {
   const [version, setVersion] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
     void getVersion().then(setVersion, () => {})
   }, [])
@@ -262,24 +436,28 @@ function About({ update }: { update: Update }) {
   else if (update.version !== null) label = `Update to ${update.version}`
   else if (update.checking) label = 'Checking…'
   return (
-    <div className={rowsClass}>
-      <div className={rowClass}>
-        <div className={rowText}>
-          <span className="font-medium">{version === null ? 'logit' : `logit ${version}`}</span>
-          {/* The line cross-fades as the state moves on. */}
-          <span
-            key={status.text}
-            className={cn(
-              status.failed ? fieldError : rowHelp,
-              'animate-in fade-in duration-160 ease-out'
-            )}
-          >
-            {status.text}
-          </span>
-        </div>
-        <div className={rowControl}>
+    <section>
+      <h2 className={groupTitle}>logit</h2>
+      <div className={cardClass}>
+        <div className={rowClass}>
+          <Label
+            label={version === null ? 'Version' : `Version ${version}`}
+            help={
+              // The line cross-fades as the state moves on.
+              <span
+                key={status.text}
+                className={cn(
+                  status.failed && 'text-critical-ink',
+                  'animate-in fade-in duration-160 ease-out'
+                )}
+              >
+                {status.text}
+              </span>
+            }
+          />
           <Button
             type="button"
+            size="sm"
             variant={update.version === null ? 'outline' : 'default'}
             disabled={devBuild || update.checking || update.installing}
             onClick={update.version === null ? update.check : update.install}
@@ -289,7 +467,78 @@ function About({ update }: { update: Update }) {
             </span>
           </Button>
         </div>
+        <div className={rowClass}>
+          <Label
+            label="Settings file"
+            help={
+              <span className="block truncate font-mono" title={path}>
+                {path}
+              </span>
+            }
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Copy the path"
+            data-tip={copied ? 'Copied' : 'Copy the path'}
+            onClick={() => {
+              void navigator.clipboard.writeText(path).then(() => setCopied(true))
+            }}
+            onMouseLeave={() => setCopied(false)}
+          >
+            <CopyIcon />
+          </Button>
+        </div>
+        <div className={rowClass}>
+          <Label label="Source" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => void openUrl('https://github.com/nbardavid/logit').catch(() => {})}
+          >
+            nbardavid/logit
+            <ArrowUpRightIcon />
+          </Button>
+        </div>
       </div>
+      <p className={groupFoot}>MIT. Started from BrimVeyn/aimux.</p>
+    </section>
+  )
+}
+
+/** Puts a pane's settings back to their defaults; asks twice. */
+function RestoreDefaults({ changed, onRestore }: { changed: number; onRestore: () => void }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (changed === 0) setArmed(false)
+  }, [changed])
+  return (
+    <div
+      className={cn(
+        'flex justify-end transition-opacity duration-160 ease-out',
+        changed === 0 && 'pointer-events-none opacity-0'
+      )}
+      aria-hidden={changed === 0}
+      onMouseLeave={() => setArmed(false)}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        tabIndex={changed === 0 ? -1 : 0}
+        className={cn(armed && 'text-critical-ink hover:text-critical-ink')}
+        onBlur={() => setArmed(false)}
+        onClick={() => {
+          if (!armed) return setArmed(true)
+          setArmed(false)
+          onRestore()
+        }}
+      >
+        <RotateCcwIcon />
+        <span key={String(armed)} className="animate-in fade-in duration-120 ease-out">
+          {restoreLabel(changed, armed)}
+        </span>
+      </Button>
     </div>
   )
 }
@@ -297,10 +546,12 @@ function About({ update }: { update: Update }) {
 /** Writes straight into settings.json; a new workspace reads it when it is made. */
 export function SettingsView({
   chats,
+  onClose,
   onRestartHost,
   terminals,
   update,
 }: {
+  onClose: () => void
   /** The app's update, which About checks and installs. */
   update: Update
   onRestartHost: () => Promise<void>
@@ -313,6 +564,7 @@ export function SettingsView({
   const [path, setPath] = useState('settings.json')
   const [error, setError] = useState<string | null>(null)
   const page = useRef<HTMLDivElement>(null)
+  const pane = usePane()
 
   useEffect(() => {
     void invoke<{ path: string; settings: Stored }>('read_settings').then(
@@ -320,9 +572,17 @@ export function SettingsView({
         setPath(read.path)
         setStored(read.settings)
       },
-      (error_: unknown) => setError(String(error_))
+      () => {
+        setError("Couldn't load settings.json. Changes won't be saved.")
+        setStored({})
+      }
     )
   }, [])
+
+  // A new pane starts at its top.
+  useEffect(() => {
+    page.current?.scrollTo({ top: 0 })
+  }, [pane.id])
 
   const write = (id: string, value: SettingValue | null) => {
     invoke('write_setting', { id, value })
@@ -337,82 +597,90 @@ export function SettingsView({
           return next
         })
       })
-      .catch((error_: unknown) => setError(String(error_)))
+      .catch((error_: unknown) => setError(`Couldn't save: ${String(error_)}`))
   }
 
-  // One column of headed groups: a section nav waits until there are a few to move between.
+  const section = SECTIONS.find((s) => s.id === pane.id)
+  const changed = section !== undefined && stored !== null ? changedRows(section, stored) : []
+
+  // A window over the app, not a page: the chat stays in sight around it, so a background and
+  // its blur show as they are picked.
   return (
-    <div ref={page} className="glass min-w-0 flex-1 overflow-auto px-9 pt-7 pb-12">
-      <div className="mx-auto flex max-w-[720px] flex-col">
-        {SECTIONS.map((section) => (
-          <section key={section.id} className="not-first:mt-7">
-            <h2 className={groupTitle}>{section.label}</h2>
-            {stored && (
-              <div className={rowsClass}>
-                {section.rows.map((row) => {
-                  const value = effectiveValue(row, stored[row.id])
-                  const reset = resetShown(stored[row.id], row.fallback, value)
-                  const control = (
-                    <Control
-                      row={row}
-                      value={value}
-                      onChange={(v) => {
-                        write(row.id, v)
-                        // Picking an effect (again) shows it, over this page.
-                        if (row.id === 'ui.cleanupEffect')
-                          void previewCleanup(String(v), page.current)
-                        // Picking a sound or a volume plays it.
-                        if (row.id.startsWith('notifications.'))
-                          playSettingsSound({ ...stored, [row.id]: v })
-                      }}
-                    />
-                  )
-                  // A grid of choices takes the row's width, under its label.
-                  const wide = row.kind === 'select' && row.preview !== undefined
-                  return (
-                    <div className={cn(rowClass, wide && 'flex-wrap gap-y-3')} key={row.id}>
-                      <div className={rowText}>
-                        <span className="flex items-center gap-2 font-medium">{row.label}</span>
-                        <span className={rowHelp}>{row.help}</span>
-                      </div>
-                      <div className={rowControl}>
-                        {/* A fixed slot before the control, so every control ends on one edge. */}
-                        <button
-                          type="button"
-                          className={cn(
-                            'text-faint hover:text-foreground w-10 text-right text-xs transition-opacity duration-120 ease-out focus-visible:opacity-100 disabled:invisible',
-                            reset === 'hover' &&
-                              'opacity-0 group-has-focus-visible/row:opacity-100 group-hover/row:opacity-100'
-                          )}
-                          aria-label={`Reset ${row.label}`}
-                          disabled={reset === 'never'}
-                          onClick={() => write(row.id, null)}
-                        >
-                          Reset
-                        </button>
-                        {!wide && control}
-                      </div>
-                      {wide && <div className="basis-full">{control}</div>}
-                    </div>
-                  )
-                })}
-              </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        overlayClassName="bg-transparent"
+        className="top-1/2 h-[min(640px,calc(100%-64px))] w-[min(880px,calc(100%-48px))] -translate-y-1/2 flex-row"
+      >
+        <SettingsNav />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex h-12 flex-none items-center justify-between gap-4 pr-4 pl-8">
+            <DialogTitle className="text-base">{pane.label}</DialogTitle>
+            {section !== undefined && (
+              <RestoreDefaults
+                changed={changed.length}
+                onRestore={() => {
+                  for (const row of changed) write(row.id, null)
+                }}
+              />
             )}
-          </section>
-        ))}
-        {error !== null && <div className={cn(fieldError, 'mt-2 px-1')}>{error}</div>}
-        <p className="text-faint m-0 mt-2 px-1 text-xs">
-          Saved in <span className="font-mono text-xs wrap-anywhere">{path}</span>.
-        </p>
-        <section className="mt-7">
-          <h2 className={groupTitle}>Background process</h2>
-          <RestartHost chats={chats} terminals={terminals} onRestart={onRestartHost} />
-        </section>
-        <section className="mt-7">
-          <h2 className={groupTitle}>About</h2>
-          <About update={update} />
-        </section>
-      </div>
+          </div>
+          <div ref={page} className="min-h-0 flex-1 overflow-auto px-8 pt-2 pb-8">
+            {/* The pane fades in and rises a hair; the old one leaves at once. */}
+            <div
+              key={pane.id}
+              className="animate-in fade-in slide-in-from-bottom-1 flex flex-col gap-6 duration-160 ease-out"
+            >
+              {error !== null && <div className={cn(fieldError, 'px-1')}>{error}</div>}
+              {section !== undefined && stored !== null && (
+                <SectionPane section={section} stored={stored} write={write} page={page.current} />
+              )}
+              {pane.id === 'host' && (
+                <HostPane chats={chats} terminals={terminals} onRestart={onRestartHost} />
+              )}
+              {pane.id === 'about' && <AboutPane update={update} path={path} />}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The sections, down the window's left side. ↑/↓ step through them, as ⌃Tab does. */
+function SettingsNav() {
+  const pane = usePane()
+  return (
+    <div
+      className="bg-side border-border flex w-[200px] flex-none flex-col gap-0.5 border-r p-2 pt-3"
+      role="tablist"
+      aria-orientation="vertical"
+      aria-label="Settings"
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+        e.preventDefault()
+        stepPane(e.key === 'ArrowDown' ? 1 : -1)
+        const tabs = e.currentTarget.querySelectorAll<HTMLElement>('[role=tab]')
+        tabs[PANES.findIndex((p) => p.id === currentPane())]?.focus()
+      }}
+    >
+      <span className="text-label px-2.5 pb-2 text-xs font-medium">Settings</span>
+      {PANES.map(({ icon: Icon, id, label }) => {
+        const here = pane.id === id
+        return (
+          <button
+            type="button"
+            key={id}
+            role="tab"
+            aria-selected={here}
+            tabIndex={here ? 0 : -1}
+            className="hover:bg-hover text-muted-foreground aria-selected:bg-active aria-selected:text-foreground flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm whitespace-nowrap transition-[background-color,color] duration-120 outline-none"
+            onClick={() => setPane(id)}
+          >
+            <Icon className={cn('size-4 shrink-0', here ? 'text-foreground' : 'text-faint')} />
+            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -5,7 +5,7 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { cn } from '@/lib/utils'
 
 /**
- * The one dialog the app has (the ⌘N composer), also ⌘P's box: a light ink veil (8 %), a
+ * The app's dialogs (the ⌘N composer, Settings), also ⌘P's box: a light ink veil (8 %), a
  * white sheet in the upper third with a hairline and a long soft shadow, rising 6px in 180ms
  * and fading out in 110ms. No close button: Esc and a click outside close it. ⌘P drops the
  * veil with `overlayClassName="bg-transparent"`.

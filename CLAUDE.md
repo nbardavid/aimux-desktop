@@ -49,7 +49,9 @@ branding.
   in the right panel's browser, logged in to claude.ai once: one Artifacts tab, the title
   opening a searchable list of them in the page's place. They never take the keyboard.
 - **No modal for anything quick.** Use inline confirmation, right-click menus, in-place
-  rename. The composer is the one dialog.
+  rename. Two dialogs only: the composer, and Settings (⌘,), a window with its sections down
+  its left side, over the app without a veil so a chat background and its blur show as they
+  are picked.
 - **Closing the window loses nothing**: chats and terminals keep running in the host.
   After a reboot or a host restart, chats come back (reloaded from Claude Code's transcript
   and resumed); terminals don't.
