@@ -152,6 +152,15 @@ export function AppWallpaper() {
       delete root.dataset.wallpaper
     }
   }, [shown])
+  // A blurred background is blurred once: the glass over it stops adding its own.
+  useEffect(() => {
+    const root = document.documentElement
+    if (blur > 0) root.dataset.wallpaperBlur = ''
+    else delete root.dataset.wallpaperBlur
+    return () => {
+      delete root.dataset.wallpaperBlur
+    }
+  }, [blur])
   if (shown === 'None') return null
   // A blur pulls the edges in: the layer overflows the window by twice the radius.
   const style = blur > 0 ? { filter: `blur(${blur}px)`, inset: -blur * 2 } : undefined

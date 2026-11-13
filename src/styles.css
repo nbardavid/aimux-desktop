@@ -607,6 +607,13 @@ body.resizing * {
   backdrop-filter: blur(24px) saturate(1.8);
 }
 
+/* The background is already blurred (Settings › Appearance › Blur): one blur, not two. The
+   glass keeps its tint and its saturation. */
+:root[data-wallpaper][data-wallpaper-blur] .glass {
+  -webkit-backdrop-filter: saturate(1.8);
+  backdrop-filter: saturate(1.8);
+}
+
 /* Glass in glass (the peeking sidebar's list) takes no second frost. */
 :root[data-wallpaper] .glass .glass {
   background-color: transparent;
