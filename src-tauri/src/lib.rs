@@ -100,11 +100,42 @@ fn migrate_webview_data() {
     copy(storage.join(old), storage.join(new));
 }
 
+/// WebKit turns on macOS Secure Input while a page's password field has focus, and keeps it
+/// on when that page is hidden, which kills every global shortcut (window managers, skhd).
+/// Turned back off every second; the cost is that typed passwords are not shielded.
+// ponytail: 1s poll, hook WebKit's focus changes if the lag ever matters
+#[cfg(target_os = "macos")]
+fn keep_secure_input_off<R: Runtime>(app: AppHandle<R>) {
+    #[link(name = "Carbon", kind = "framework")]
+    extern "C" {
+        fn IsSecureEventInputEnabled() -> u8;
+        fn DisableSecureEventInput() -> i32;
+    }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let _ = app.run_on_main_thread(|| unsafe {
+            // Calls are counted: undo WebKit's Enables. The state is system-wide (another app
+            // may hold it), so the loop is bounded rather than run until it reads off.
+            for _ in 0..16 {
+                if IsSecureEventInputEnabled() == 0 || DisableSecureEventInput() != 0 {
+                    break;
+                }
+            }
+        });
+    });
+}
+
 pub fn run() {
     store::migrate_legacy();
     migrate_webview_data();
     tauri::Builder::default()
         .menu(menu)
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            keep_secure_input_off(app.handle().clone());
+            let _ = app;
+            Ok(())
+        })
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
