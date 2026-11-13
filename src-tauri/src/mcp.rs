@@ -124,7 +124,7 @@ fn tools() -> Value {
         },
         {
             "name": "chat_send",
-            "description": "Sends a follow-up prompt to the agent of a workspace this chat created. The user sees it in that chat.",
+            "description": "Sends a follow-up prompt to the agent of any workspace of this project, including ones the user opened. The user sees it in that chat.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -483,13 +483,10 @@ fn chat_send(chat: &str, args: &Value) -> Result<String, String> {
     }
     let h = here()?;
     let w = h.find(args["workspace"].as_str().unwrap_or_default())?;
-    if w.parent_chat.as_deref() != Some(chat) {
-        return Err(format!(
-            "{} was not created by this chat: only the user writes to it",
-            w.name
-        ));
-    }
     let target = h.main_chat(&w.id).ok_or("that workspace has no chat")?;
+    if target.id == chat {
+        return Err("that is this chat's own workspace".into());
+    }
     ask_host(&json!({ "op": "ask", "ask": {
         "op": "chat_send",
         "chatId": target.id,
